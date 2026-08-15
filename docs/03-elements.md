@@ -1,0 +1,281 @@
+# 3. Element reference
+
+Every element type, every field, every default.
+
+All elements carry the base fields documented in
+[02-document-format.md](02-document-format.md#elements) — `id`, `type`, `x`, `y`,
+`width`, `height`, `angle`, `zIndex`, `opacity`, `locked`, `visible`, `groupId`,
+`style`, `label`, `meta`. This page covers only what each type **adds**, plus its
+type-specific behaviour.
+
+> **Contract note.** Every `## ` heading below corresponds to exactly one type
+> registered in [`src/model/registry.ts`](../src/model/registry.ts), and
+> `test/unit/contract.test.ts` fails the build if that correspondence breaks.
+
+## Capability matrix
+
+Capabilities are declared per type in the registry and drive the UI — which
+controls the style panel shows, whether double-click opens a text editor, whether
+a connector can attach.
+
+| Type | `label` | `path` | `text` | `resizable` | `rotatable` | `bindable` |
+|---|---|---|---|---|---|---|
+| `rectangle` | ✓ | | | ✓ | ✓ | ✓ |
+| `ellipse` | ✓ | | | ✓ | ✓ | ✓ |
+| `line` | ✓ | ✓ | | ✓ | ✓ | |
+| `arrow` | ✓ | ✓ | | ✓ | ✓ | |
+| `draw` | | ✓ | | ✓ | ✓ | |
+| `text` | | | ✓ | ✓ | ✓ | ✓ |
+| `sticky` | | | ✓ | ✓ | ✓ | ✓ |
+| `image` | ✓ | | | ✓ | ✓ | ✓ |
+
+- **`label`** — can carry text inside it via the `label` object.
+- **`path`** — geometry is a `points` list rather than a plain box.
+- **`text`** — owns text directly (in a `text` field), editable in place.
+- **`bindable`** — a connector endpoint can attach to it.
+
+Connectors are deliberately **not** bindable. Binding arrows to arrows creates
+dependency chains with no stable layout fixed point.
+
+---
+
+## rectangle
+
+A rounded box.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `cornerRadius` | number ≥ 0 | `8` | Scene units. |
+
+`cornerRadius` is **clamped at render time** to half the shorter side, so an
+arbitrarily large value produces a stadium shape rather than invalid geometry. The
+stored value is never clamped — a box resized smaller and back keeps its radius.
+
+**Hit-testing:** a filled rectangle (or one carrying non-empty label text) is hit
+anywhere inside. An unfilled one is hit only near its outline, so you can click
+*through* the hollow middle to reach whatever is behind. This is standard drawing
+tool behaviour and is the single most important detail in making selection feel
+right.
+
+```jsonc
+{
+  "id": "el_q2WikW58Aw", "type": "rectangle",
+  "x": 60, "y": 90, "width": 140, "height": 70,
+  "angle": 0, "zIndex": 1000, "opacity": 1,
+  "locked": false, "visible": true, "groupId": null,
+  "style": { "stroke": "#1e1e1e", "strokeWidth": 2, "strokeStyle": "solid",
+             "fill": "#a5d8ff", "fillStyle": "solid", "roughness": 0 },
+  "label": null, "meta": {},
+  "cornerRadius": 8
+}
+```
+
+---
+
+## ellipse
+
+An ellipse inscribed in the element's box. A square box yields a circle.
+
+Adds no fields.
+
+**Hit-testing:** filled — anywhere inside the ellipse (not the box). Unfilled —
+within tolerance of the outline.
+
+---
+
+## line
+
+A polyline without arrowheads by default. Shares its implementation with
+[`arrow`](#arrow); see that section for the full field list.
+
+The only difference is defaults: a `line` is created with both arrowheads set to
+`"none"`.
+
+A `line` and an `arrow` with identical fields render identically. The type records
+what the author *meant*; the arrowhead fields record what is drawn.
+
+---
+
+## arrow
+
+A polyline with arrowheads and connector bindings. This is the type that makes
+MindFlow a flow-diagramming tool rather than a drawing program.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `points` | array of tuples | — | ≥ 2 vertices, **relative to `x`/`y`**. |
+| `startArrowhead` | see below | `"none"` | |
+| `endArrowhead` | see below | `"arrow"` (`"none"` for `line`) | |
+| `curve` | `straight` \| `curved` \| `elbow` | `"straight"` | |
+| `startBinding` | Binding \| null | `null` | |
+| `endBinding` | Binding \| null | `null` | |
+
+**Arrowheads:** `none`, `arrow`, `triangle`, `dot`, `bar`.
+
+### `points`
+
+Vertices are **relative to the element's `x`/`y`**, so translating the element
+never touches this array. Each is a two- or three-element tuple `[x, y]` or
+`[x, y, pressure]`; the third component is ignored for connectors.
+
+Tuples rather than `{x, y}` objects: a long path would otherwise triple in size
+and become unreadable. This follows GeoJSON's reasoning.
+
+The first and last points are the endpoints that bindings apply to.
+
+### Bindings
+
+```jsonc
+"endBinding": {
+  "elementId": "el_R4NLqX9ZB3",
+  "anchor": { "mode": "auto" },
+  "gap": 4
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `elementId` | string | MUST reference an existing, `bindable` element. |
+| `anchor` | object | `{"mode": "auto"}` or `{"mode": "fixed", "u": …, "v": …}`. |
+| `gap` | number ≥ 0 | Clearance between the target's outline and the tip, in scene units. |
+
+- **`auto`** — the attachment point is recomputed whenever either element moves,
+  by casting a ray from the target's centre toward the connector's other end and
+  taking where it crosses the outline. Attaches to whichever edge faces the other
+  end.
+- **`fixed`** — pinned to a specific spot, given in normalised coordinates on the
+  target's local unrotated box: `u` runs 0 (left) → 1 (right), `v` runs 0 (top) →
+  1 (bottom). The point is transformed by the target's rotation, so it follows the
+  shape as it turns.
+
+> **The stored `points` of a bound connector are a cache, not the truth.** They
+> reflect the last computed route. A reader that moves a bound element MUST
+> recompute them using the algorithm in
+> [07-rendering.md](07-rendering.md#binding-resolution), or the arrow will detach
+> visually from its target.
+
+---
+
+## draw
+
+A freehand stroke.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `points` | array of tuples | — | ≥ 1 vertex, relative to `x`/`y`. |
+| `pressureSensitive` | boolean | `false` | |
+
+When `pressureSensitive` is true, the third tuple component is stylus pressure in
+`[0, 1]` and the stroke is rendered with a variable width mapped to
+`0.4×`–`1.4×` of `strokeWidth`. When false, any pressure values present are
+ignored for rendering but still preserved on save.
+
+MindFlow sets it true only for `pointerType === "pen"`. A mouse reports a constant
+pressure of 0.5, which would produce a uniformly thin stroke if treated as real.
+
+**Simplification.** Captured points are thinned with Douglas–Peucker (tolerance
+0.8 scene units) once, on commit — not during the stroke, so live feedback stays
+exact and only the stored result is reduced. A two-second stroke typically drops
+from several hundred points to a few dozen.
+
+`draw` elements ignore `strokeStyle`: freehand ink is never dashed.
+
+---
+
+## text
+
+Free-standing text. Distinct from a `label`, which is text inside another element.
+
+| Field | Type | Default |
+|---|---|---|
+| `text` | string | `""` |
+| `fontFamily` | `sans` \| `serif` \| `mono` \| `hand` | `"sans"` |
+| `fontSize` | number > 0 | `20` |
+| `fontWeight` | integer 100–900 | `400` |
+| `lineHeight` | number ≥ 0.5 | `1.25` |
+| `color` | CSS colour | `"#1e1e1e"` |
+| `textAlign` | `left` \| `center` \| `right` | `"left"` |
+| `verticalAlign` | `top` \| `middle` \| `bottom` | `"top"` |
+| `autoWidth` | boolean | `true` |
+
+`style.stroke` and `style.fill` are unused — text draws with its own `color`.
+MindFlow writes them as `"transparent"`.
+
+### `autoWidth`
+
+- **`true`** — `width` is derived from the text and recomputed on every edit; the
+  text never wraps on its own.
+- **`false`** — `width` is authoritative and the text wraps to fit it.
+
+Either way, `width` and `height` are always written out correctly. **A reader that
+cannot measure text should trust the stored dimensions and ignore this flag.**
+
+---
+
+## sticky
+
+A sticky note: a filled rounded box with text inside.
+
+| Field | Type | Default |
+|---|---|---|
+| `text` | string | `""` |
+| `fontFamily` | `sans` \| `serif` \| `mono` \| `hand` | `"sans"` |
+| `fontSize` | number > 0 | `16` |
+| `fontWeight` | integer 100–900 | `400` |
+| `lineHeight` | number ≥ 0.5 | `1.25` |
+| `color` | CSS colour | `"#1e1e1e"` |
+| `textAlign` | `left` \| `center` \| `right` | `"left"` |
+| `verticalAlign` | `top` \| `middle` \| `bottom` | `"top"` |
+| `padding` | number ≥ 0 | `12` |
+
+Default size when created by a click rather than a drag: 160 × 160.
+Default fill: `#ffec99`. Default stroke: `"transparent"` with width `0` — the
+inverse of every other shape's default, because a note should read as paper rather
+than as an outlined box.
+
+**Why its own type and not a rectangle with a label?** The two would render almost
+identically, but a distinct type preserves the author's intent in the file. A
+program reading a board can answer *"what are the sticky notes here?"* from the
+data, rather than guessing from styling heuristics. That semantic legibility is
+worth one extra type — and it is exactly the kind of thing this format exists to
+make possible.
+
+**Rendering:** a soft drop shadow is drawn when the note has no stroke, which is
+what sells "piece of paper". Text is clipped to the note, so an overfull note
+looks full rather than spilling words across the canvas.
+
+---
+
+## image
+
+An embedded bitmap or SVG.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `fileId` | string | — | Key into the document's `files` map. MUST resolve. |
+| `naturalWidth` | number > 0 | — | Intrinsic pixel width of the source. |
+| `naturalHeight` | number > 0 | — | Intrinsic pixel height. |
+| `objectFit` | `fill` \| `contain` \| `cover` | `"fill"` | As per CSS `object-fit`. |
+
+- **`fill`** — stretch to the box, ignoring aspect ratio.
+- **`contain`** — scale to fit entirely inside, letterboxing the remainder.
+- **`cover`** — scale to fill the box, cropping the overflow symmetrically.
+
+Rendering is always clipped to the element's box, so `cover` never paints outside
+its declared bounds — which culling and hit-testing both rely on.
+
+**Import limits.** MindFlow rejects sources over 12 MB (images are embedded
+directly in the board file) and downscales anything whose longest side exceeds
+2400 px. SVG is passed through untouched — it is already resolution-independent,
+and rasterising it would destroy the reason to use it.
+
+A `fileId` that does not resolve renders as a crossed placeholder and is reported
+by validation. The element is never deleted.
+
+---
+
+## Adding a type
+
+See [09-extending.md](09-extending.md). In short: write one file in
+`src/render/shapes/`, register it, add it to the JSON Schema, and add a `## `
+section here. The contract test enforces the last two.

@@ -1,0 +1,294 @@
+{
+  "$schema": "https://digster.github.io/mindflow/docs/schema/mindflow-1.0.0.schema.json",
+  "type": "mindflow.board",
+  "schemaVersion": "1.0.0",
+  "id": "brd_AllElement",
+  "meta": {
+    "name": "Every element type",
+    "createdAt": "2026-08-14T10:00:00.000Z",
+    "updatedAt": "2026-08-14T11:30:00.000Z",
+    "app": {
+      "name": "mindflow",
+      "version": "0.1.0"
+    }
+  },
+  "canvas": {
+    "background": "#ffffff",
+    "grid": {
+      "visible": true,
+      "size": 20,
+      "snap": true
+    }
+  },
+  "viewport": {
+    "x": -40,
+    "y": -40,
+    "zoom": 1
+  },
+  "elements": [
+    {
+      "id": "el_RectFilled1",
+      "type": "rectangle",
+      "x": 40,
+      "y": 40,
+      "width": 180,
+      "height": 100,
+      "angle": 0,
+      "zIndex": 1000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": "grp_FlowNodes1",
+      "style": {
+        "stroke": "#1971c2",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#a5d8ff",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": {
+        "text": "Rectangle with a label",
+        "fontFamily": "sans",
+        "fontSize": 16,
+        "fontWeight": 400,
+        "lineHeight": 1.25,
+        "color": "#1e1e1e",
+        "textAlign": "center",
+        "verticalAlign": "middle",
+        "padding": 8
+      },
+      "meta": {},
+      "cornerRadius": 8
+    },
+    {
+      "id": "el_EllipseRot1",
+      "type": "ellipse",
+      "x": 300,
+      "y": 40,
+      "width": 160,
+      "height": 100,
+      "angle": 15,
+      "zIndex": 2000,
+      "opacity": 0.9,
+      "locked": false,
+      "visible": true,
+      "groupId": "grp_FlowNodes1",
+      "style": {
+        "stroke": "#2f9e44",
+        "strokeWidth": 2,
+        "strokeStyle": "dashed",
+        "fill": "#b2f2bb",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {
+        "exampleNote": "meta is reserved for tools other than MindFlow; it is preserved verbatim across a round trip"
+      }
+    },
+    {
+      "id": "el_PlainLine01",
+      "type": "line",
+      "x": 40,
+      "y": 200,
+      "width": 200,
+      "height": 60,
+      "angle": 0,
+      "zIndex": 3000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "style": {
+        "stroke": "#868e96",
+        "strokeWidth": 2,
+        "strokeStyle": "dotted",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {},
+      "points": [
+        [0, 0],
+        [100, 60],
+        [200, 0]
+      ],
+      "startArrowhead": "none",
+      "endArrowhead": "none",
+      "curve": "curved",
+      "startBinding": null,
+      "endBinding": null
+    },
+    {
+      "id": "el_FreeArrow01",
+      "type": "arrow",
+      "x": 300,
+      "y": 200,
+      "width": 180,
+      "height": 40,
+      "angle": 0,
+      "zIndex": 4000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "style": {
+        "stroke": "#e03131",
+        "strokeWidth": 3,
+        "strokeStyle": "solid",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {},
+      "points": [
+        [0, 0],
+        [90, 40],
+        [180, 0]
+      ],
+      "startArrowhead": "dot",
+      "endArrowhead": "triangle",
+      "curve": "elbow",
+      "startBinding": null,
+      "endBinding": null
+    },
+    {
+      "id": "el_Freehand001",
+      "type": "draw",
+      "x": 40,
+      "y": 300,
+      "width": 200,
+      "height": 60,
+      "angle": 0,
+      "zIndex": 5000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 3,
+        "strokeStyle": "solid",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {},
+      "points": [
+        [0, 30, 0.2],
+        [40, 0, 0.55],
+        [80, 55, 0.9],
+        [120, 5, 0.7],
+        [160, 50, 0.4],
+        [200, 20, 0.15]
+      ],
+      "pressureSensitive": true
+    },
+    {
+      "id": "el_TextBlock01",
+      "type": "text",
+      "x": 300,
+      "y": 300,
+      "width": 240,
+      "height": 50,
+      "angle": 0,
+      "zIndex": 6000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "style": {
+        "stroke": "transparent",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {},
+      "text": "Free-standing text.\nThis line is explicit.",
+      "fontFamily": "serif",
+      "fontSize": 20,
+      "fontWeight": 400,
+      "lineHeight": 1.25,
+      "color": "#1e1e1e",
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "autoWidth": true
+    },
+    {
+      "id": "el_StickyNote1",
+      "type": "sticky",
+      "x": 40,
+      "y": 400,
+      "width": 160,
+      "height": 160,
+      "angle": 0,
+      "zIndex": 7000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "style": {
+        "stroke": "transparent",
+        "strokeWidth": 0,
+        "strokeStyle": "solid",
+        "fill": "#ffec99",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {},
+      "text": "A sticky note is its own type, so a program can find the notes on a board from the data alone.",
+      "fontFamily": "sans",
+      "fontSize": 16,
+      "fontWeight": 400,
+      "lineHeight": 1.25,
+      "color": "#1e1e1e",
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "padding": 12
+    },
+    {
+      "id": "el_LockedImage",
+      "type": "image",
+      "x": 300,
+      "y": 400,
+      "width": 160,
+      "height": 160,
+      "angle": 0,
+      "zIndex": 8000,
+      "opacity": 1,
+      "locked": true,
+      "visible": true,
+      "groupId": null,
+      "style": {
+        "stroke": "transparent",
+        "strokeWidth": 0,
+        "strokeStyle": "solid",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {},
+      "fileId": "6b7fa434f92a8b80aab02d9bf1a12e49ffcae424e4013a1c4f68b67e3d2bbcd0",
+      "naturalWidth": 1,
+      "naturalHeight": 1,
+      "objectFit": "contain"
+    }
+  ],
+  "files": {
+    "6b7fa434f92a8b80aab02d9bf1a12e49ffcae424e4013a1c4f68b67e3d2bbcd0": {
+      "mimeType": "image/png",
+      "dataUri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "byteLength": 70,
+      "createdAt": "2026-08-14T10:20:00.000Z"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Environment — real secrets never get committed; .env.example is the tracked template
+.env
+.env.local
+
+# Test output
+coverage/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Screenshots produced during browser testing are always cleaned up after a run.
+# This is a backstop so a crashed run cannot leak them into a commit.
+*.screenshot.png
+test/e2e/**/*.png
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Build scratch. NOTE: /index.html is deliberately NOT ignored — it is the
+# committed build artifact that GitHub Pages serves and that users double-click.
+dist/
+.esbuild/
+*.tsbuildinfo

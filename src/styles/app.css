@@ -1,0 +1,878 @@
+/**
+ * MindFlow interface styles.
+ *
+ * Design intent: get out of the way. The canvas is the product, so the chrome is
+ * quiet — low-contrast surfaces, hairline borders, one accent colour, and no
+ * decoration that does not communicate state.
+ *
+ * Everything is driven by custom properties defined once on `:root` and
+ * redefined for dark mode, so a colour is never hard-coded at a use site.
+ */
+
+:root {
+  /* Surfaces, lightest to darkest */
+  --mf-bg: #f6f7f9;
+  --mf-surface: #ffffff;
+  --mf-surface-hover: #f1f3f5;
+  --mf-surface-active: #e9ecef;
+
+  /* Text */
+  --mf-text: #1a1d23;
+  --mf-text-muted: #6b7280;
+  --mf-text-faint: #9ca3af;
+
+  /* Lines */
+  --mf-border: #e3e6ea;
+  --mf-border-strong: #d1d5db;
+
+  /* Accent — the single colour that means "active" or "selected" */
+  --mf-accent: #5b5bd6;
+  --mf-accent-hover: #4f4fc7;
+  --mf-accent-soft: #eef0fd;
+  --mf-accent-text: #ffffff;
+
+  --mf-danger: #dc2626;
+  --mf-danger-soft: #fef2f2;
+  --mf-warning: #d97706;
+
+  /* Elevation. Layered rather than blurred, which reads as crisper at small sizes. */
+  --mf-shadow-sm: 0 1px 2px rgb(16 24 40 / 6%), 0 1px 3px rgb(16 24 40 / 8%);
+  --mf-shadow-md: 0 2px 4px rgb(16 24 40 / 6%), 0 4px 12px rgb(16 24 40 / 8%);
+  --mf-shadow-lg: 0 8px 24px rgb(16 24 40 / 12%), 0 2px 6px rgb(16 24 40 / 8%);
+
+  --mf-radius-sm: 6px;
+  --mf-radius: 9px;
+  --mf-radius-lg: 14px;
+
+  --mf-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mf-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --mf-topbar-height: 52px;
+  --mf-transition: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mf-bg: #16181d;
+    --mf-surface: #1f2228;
+    --mf-surface-hover: #282c34;
+    --mf-surface-active: #31363f;
+
+    --mf-text: #e8eaed;
+    --mf-text-muted: #9aa1ac;
+    --mf-text-faint: #6b7280;
+
+    --mf-border: #2e333b;
+    --mf-border-strong: #3d434d;
+
+    --mf-accent: #7c7cf0;
+    --mf-accent-hover: #8f8ff5;
+    --mf-accent-soft: #26264a;
+
+    --mf-danger: #f87171;
+    --mf-danger-soft: #2a1a1a;
+
+    --mf-shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
+    --mf-shadow-md: 0 2px 8px rgb(0 0 0 / 35%);
+    --mf-shadow-lg: 0 8px 28px rgb(0 0 0 / 45%);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reset
+   -------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden; /* The canvas owns all scrolling. */
+  overscroll-behavior: none; /* Suppress pull-to-refresh and rubber-banding. */
+}
+
+body {
+  font-family: var(--mf-font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--mf-text);
+  background: var(--mf-bg);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--mf-accent);
+  outline-offset: 2px;
+}
+
+.mf-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh; /* Accounts for mobile browser chrome. */
+}
+
+/* --------------------------------------------------------------------------
+   Top bar
+   -------------------------------------------------------------------------- */
+
+.mf-topbar {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--mf-topbar-height);
+  padding: 0 12px;
+  background: var(--mf-surface);
+  border-bottom: 1px solid var(--mf-border);
+}
+
+.mf-topbar-group {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  min-width: 0;
+}
+
+.mf-brand {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-right: 4px;
+  color: var(--mf-accent-text);
+  background: var(--mf-accent);
+  border-radius: var(--mf-radius-sm);
+}
+
+.mf-board-name {
+  min-width: 0;
+  max-width: 320px;
+  padding: 5px 8px;
+  font-size: 14px;
+  font-weight: 550;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--mf-radius-sm);
+  transition: background var(--mf-transition), border-color var(--mf-transition);
+}
+
+.mf-board-name:hover {
+  background: var(--mf-surface-hover);
+}
+
+.mf-board-name:focus {
+  background: var(--mf-surface);
+  border-color: var(--mf-accent);
+  outline: none;
+}
+
+/* Unsaved-changes indicator: present but not alarming. */
+.mf-dirty-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--mf-text-faint);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity var(--mf-transition);
+}
+
+.mf-dirty-dot.is-visible {
+  opacity: 1;
+}
+
+.mf-zoom-label {
+  min-width: 52px;
+  padding: 6px 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums; /* Stops the width jittering while zooming. */
+  color: var(--mf-text-muted);
+  text-align: center;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: var(--mf-radius-sm);
+}
+
+.mf-zoom-label:hover {
+  color: var(--mf-text);
+  background: var(--mf-surface-hover);
+}
+
+/* --------------------------------------------------------------------------
+   Buttons
+   -------------------------------------------------------------------------- */
+
+.mf-icon-button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--mf-text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: var(--mf-radius-sm);
+  transition: background var(--mf-transition), color var(--mf-transition);
+}
+
+.mf-icon-button:hover:not(:disabled) {
+  color: var(--mf-text);
+  background: var(--mf-surface-hover);
+}
+
+.mf-icon-button:active:not(:disabled) {
+  background: var(--mf-surface-active);
+}
+
+.mf-icon-button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.mf-icon-button--small {
+  width: 28px;
+  height: 28px;
+}
+
+.mf-button {
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--mf-text);
+  cursor: pointer;
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border-strong);
+  border-radius: var(--mf-radius-sm);
+  transition: background var(--mf-transition), border-color var(--mf-transition);
+}
+
+.mf-button:hover {
+  background: var(--mf-surface-hover);
+}
+
+.mf-button--primary {
+  color: var(--mf-accent-text);
+  background: var(--mf-accent);
+  border-color: var(--mf-accent);
+}
+
+.mf-button--primary:hover {
+  background: var(--mf-accent-hover);
+  border-color: var(--mf-accent-hover);
+}
+
+.mf-button--danger {
+  color: #fff;
+  background: var(--mf-danger);
+  border-color: var(--mf-danger);
+}
+
+.mf-button--danger:hover {
+  filter: brightness(1.08);
+}
+
+.mf-link {
+  padding: 0;
+  color: var(--mf-accent);
+  text-decoration: underline;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+/* --------------------------------------------------------------------------
+   Layout
+   -------------------------------------------------------------------------- */
+
+.mf-main {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.mf-canvas-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.mf-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none; /* We handle all gestures ourselves. */
+}
+
+/* --------------------------------------------------------------------------
+   Tool palette
+   -------------------------------------------------------------------------- */
+
+.mf-tools {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: var(--mf-radius-lg);
+  box-shadow: var(--mf-shadow-md);
+  transform: translateY(-50%);
+}
+
+.mf-tool {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--mf-text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: var(--mf-radius-sm);
+  transition: background var(--mf-transition), color var(--mf-transition);
+}
+
+.mf-tool:hover {
+  color: var(--mf-text);
+  background: var(--mf-surface-hover);
+}
+
+.mf-tool.is-active {
+  color: var(--mf-accent);
+  background: var(--mf-accent-soft);
+}
+
+.mf-tool-divider {
+  flex: 0 0 auto;
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--mf-border);
+}
+
+/* Horizontal in the top bar, vertical in the tool palette. */
+.mf-topbar .mf-tool-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+}
+
+/* --------------------------------------------------------------------------
+   Style panel
+   -------------------------------------------------------------------------- */
+
+.mf-style-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 232px;
+  padding: 14px;
+  overflow-y: auto;
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: var(--mf-radius-lg);
+  box-shadow: var(--mf-shadow-md);
+}
+
+.mf-style-panel[hidden] {
+  display: none;
+}
+
+.mf-style-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mf-style-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--mf-text-faint);
+  text-transform: uppercase;
+}
+
+.mf-style-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.mf-swatch {
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+  border: 1px solid var(--mf-border-strong);
+  border-radius: var(--mf-radius-sm);
+  transition: transform var(--mf-transition), box-shadow var(--mf-transition);
+}
+
+.mf-swatch:hover {
+  transform: scale(1.1);
+}
+
+.mf-swatch.is-active {
+  box-shadow: 0 0 0 2px var(--mf-surface), 0 0 0 4px var(--mf-accent);
+}
+
+/* Checkerboard, the conventional signal for "no colour". */
+.mf-swatch.is-transparent {
+  background-image:
+    linear-gradient(45deg, var(--mf-surface-active) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--mf-surface-active) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--mf-surface-active) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--mf-surface-active) 75%);
+  background-position: 0 0, 0 3px, 3px -3px, -3px 0;
+  background-size: 6px 6px;
+}
+
+.mf-color-input {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--mf-border-strong);
+  border-radius: var(--mf-radius-sm);
+}
+
+.mf-color-input::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.mf-color-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+.mf-chip {
+  padding: 4px 9px;
+  font-size: 12px;
+  color: var(--mf-text-muted);
+  cursor: pointer;
+  background: var(--mf-surface-hover);
+  border: 1px solid transparent;
+  border-radius: var(--mf-radius-sm);
+  transition: background var(--mf-transition), color var(--mf-transition);
+}
+
+.mf-chip:hover {
+  color: var(--mf-text);
+  background: var(--mf-surface-active);
+}
+
+.mf-chip.is-active {
+  color: var(--mf-accent);
+  background: var(--mf-accent-soft);
+  border-color: var(--mf-accent);
+}
+
+.mf-range {
+  width: 100%;
+  accent-color: var(--mf-accent);
+}
+
+/* --------------------------------------------------------------------------
+   Text editor overlay
+   -------------------------------------------------------------------------- */
+
+/*
+ * Positioned and transformed entirely from TypeScript — see ui/textEditor.ts.
+ * The rules here only strip the browser's default textarea chrome so it is
+ * visually indistinguishable from canvas-rendered text.
+ */
+.mf-text-editor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  box-shadow: 0 0 0 1px var(--mf-accent);
+  resize: none;
+}
+
+.mf-text-editor[hidden] {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   Dialogs
+   -------------------------------------------------------------------------- */
+
+.mf-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: 0;
+  color: var(--mf-text);
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: var(--mf-radius-lg);
+  box-shadow: var(--mf-shadow-lg);
+}
+
+.mf-dialog::backdrop {
+  background: rgb(16 24 40 / 40%);
+  backdrop-filter: blur(2px);
+}
+
+.mf-dialog-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--mf-border);
+}
+
+.mf-dialog-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mf-dialog-body {
+  max-height: 60vh;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.mf-dialog-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--mf-border);
+}
+
+.mf-dialog-text {
+  margin: 0 0 12px;
+  color: var(--mf-text-muted);
+  white-space: pre-line; /* Honours the \n in dialog messages. */
+}
+
+.mf-button-row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.mf-button-row--split {
+  justify-content: space-between;
+}
+
+.mf-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mf-field--inline {
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+}
+
+.mf-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mf-text-muted);
+}
+
+.mf-field-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--mf-text-faint);
+}
+
+.mf-input,
+.mf-select {
+  width: 100%;
+  padding: 7px 9px;
+  font-size: 13px;
+  background: var(--mf-bg);
+  border: 1px solid var(--mf-border-strong);
+  border-radius: var(--mf-radius-sm);
+}
+
+.mf-input:focus,
+.mf-select:focus {
+  border-color: var(--mf-accent);
+  outline: none;
+}
+
+.mf-note {
+  padding: 11px 13px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--mf-text-muted);
+  background: var(--mf-accent-soft);
+  border-radius: var(--mf-radius-sm);
+}
+
+/* Shortcuts reference */
+
+.mf-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.mf-shortcut-heading {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--mf-text-faint);
+  text-transform: uppercase;
+}
+
+.mf-shortcut-list {
+  display: grid;
+  grid-template-columns: minmax(140px, auto) 1fr;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.mf-shortcut-list dt {
+  margin: 0;
+}
+
+.mf-shortcut-list dd {
+  margin: 0;
+  color: var(--mf-text-muted);
+}
+
+kbd {
+  padding: 2px 6px;
+  font-family: var(--mf-font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+  background: var(--mf-surface-hover);
+  border: 1px solid var(--mf-border-strong);
+  border-radius: 4px;
+}
+
+/* Drive browser */
+
+.mf-drive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mf-drive-item {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  border-radius: var(--mf-radius-sm);
+}
+
+.mf-drive-item:hover {
+  background: var(--mf-surface-hover);
+}
+
+.mf-drive-open {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--mf-radius-sm);
+}
+
+.mf-drive-name {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-drive-meta {
+  font-size: 11px;
+  color: var(--mf-text-faint);
+}
+
+/* Warnings */
+
+.mf-warning-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.mf-warning {
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  border-radius: var(--mf-radius-sm);
+}
+
+.mf-warning code {
+  font-family: var(--mf-font-mono);
+  font-size: 11px;
+  color: var(--mf-text);
+}
+
+.mf-warning--warning {
+  background: var(--mf-surface-hover);
+}
+
+.mf-warning--error {
+  color: var(--mf-danger);
+  background: var(--mf-danger-soft);
+}
+
+/* --------------------------------------------------------------------------
+   Toasts
+   -------------------------------------------------------------------------- */
+
+.mf-toasts {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none; /* Never block the canvas underneath. */
+  transform: translateX(-50%);
+}
+
+.mf-toast {
+  max-width: min(460px, calc(100vw - 40px));
+  padding: 10px 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--mf-text);
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: var(--mf-radius);
+  box-shadow: var(--mf-shadow-lg);
+  opacity: 1;
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.mf-toast--error {
+  color: var(--mf-danger);
+  background: var(--mf-danger-soft);
+  border-color: currentcolor;
+}
+
+.mf-toast.is-leaving {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* --------------------------------------------------------------------------
+   Fallbacks
+   -------------------------------------------------------------------------- */
+
+.mf-noscript,
+.mf-fatal {
+  max-width: 520px;
+  padding: 32px;
+  margin: 12vh auto;
+  color: var(--mf-text);
+  text-align: center;
+}
+
+.mf-fatal pre {
+  padding: 12px;
+  overflow-x: auto;
+  font-family: var(--mf-font-mono);
+  font-size: 12px;
+  text-align: left;
+  background: var(--mf-surface-hover);
+  border-radius: var(--mf-radius-sm);
+}
+
+/* --------------------------------------------------------------------------
+   Responsive
+   -------------------------------------------------------------------------- */
+
+@media (width <= 760px) {
+  /* The palette moves to the bottom, where a thumb can reach it. */
+  .mf-tools {
+    top: auto;
+    bottom: 12px;
+    left: 50%;
+    flex-direction: row;
+    max-width: calc(100vw - 24px);
+    overflow-x: auto;
+    transform: translateX(-50%);
+  }
+
+  .mf-tools .mf-tool-divider {
+    width: 1px;
+    height: 20px;
+    margin: 6px 4px;
+  }
+
+  .mf-style-panel {
+    top: auto;
+    right: 8px;
+    bottom: 68px;
+    left: 8px;
+    width: auto;
+    max-height: 42vh;
+  }
+
+  .mf-board-name {
+    max-width: 140px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

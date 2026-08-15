@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="color-scheme" content="light dark" />
+    <title>MindFlow</title>
+    <meta name="description" content="A static, serverless digital whiteboard with a fully documented save format." />
+    <meta name="application-name" content="MindFlow" />
+    <meta name="generator" content="MindFlow __APP_VERSION__" />
+
+    <!--
+      Everything below is inlined at build time by build.mjs. The page makes no
+      external network requests at all, which is what lets it run from file://,
+      work offline, and be shared as a single portable file.
+
+      The one exception is Google's Identity Services script, which is injected
+      lazily by src/io/drive/auth.ts and only after the user explicitly clicks
+      "Connect Drive". Until then, no third-party code is loaded or contacted.
+    -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235b5bd6'/%3E%3Cpath d='M8 21V11l4 5 4-5v10' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='23' cy='12.5' r='2.6' fill='white'/%3E%3Cpath d='M23 15.4V21' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E" />
+
+    <style>/*__MINDFLOW_CSS__*/</style>
+  </head>
+  <body>
+    <!--
+      The app builds its own DOM in src/ui/. This shell exists so that a browser
+      with JavaScript disabled, or a build that failed to load, shows something
+      honest instead of a blank white page.
+    -->
+    <noscript>
+      <div class="mf-noscript">
+        <h1>MindFlow needs JavaScript</h1>
+        <p>
+          MindFlow is a client-side drawing tool — it runs entirely in your browser
+          and has no server component. Please enable JavaScript to use it.
+        </p>
+      </div>
+    </noscript>
+
+    <div id="mf-root" class="mf-root" role="application" aria-label="MindFlow whiteboard"></div>
+
+    <script>/*__MINDFLOW_JS__*/</script>
+  </body>
+</html>

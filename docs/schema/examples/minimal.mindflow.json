@@ -1,0 +1,56 @@
+{
+  "$schema": "https://digster.github.io/mindflow/docs/schema/mindflow-1.0.0.schema.json",
+  "type": "mindflow.board",
+  "schemaVersion": "1.0.0",
+  "id": "brd_MinimalEx1",
+  "meta": {
+    "name": "Minimal board",
+    "createdAt": "2026-08-14T10:00:00.000Z",
+    "updatedAt": "2026-08-14T10:00:00.000Z",
+    "app": {
+      "name": "mindflow",
+      "version": "0.1.0"
+    }
+  },
+  "canvas": {
+    "background": "#ffffff",
+    "grid": {
+      "visible": false,
+      "size": 20,
+      "snap": false
+    }
+  },
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "elements": [
+    {
+      "id": "el_OneRectangl",
+      "type": "rectangle",
+      "x": 100,
+      "y": 100,
+      "width": 200,
+      "height": 120,
+      "angle": 0,
+      "zIndex": 1000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {},
+      "cornerRadius": 8
+    }
+  ],
+  "files": {}
+}
