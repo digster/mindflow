@@ -34,6 +34,19 @@ export function fontString(family: FontFamily, size: number, weight: number): st
 }
 
 /**
+ * Distance from the top of a line box down to that line's baseline, in ems.
+ *
+ * Deliberately a constant rather than the font's real ascent: `docs/07-rendering.md`
+ * publishes this number, and a renderer on another machine must be able to place
+ * the baseline without knowing which typeface `sans` happened to resolve to.
+ *
+ * The DOM text editor does not get this for free — CSS places a baseline at
+ * `half-leading + ascent`, which is font-specific — so it measures the CSS
+ * baseline and corrects itself onto this value. See `ui/textEditor.ts`.
+ */
+export const BASELINE_RATIO = 0.8;
+
+/**
  * A canvas used only for text measurement.
  *
  * Measuring needs a 2D context but not a visible canvas, and creating one per
@@ -218,9 +231,7 @@ export function drawTextBlock(
   }
 
   for (const [index, line] of metrics.lines.entries()) {
-    // 0.8em approximates the cap-height baseline offset across the stacks we
-    // ship, and is stable regardless of which font actually resolves.
-    const baseline = originY + index * metrics.lineHeightPx + options.fontSize * 0.8;
+    const baseline = originY + index * metrics.lineHeightPx + options.fontSize * BASELINE_RATIO;
     ctx.fillText(line, originX, baseline);
   }
 

@@ -208,7 +208,13 @@ export function drawOverlay(render: RenderContext, state: OverlayState): void {
       }
     }
     const frame = selectionFrame(state.selected);
-    if (frame) drawSelectionFrame(ctx, frame, zoom, canRotate(state.selected));
+    const transformable = canTransform(state.selected);
+    if (frame) {
+      drawSelectionFrame(ctx, frame, zoom, {
+        rotate: transformable && canRotate(state.selected),
+        handles: transformable,
+      });
+    }
   }
 
   ctx.restore();
@@ -217,6 +223,17 @@ export function drawOverlay(render: RenderContext, state: OverlayState): void {
 /** Rotation is offered only when every selected element supports it. */
 export function canRotate(elements: readonly MindflowElement[]): boolean {
   return elements.length > 0 && elements.every((el) => capabilitiesOf(el).rotatable);
+}
+
+/**
+ * Whether the selection may be moved, resized or rotated.
+ *
+ * A locked element can still be *selected* — right-clicking one is how you get
+ * it back to unlock it — but it must not acquire handles, or the gesture that
+ * follows would edit the thing the lock exists to protect.
+ */
+export function canTransform(elements: readonly MindflowElement[]): boolean {
+  return elements.length > 0 && elements.every((el) => !el.locked);
 }
 
 function drawOutline(
@@ -243,8 +260,9 @@ function drawSelectionFrame(
   ctx: CanvasRenderingContext2D,
   frame: SelectionFrame,
   zoom: number,
-  allowRotate: boolean,
+  options: { rotate: boolean; handles: boolean },
 ): void {
+  const { rotate: allowRotate, handles } = options;
   ctx.save();
 
   // Draw the frame in its own rotated space so the box hugs a rotated shape
@@ -256,7 +274,17 @@ function drawSelectionFrame(
 
   ctx.strokeStyle = ACCENT;
   ctx.lineWidth = 1.5 / zoom;
+  // A handle-less frame is a locked selection. Dashing it says so without
+  // needing a legend: there is nothing to grab, and the outline looks unlike
+  // every other selection on the board.
+  if (!handles) ctx.setLineDash([5 / zoom, 4 / zoom]);
   ctx.strokeRect(0, 0, frame.width, frame.height);
+  ctx.setLineDash([]);
+
+  if (!handles) {
+    ctx.restore();
+    return;
+  }
 
   if (allowRotate) {
     // Stem connecting the shape to the rotation handle.

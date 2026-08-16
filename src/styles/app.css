@@ -427,6 +427,24 @@ textarea {
   align-items: center;
 }
 
+/* The locked-selection panel: an explanation, then the one action still allowed.
+   Both take the full width so they stack rather than sharing a wrapped row. */
+.mf-style-note {
+  width: 100%;
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--mf-text-muted);
+}
+
+.mf-style-controls .mf-button {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
 .mf-swatch {
   width: 22px;
   height: 22px;

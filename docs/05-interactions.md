@@ -84,6 +84,25 @@ replacing it.
 Undoing a creation removes the element while it is still selected, so stale IDs
 are pruned from the selection after every undo and redo.
 
+### Locking
+
+A locked element is scenery: clicks pass straight through it to whatever is
+behind, and a marquee ignores it. That is the point of the lock, and it is also
+a trap, because an element nothing can select is an element nothing can unlock.
+
+**Right-clicking is the way back.** Right-click resolves to the topmost unlocked
+element as usual, and only if there is none does it fall back to a locked one —
+so the scenery behaviour is unaffected, while a locked element is always exactly
+one right-click away.
+
+A locked element that has been selected this way:
+
+- draws a **dashed** selection frame with no resize or rotate handles;
+- cannot be moved, nudged, resized, rotated, restyled or deleted;
+- shows a style panel collapsed to a single **Unlock** button.
+
+Unlocking is the one edit a locked element accepts.
+
 ## Modifiers during a drag
 
 | Modifier | Effect |

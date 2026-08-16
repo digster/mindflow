@@ -83,8 +83,19 @@ export class Actions {
     this.store.clearSelection();
   }
 
+  /**
+   * The part of the selection that may still be edited.
+   *
+   * A locked element can be selected — right-clicking one is how it is reached
+   * in order to unlock it — so every mutating action has to exclude it rather
+   * than assume the selection is fair game.
+   */
+  private editableSelection(): MindflowElement[] {
+    return this.store.selectedElements().filter((element) => !element.locked);
+  }
+
   deleteSelection(): void {
-    const ids = this.store.selectedIds();
+    const ids = this.editableSelection().map((element) => element.id);
     if (ids.length === 0) return;
     this.store.execute(deleteElements(this.store.document, ids));
     this.store.clearSelection();
@@ -237,7 +248,7 @@ export class Actions {
 
   /** Moves the selection, re-routing any connectors bound to it. */
   nudge(dx: number, dy: number, large = false): void {
-    const ids = this.store.selectedIds();
+    const ids = this.editableSelection().map((element) => element.id);
     if (ids.length === 0) return;
     const step = large ? NUDGE_STEP_LARGE : NUDGE_STEP;
 
@@ -269,7 +280,32 @@ export class Actions {
     this.store.execute(
       updateElements(this.store.document, selected.map((el) => el.id), (element) => ({ ...element, locked: lock }), lock ? 'Lock' : 'Unlock'),
     );
-    if (lock) this.store.clearSelection();
+    if (!lock) return;
+
+    // Locking drops the selection, because a locked element is scenery and
+    // clicking it goes straight through. That leaves right-click as the only way
+    // back to it, which nothing on screen would otherwise reveal — so say so
+    // once, at the exact moment the knowledge becomes necessary.
+    this.store.clearSelection();
+    this.options.notify('Locked — right-click to select it again and unlock.');
+  }
+
+  /**
+   * Unlocks the selection.
+   *
+   * Separate from {@link toggleLock} because a mixed selection means opposite
+   * things to the two: toggling locks everything, while the panel's Unlock
+   * button must always unlock, whatever else is selected alongside.
+   */
+  unlock(): void {
+    const ids = this.store
+      .selectedElements()
+      .filter((element) => element.locked)
+      .map((element) => element.id);
+    if (ids.length === 0) return;
+    this.store.execute(
+      updateElements(this.store.document, ids, (element) => ({ ...element, locked: false }), 'Unlock'),
+    );
   }
 
   align(edge: 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom'): void {

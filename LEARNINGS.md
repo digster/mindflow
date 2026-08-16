@@ -67,11 +67,69 @@ positions.
 2. **Identical font stacks** on both sides — `FONT_STACKS` is shared.
 3. **A fixed `0.8em` baseline offset**, not `textBaseline = 'middle'`. `middle` is
    defined against font-specific metrics and drifts between typefaces; a fixed
-   offset is stable whichever font actually resolves.
+   offset is stable whichever font actually resolves, which is what lets
+   `docs/07-rendering.md` specify baseline placement without font metrics.
+4. **The editor corrects itself onto that offset** — see the next entry. Sharing
+   a font stack is not enough, because the two engines *place* a baseline by
+   different rules.
 
 Positioning the editor by its **centre** (with `transform-origin` at the centre)
 rather than its corner means scale and rotate leave it fixed, so no trigonometry
 is needed and nothing drifts as the angle changes.
+
+---
+
+## A `<textarea>` does not put its baseline where the canvas does
+
+**Symptom:** while typing, the text sits noticeably low in its box and looks
+clipped by the editor outline; the instant you finish, it jumps back up and looks
+right. Worse at larger font sizes, and worst on a tight, top-aligned `text`
+element where the box hugs the glyphs.
+
+**Cause:** the two engines place a baseline by different rules, and sharing a font
+stack does nothing about it.
+
+| | First baseline, from the top of the line box |
+|---|---|
+| Canvas (and `docs/07-rendering.md`) | `fontSize × 0.8` |
+| CSS | `half-leading + ascent`, i.e. `(lineHeightPx − (ascent + descent)) / 2 + ascent` |
+
+For the default 20px sans that is 16px against 20px — **4px, a fifth of the em**.
+The CSS value is font-specific, so it cannot be predicted from the document alone.
+
+**Fix:** `ui/textEditor.ts` measures the CSS baseline for the typography in use
+(a zero-height `inline-block` at `vertical-align: baseline` sits exactly on it —
+there is no API for this) and folds the difference into the same `padding-top`
+that already emulates vertical alignment. Cached per typography, because it forces
+layout and runs on every keystroke.
+
+**The part worth remembering:** padding cannot be negative, and the correction is
+normally *upward*. Where there is padding to give back — a sticky, a label — it is
+absorbed and the editor's outline stays exactly on the element. Where there is
+none — top-aligned text with zero padding — the remainder has to become a
+`translateY` on the editor itself, appended **after** `scale()` so it is read in
+scene units and rotates with the element.
+
+Do not "simplify" this by deriving the offset from canvas `fontBoundingBoxAscent`
+/ `Descent`. It agrees on Chrome today, but the number has to match what the
+browser's own line-box algorithm actually did, and measuring is the only way to
+be sure of that.
+
+---
+
+## The text editor focuses a frame late, and tests must wait for it
+
+`TextEditor.open` calls `focus()` inside a `requestAnimationFrame`, so the browser
+does not scroll the page to reach a textarea that has not been positioned yet.
+The cost is that focus lands one frame after the click.
+
+A test that clicks and immediately types loses the leading keystrokes — and they
+do not vanish quietly, because the canvas still has focus and **letters are tool
+shortcuts** there. `page.keyboard.type('Baseline')` produced the text `eline`
+*and* silently switched tools partway through.
+
+Always `await expect(page.locator('.mf-text-editor')).toBeFocused()` before
+typing. No human types inside 16ms, so this is a test-harness concern only.
 
 ---
 
@@ -103,6 +161,38 @@ making selection feel right.
 
 The default style *is* unfilled, so this is the common case. When writing tests,
 either grab the outline or give the shape a fill first.
+
+This also makes an unfilled rectangle a **bad fixture for any test about
+click-through**: it is click-through already, so the test passes without proving
+anything. Use a sticky, or set a fill.
+
+---
+
+## Click-through needs a deliberate way back, or it is a one-way door
+
+**Symptom:** an element, once locked, could never be unlocked. Nothing on screen
+could reach it again.
+
+**Cause:** three separate correct-looking decisions composed into a trap.
+`elementAt` and `elementsInBox` skip locked elements so a locked background
+behaves like scenery; `selectAll` skips them for the same reason; and `toggleLock`
+clears the selection on locking, because what it just locked is now scenery. Each
+is defensible. Together they left no path to the Unlock button, which only ever
+appears for a selection.
+
+**Fix:** right-click falls back to a locked hit when no unlocked element is under
+the pointer. Ordinary clicks are untouched, so the scenery behaviour survives
+intact, and the fallback only fires where nothing else wants the event.
+
+**The general lesson:** any rule of the form "X is invisible to the pointer" needs
+a named, tested escape hatch, and the escape hatch has to be reachable *without*
+the thing it unlocks. Ask "how does the user undo this?" of every state that
+removes an affordance — the answer is not allowed to be "they can't".
+
+Making a locked element selectable also means every mutating path has to exclude
+it, since the selection is no longer guaranteed editable: gestures, `deleteSelection`,
+`nudge`, and the style panel all filter on `locked` now. `canTransform` in
+`render/overlay.ts` is the shared predicate.
 
 ---
 

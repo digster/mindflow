@@ -32,7 +32,14 @@ import type {
 import type { RenderContext } from '../model/registry.ts';
 import { drawElement } from '../model/registry.ts';
 import { clamp, degToRad, unionAABB } from '../model/geometry.ts';
-import { FONT_STACKS, dashPattern, hasFill, hasStroke, layoutText } from './shapes/shared.ts';
+import {
+  BASELINE_RATIO,
+  FONT_STACKS,
+  dashPattern,
+  hasFill,
+  hasStroke,
+  layoutText,
+} from './shapes/shared.ts';
 
 export interface ExportOptions {
   /** Export only these elements. Defaults to everything visible. */
@@ -227,9 +234,10 @@ function textToSvg(
 
   const spans = metrics.lines
     .map((line, index) => {
-      // The same 0.8em baseline offset the canvas renderer uses, so exported
-      // text sits exactly where it does on screen.
-      const y = box.padding + offset + index * metrics.lineHeightPx + style.fontSize * 0.8;
+      // The same baseline offset the canvas renderer uses, so exported text sits
+      // exactly where it does on screen.
+      const y =
+        box.padding + offset + index * metrics.lineHeightPx + style.fontSize * BASELINE_RATIO;
       return `<tspan x="${round(x)}" y="${round(y)}">${escapeXml(line)}</tspan>`;
     })
     .join('');

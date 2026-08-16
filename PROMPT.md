@@ -44,3 +44,15 @@ Four options were presented and chosen:
 Delivered: the full application, the `docs/` contract, a JSON Schema with
 examples, 183 unit/contract tests and 23 end-to-end tests against the built
 artifact.
+
+---
+
+## 2026-08-15 — Two bug reports
+
+> * While typing text (cursor is blinking and active) the text looks weird, but
+>   once the typing mode is exited, it looks normal.
+> * Objects once locked can't be selected and unlocked again.
+
+Both fixed. The first was a baseline mismatch between the canvas renderer and the
+DOM text editor; the second was a one-way door created by three individually
+reasonable decisions about locked elements.

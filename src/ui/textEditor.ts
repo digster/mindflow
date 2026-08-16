@@ -30,13 +30,18 @@
  *      centre, matching the format's rotation rule, and the element is placed by
  *      its centre rather than its corner — see {@link position}.
  *
+ *   4. THE BASELINE IS CORRECTED, NOT ASSUMED. The two engines place a baseline
+ *      by different rules — CSS at `half-leading + font ascent`, the canvas at a
+ *      flat `BASELINE_RATIO` ems — so the editor measures the CSS baseline and
+ *      shifts itself onto the canvas's. See {@link applyTextOffset}.
+ *
  * See `LEARNINGS.md` for the failure modes this replaced.
  */
 
 import type { MindflowElement, StickyElement, TextElement } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
 import { getDefinition } from '../model/registry.ts';
-import { FONT_STACKS, layoutText } from '../render/shapes/shared.ts';
+import { BASELINE_RATIO, FONT_STACKS, layoutText } from '../render/shapes/shared.ts';
 import { measureTextElement } from '../render/shapes/text.ts';
 import { defaultLabel } from '../model/defaults.ts';
 import { sceneToScreen } from '../model/geometry.ts';
@@ -80,6 +85,52 @@ function editingStyleOf(element: MindflowElement): EditingStyle | null {
   }
 
   return null;
+}
+
+/**
+ * Distance from the top of a CSS line box down to its first baseline, in scene
+ * units, keyed by the typography that produced it.
+ *
+ * There is no API that reports this, so it is measured: a zero-sized
+ * `inline-block` with `vertical-align: baseline` sits exactly on the baseline,
+ * and its offset from the top of the line box is the number.
+ *
+ * Measured rather than derived from canvas `fontBoundingBox*` metrics on
+ * purpose. The value has to match what *this* browser's line-box algorithm
+ * actually did with the font that actually resolved — predicting it would put
+ * the correction one browser quirk away from being wrong, and being wrong here
+ * is the bug this exists to fix.
+ *
+ * The cache matters: {@link TextEditor.position} runs on every keystroke, and a
+ * probe forces synchronous layout. Distinct typographies are few.
+ */
+const baselineCache = new Map<string, number>();
+
+function cssBaselineOffset(style: EditingStyle): number {
+  const key = `${style.fontFamily}|${style.fontSize}|${style.fontWeight}|${style.lineHeight}`;
+  const cached = baselineCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const probe = el('div', { 'aria-hidden': 'true' });
+  probe.style.cssText =
+    'position:absolute;top:0;left:0;visibility:hidden;pointer-events:none;white-space:pre;';
+  probe.style.fontFamily = FONT_STACKS[style.fontFamily];
+  probe.style.fontSize = `${style.fontSize}px`;
+  probe.style.fontWeight = String(style.fontWeight);
+  probe.style.lineHeight = String(style.lineHeight);
+
+  const marker = el('span');
+  marker.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline;';
+  // A character alongside the marker so the line box is the one a real line of
+  // text would produce, not one shaped only by the strut.
+  probe.append('x', marker);
+
+  document.body.append(probe);
+  const offset = marker.getBoundingClientRect().top - probe.getBoundingClientRect().top;
+  probe.remove();
+
+  baselineCache.set(key, offset);
+  return offset;
 }
 
 export class TextEditor {
@@ -175,26 +226,49 @@ export class TextEditor {
     css.width = `${element.width}px`;
     css.height = `${element.height}px`;
     css.transformOrigin = `${element.width / 2}px ${element.height / 2}px`;
+
+    // Whatever part of the vertical offset padding cannot express is applied as
+    // a translation, appended AFTER the scale so that it is read in the
+    // element's own unscaled, unrotated axes — i.e. in scene units.
+    const residual = this.applyTextOffset(element);
     css.transform =
       `translate(${centerScreen.x - element.width / 2}px, ${centerScreen.y - element.height / 2}px) ` +
-      `rotate(${element.angle}deg) scale(${viewport.zoom})`;
-
-    this.applyVerticalAlignment(element);
+      `rotate(${element.angle}deg) scale(${viewport.zoom})` +
+      (residual === 0 ? '' : ` translateY(${residual}px)`);
   }
 
   /**
-   * Emulates vertical centring with padding.
+   * Places the text block vertically, so the DOM's first baseline lands exactly
+   * on the canvas's.
    *
-   * A `<textarea>` has no vertical-align, so the top padding is computed as the
-   * leftover space above the wrapped text. The canvas does the same arithmetic in
-   * `drawTextBlock`, which is what keeps the two aligned.
+   * Two corrections fold into one number:
+   *
+   *   1. VERTICAL ALIGNMENT. A `<textarea>` has no `vertical-align`, so the
+   *      space above the block has to be padding. `drawTextBlock` computes the
+   *      same offset.
+   *   2. BASELINE. CSS puts the first baseline at `half-leading + ascent`, which
+   *      is font-specific; the canvas puts it at a flat `BASELINE_RATIO` ems.
+   *      Left alone the two disagree — by 4px for the default 20px sans, a fifth
+   *      of the font size — and the text visibly drops the instant editing
+   *      starts and jumps back when it ends.
+   *
+   * Returns the part that could not be expressed as padding. Padding cannot be
+   * negative, and correcting the baseline usually means moving text *up*: for
+   * top-aligned text with no padding there is no room above it to give back. The
+   * caller translates the whole editor by the remainder instead, which shifts
+   * its focus outline by the same fifth of an em — invisible on the tight box
+   * around a text element, and the padded cases never reach this path.
    */
-  private applyVerticalAlignment(element: MindflowElement): void {
+  private applyTextOffset(element: MindflowElement): number {
     const style = editingStyleOf(element);
-    if (!style || style.verticalAlign === 'top') return;
+    if (!style) return 0;
 
+    // Mirror the canvas: an autoWidth text element never wraps, so it must be
+    // measured unwrapped here too or the line count — and with it the block
+    // height this offset is derived from — comes out different.
+    const noWrap = element.type === 'text' && (element as TextElement).autoWidth;
     const metrics = layoutText(this.element.value, {
-      maxWidth: Math.max(element.width - style.padding * 2, 1),
+      maxWidth: noWrap ? 0 : Math.max(element.width - style.padding * 2, 1),
       fontFamily: style.fontFamily,
       fontSize: style.fontSize,
       fontWeight: style.fontWeight,
@@ -203,8 +277,13 @@ export class TextEditor {
 
     const available = element.height - style.padding * 2;
     const free = Math.max(available - metrics.height, 0);
-    const offset = style.verticalAlign === 'middle' ? free / 2 : free;
-    this.element.style.paddingTop = `${style.padding + offset}px`;
+    const align =
+      style.verticalAlign === 'middle' ? free / 2 : style.verticalAlign === 'bottom' ? free : 0;
+    const baseline = style.fontSize * BASELINE_RATIO - cssBaselineOffset(style);
+
+    const wanted = style.padding + align + baseline;
+    this.element.style.paddingTop = `${Math.max(wanted, 0)}px`;
+    return Math.min(wanted, 0);
   }
 
   /**

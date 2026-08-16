@@ -28,6 +28,15 @@ async function drag(page: Page, from: [number, number], to: [number, number], st
   await page.mouse.up();
 }
 
+/** How many elements are currently selected. */
+async function selectedCount(page: Page) {
+  return page.evaluate(
+    () =>
+      (window as unknown as { mindflow: { store: { selectedIds(): string[] } } }).mindflow.store.selectedIds()
+        .length,
+  );
+}
+
 /** The current document, read from the live store. */
 async function getDocument(page: Page) {
   return page.evaluate(() => {
@@ -233,6 +242,239 @@ test.describe('selection and editing', () => {
     await page.keyboard.press('Control+Shift+g');
     doc = await getDocument(page);
     expect(doc.elements[0]?.groupId).toBeNull();
+  });
+});
+
+test.describe('locking', () => {
+  /**
+   * Draws one sticky and locks it, leaving nothing selected.
+   *
+   * A sticky rather than a rectangle because it is filled, and only a filled
+   * shape is solid to a click on its interior — an unfilled rectangle is
+   * click-through anyway, which would make "the lock made it click-through"
+   * pass for entirely the wrong reason.
+   */
+  async function drawAndLock(page: Page) {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [300, 250]);
+    await page.evaluate(() => {
+      const mf = (window as unknown as { mindflow: { actions: { toggleLock(): void } } }).mindflow;
+      mf.actions.toggleLock();
+    });
+  }
+
+  test('a locked element is click-through and cannot be marquee-selected', async ({ page }) => {
+    await drawAndLock(page);
+
+    await drag(page, [200, 175], [260, 200]); // Straight across its interior.
+    await drag(page, [50, 50], [400, 350]); // A marquee swallowing the whole thing.
+
+    const doc = await getDocument(page);
+    expect(await selectedCount(page)).toBe(0);
+    expect(doc.elements[0]?.x).toBeCloseTo(100, 0); // Unmoved.
+  });
+
+  test('right-click selects a locked element so it can be unlocked again', async ({ page }) => {
+    await drawAndLock(page);
+
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 200, box.y + 175, { button: 'right' });
+    expect(await selectedCount(page)).toBe(1);
+
+    // The panel collapses to the one action a locked element still accepts.
+    await expect(page.locator('.mf-style-panel')).toBeVisible();
+    await expect(page.locator('.mf-style-panel .mf-swatch')).toHaveCount(0);
+
+    await page.locator('.mf-style-panel .mf-button', { hasText: 'Unlock' }).click();
+    expect((await getDocument(page)).elements[0]?.locked).toBe(false);
+
+    // And it is a normal element again.
+    await page.keyboard.press('Escape');
+    await drag(page, [200, 175], [200, 275]);
+    expect((await getDocument(page)).elements[0]?.y).toBeCloseTo(200, 0);
+  });
+
+  test('a selected locked element still cannot be moved, nudged or deleted', async ({ page }) => {
+    await drawAndLock(page);
+
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 200, box.y + 175, { button: 'right' });
+
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Delete');
+    // Drag from the left edge, where an unlocked shape would offer a handle.
+    await drag(page, [100, 130], [100, 330]);
+
+    const doc = await getDocument(page);
+    expect(doc.elements).toHaveLength(1);
+    expect(doc.elements[0]?.x).toBeCloseTo(100, 0);
+    expect(doc.elements[0]?.y).toBeCloseTo(100, 0);
+  });
+});
+
+test.describe('text editing', () => {
+  /**
+   * Waits for the editor to take focus before typing.
+   *
+   * `TextEditor.open` focuses inside a `requestAnimationFrame`, so it deliberately
+   * lands a frame after the click. Typing before then loses the leading keystrokes
+   * — and worse, feeds them to the canvas, where letters are tool shortcuts.
+   */
+  async function typeIntoEditor(page: Page, text: string) {
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type(text);
+  }
+
+  /**
+   * Gap, in screen pixels, between where the open editor puts its first
+   * baseline and where the canvas would draw it.
+   *
+   * The two sides are derived independently on purpose. The canvas side is the
+   * formula published in `docs/07-rendering.md`, restated here against the
+   * element's own stored geometry. The DOM side is read back off the live
+   * editor — its real bounding box, its real `padding-top`, and a probe for
+   * where CSS actually placed the baseline in a line box of that typography.
+   * Neither side asks the editor what it thinks it did, so dropping the
+   * correction makes them disagree rather than agreeing on a wrong answer.
+   *
+   * Assumes a single line of text, which is all these tests type.
+   */
+  async function baselineGap(page: Page) {
+    return page.evaluate(() => {
+      type Store = {
+        viewport: { x: number; y: number; zoom: number };
+        document: { elements: Record<string, never>[] };
+        getState(): { editingId: string | null };
+      };
+      const store = (window as unknown as { mindflow: { store: Store } }).mindflow.store;
+      const { y: viewportY, zoom } = store.viewport;
+      const editingId = store.getState().editingId;
+      const element = store.document.elements.find(
+        (candidate) => (candidate as unknown as { id: string }).id === editingId,
+      ) as unknown as {
+        y: number;
+        height: number;
+        type: string;
+        padding?: number;
+        verticalAlign?: string;
+        label?: { padding: number; verticalAlign: string } | null;
+      };
+
+      const editor = document.querySelector('.mf-text-editor') as HTMLTextAreaElement;
+      const style = getComputedStyle(editor);
+      const fontSize = parseFloat(style.fontSize);
+      const lineHeightPx = parseFloat(style.lineHeight);
+
+      // Where CSS actually put the baseline in this typography's line box. A
+      // zero-height inline-block aligned to the baseline sits exactly on it.
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:absolute;top:0;left:0;visibility:hidden;white-space:pre;';
+      probe.style.font = style.font;
+      probe.style.lineHeight = style.lineHeight;
+      const marker = document.createElement('span');
+      marker.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline;';
+      probe.append('x', marker);
+      document.body.append(probe);
+      const cssBaseline = marker.getBoundingClientRect().top - probe.getBoundingClientRect().top;
+      probe.remove();
+
+      // docs/07-rendering.md: padding + verticalAlign offset + fontSize × 0.8.
+      const padding =
+        element.type === 'sticky' ? (element.padding ?? 0) : (element.label?.padding ?? 0);
+      const verticalAlign = element.verticalAlign ?? element.label?.verticalAlign ?? 'top';
+      const free = Math.max(element.height - padding * 2 - lineHeightPx, 0);
+      const align = verticalAlign === 'middle' ? free / 2 : verticalAlign === 'bottom' ? free : 0;
+
+      const canvasTop = document.querySelector('.mf-canvas')!.getBoundingClientRect().top;
+      const canvasBaseline =
+        canvasTop + (element.y - viewportY + padding + align + fontSize * 0.8) * zoom;
+
+      const domBaseline =
+        editor.getBoundingClientRect().top + (parseFloat(style.paddingTop) + cssBaseline) * zoom;
+
+      return { gap: domBaseline - canvasBaseline, fontSize, zoom };
+    });
+  }
+
+  test('the editor sits on the same baseline the canvas draws', async ({ page }) => {
+    await page.locator('[data-tool="text"]').click();
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 200, box.y + 200);
+    await typeIntoEditor(page, 'Baseline');
+
+    const { gap, fontSize, zoom } = await baselineGap(page);
+
+    // Sub-pixel is the bar: anything larger reads as the text jumping the moment
+    // editing starts. Uncorrected, this gap is about a fifth of an em.
+    expect(Math.abs(gap)).toBeLessThan(0.5);
+    expect(fontSize).toBeGreaterThan(0);
+    expect(zoom).toBe(1);
+  });
+
+  test('the baseline still agrees for a padded sticky', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [400, 300]);
+    await page.keyboard.press('Escape');
+
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 250, box.y + 200);
+    await typeIntoEditor(page, 'Note');
+
+    expect(Math.abs((await baselineGap(page)).gap)).toBeLessThan(0.5);
+  });
+
+  test('the baseline still agrees when zoomed in', async ({ page }) => {
+    await page.locator('[data-tool="text"]').click();
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 200, box.y + 200);
+    await typeIntoEditor(page, 'Zoomed');
+    await page.keyboard.press('Escape');
+
+    // Zoom to fit: with one small element on the board this lands well above
+    // 1×, which is the point — the correction is in scene units and must survive
+    // being scaled.
+    await page.keyboard.press('Control+1');
+
+    // The element is no longer under the point it was created at. Ask the store
+    // where it went.
+    const centre = await page.evaluate(() => {
+      const store = (
+        window as unknown as {
+          mindflow: {
+            store: {
+              viewport: { x: number; y: number; zoom: number };
+              document: { elements: { x: number; y: number; width: number; height: number }[] };
+            };
+          };
+        }
+      ).mindflow.store;
+      const { x, y, zoom } = store.viewport;
+      const element = store.document.elements[0]!;
+      return {
+        x: (element.x + element.width / 2 - x) * zoom,
+        y: (element.y + element.height / 2 - y) * zoom,
+      };
+    });
+    await page.mouse.dblclick(box.x + centre.x, box.y + centre.y);
+
+    const { gap, zoom } = await baselineGap(page);
+    expect(zoom).toBeGreaterThan(1);
+    // The correction is in scene units, so the tolerance scales with zoom.
+    expect(Math.abs(gap)).toBeLessThan(0.5 * zoom);
+  });
+
+  test('committed text keeps the geometry the editor was showing', async ({ page }) => {
+    await page.locator('[data-tool="text"]').click();
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 200, box.y + 200);
+    await typeIntoEditor(page, 'Baseline');
+    await page.keyboard.press('Escape');
+
+    const doc = await getDocument(page);
+    const text = doc.elements[0] as { text: string; width: number; height: number };
+    expect(text.text).toBe('Baseline');
+    expect(text.width).toBeGreaterThan(0);
+    expect(text.height).toBeGreaterThan(0);
   });
 });
 

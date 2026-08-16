@@ -59,6 +59,15 @@ export class StylePanel {
     this.element.hidden = false;
     clear(this.element);
 
+    // A locked element accepts exactly one edit: being unlocked. Collapsing the
+    // panel to that single action is both the honest UI — every other control
+    // would silently do nothing — and the affordance that makes unlocking
+    // findable at all, since a locked element has no handles to hint at it.
+    if (selected.some((element) => element.locked)) {
+      this.element.append(this.lockedNotice(selected.length));
+      return;
+    }
+
     // Union of capabilities: a control appears if ANY selected element can use
     // it, and the update simply skips elements that cannot.
     const capabilities = selected.map((element) => capabilitiesOf(element));
@@ -190,6 +199,30 @@ export class StylePanel {
     if (ids.length === 0) return;
     this.store.execute(
       updateElements(this.store.document, ids, (element) => ({ ...element, ...patch }) as MindflowElement, 'Change connector'),
+    );
+  }
+
+  /** The whole panel when the selection is locked: an explanation and a way out. */
+  private lockedNotice(count: number): HTMLElement {
+    return this.section(
+      'Locked',
+      el('p', {
+        class: 'mf-style-note',
+        text:
+          count > 1
+            ? 'These elements are locked. Unlock them to move or restyle them.'
+            : 'This element is locked. Unlock it to move or restyle it.',
+      }),
+      el(
+        'button',
+        {
+          class: 'mf-button',
+          type: 'button',
+          onclick: () => this.actions.unlock(),
+        },
+        icon(ICONS.lock, 15),
+        el('span', { text: 'Unlock' }),
+      ),
     );
   }
 

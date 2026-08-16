@@ -41,6 +41,7 @@ import {
   handleAt,
   handleCursor,
   canRotate,
+  canTransform,
   selectionFrame,
 } from '../render/overlay.ts';
 import {
@@ -246,12 +247,16 @@ export class InteractionController {
    *      sitting on top of it
    *   2. an element        — select and prepare to move
    *   3. empty canvas      — marquee
+   *
+   * A locked element can be selected (see {@link onContextMenu}) but never
+   * transformed, so a selection containing one offers no handles and starts no
+   * move — the only thing it accepts is being unlocked.
    */
   private beginSelectGesture(event: PointerEvent, scene: Point): void {
     const { store } = this.options;
     const { zoom } = store.viewport;
     const selected = store.selectedElements();
-    const frame = selectionFrame(selected);
+    const frame = canTransform(selected) ? selectionFrame(selected) : null;
 
     if (frame) {
       const handle = handleAt(frame, scene, zoom, canRotate(selected));
@@ -293,7 +298,7 @@ export class InteractionController {
     // Move whatever is selected after the click resolved, which may be a whole
     // group even though only one member was hit.
     const moving = store.selectedElements();
-    if (moving.length > 0) {
+    if (moving.length > 0 && canTransform(moving)) {
       this.gesture = { kind: 'move', origin: scene, originals: moving.map((el) => ({ ...el })) };
     }
   }
@@ -801,7 +806,16 @@ export class InteractionController {
     event.preventDefault();
     const { store } = this.options;
     const scene = this.scenePoint(event);
-    const hit = elementAt(store.document, scene, store.viewport.zoom);
+    const { zoom } = store.viewport;
+
+    // Locked elements are click-through by design — that is what makes a locked
+    // background behave like scenery. Taken alone it is a trap: once locked, an
+    // element can never be picked again, and so can never be unlocked. Falling
+    // back to a locked hit here is the way out, and it costs the scenery
+    // behaviour nothing because a plain click still passes straight through.
+    const hit =
+      elementAt(store.document, scene, zoom) ??
+      elementAt(store.document, scene, zoom, { includeLocked: true });
     if (hit && !store.isSelected(hit.id)) store.setSelection([hit.id]);
   };
 
@@ -878,7 +892,7 @@ export class InteractionController {
 
     if (scene) {
       const selected = store.selectedElements();
-      const frame = selectionFrame(selected);
+      const frame = canTransform(selected) ? selectionFrame(selected) : null;
       if (frame) {
         const handle = handleAt(frame, scene, store.viewport.zoom, canRotate(selected));
         if (handle) {

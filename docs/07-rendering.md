@@ -144,11 +144,21 @@ baseline = padding + offset + lineIndex × (fontSize × lineHeight) + fontSize �
 
 The `0.8 em` term is a fixed approximation of the cap-height baseline offset.
 
-**Why fixed rather than measured?** Canvas's `textBaseline = "middle"` is defined
-against font-specific metrics and drifts noticeably between typefaces. MindFlow
-edits text in a real `<textarea>` overlaid on the canvas, and the two layout
-engines must agree exactly or text visibly jumps when editing starts and stops. A
-fixed offset is stable regardless of which font actually resolves.
+**Why fixed rather than measured?** So that this document is sufficient. Canvas's
+`textBaseline = "middle"` is defined against font-specific metrics and drifts
+noticeably between typefaces, and the font that `sans` resolves to differs across
+machines. A fixed offset lets a renderer place the baseline knowing only what is
+written here.
+
+> **Note for implementers overlaying HTML on the canvas.** CSS does *not* place a
+> baseline at `0.8 em`. It places the first baseline of a line box at
+> `half-leading + font ascent`, where `half-leading = (lineHeightPx − (ascent +
+> descent)) / 2` — a font-specific value, typically around `1.0 em` for the
+> default stack, so about a fifth of an em lower than the rule above. Any DOM
+> text meant to sit on top of MindFlow's rendering has to measure that offset and
+> correct for the difference; MindFlow's own text editor does exactly this, in
+> `src/ui/textEditor.ts`. Skipping it makes text drop by a fifth of an em the
+> moment editing begins.
 
 ### Horizontal placement
 

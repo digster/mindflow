@@ -312,6 +312,7 @@ export const SHORTCUT_REFERENCE: { group: string; items: [string, string][] }[] 
       ['Shift', 'Constrain (axis / ratio / 45°)'],
       ['Alt/Option', 'From centre, or disable snapping'],
       ['Shift + click', 'Add to selection'],
+      ['Right-click', 'Select a locked element to unlock it'],
     ],
   },
 ];

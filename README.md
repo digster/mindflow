@@ -165,6 +165,11 @@ list.
 | `Cmd` `0` / `Cmd` `1` | Reset zoom / Zoom to fit |
 | `Cmd` `S` / `Cmd` `O` / `Cmd` `Shift` `E` | Save / Open / Export |
 | `Shift` / `Alt` while dragging | Constrain / From centre, or suspend snapping |
+| Right-click | Select a locked element, so it can be unlocked |
+
+A locked element is scenery — clicks pass through it and a marquee ignores it.
+Right-click is how you get one back: it selects the locked element and the style
+panel collapses to a single **Unlock** button.
 
 ## Development
 
