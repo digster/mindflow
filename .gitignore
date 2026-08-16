@@ -11,6 +11,7 @@ test-results/
 playwright-report/
 blob-report/
 .playwright/
+.playwright-mcp/
 
 # Screenshots produced during browser testing are always cleaned up after a run.
 # This is a backstop so a crashed run cannot leak them into a commit.

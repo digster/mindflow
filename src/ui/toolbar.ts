@@ -156,6 +156,13 @@ export class Toolbar {
       el(
         'div',
         { class: 'mf-topbar-group' },
+        // Deliberately the one file button with no shortcut in its tooltip.
+        // Cmd/Ctrl+N is reserved by every major browser for "new window", so the
+        // keydown usually never reaches the page and `preventDefault` never gets
+        // a chance to run. The handler stays for the contexts where it does fire
+        // (installed/standalone windows), but advertising a keystroke that most
+        // users will watch open a browser window instead would be a lie.
+        this.iconButton('newBoard', 'New board', this.callbacks.onNew),
         this.iconButton('open', `Open — ${MOD_KEY}O`, this.callbacks.onOpen),
         this.iconButton('save', `Save — ${MOD_KEY}S`, this.callbacks.onSave),
         this.iconButton('download', `Export — ${MOD_KEY}⇧E`, this.callbacks.onExport),

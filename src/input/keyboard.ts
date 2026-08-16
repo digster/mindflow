@@ -95,6 +95,9 @@ export function installKeyboardShortcuts(options: KeyboardOptions): () => void {
       options.onExport();
       return;
     }
+    // Kept for standalone/installed windows, where the browser does hand this
+    // keydown to the page. In an ordinary tab it never arrives — Cmd/Ctrl+N is
+    // reserved for "new window" — which is why the toolbar carries a New button.
     if (primary && key === 'n') {
       event.preventDefault();
       options.onNew();
@@ -302,7 +305,7 @@ export const SHORTCUT_REFERENCE: { group: string; items: [string, string][] }[] 
       ['Cmd/Ctrl + S', 'Save'],
       ['Cmd/Ctrl + Shift + S', 'Save as'],
       ['Cmd/Ctrl + O', 'Open'],
-      ['Cmd/Ctrl + N', 'New board'],
+      ['Cmd/Ctrl + N', 'New board — if the browser allows it; use the toolbar otherwise'],
       ['Cmd/Ctrl + Shift + E', 'Export'],
     ],
   },

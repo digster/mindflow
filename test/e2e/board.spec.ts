@@ -628,6 +628,62 @@ test.describe('document integrity', () => {
   });
 });
 
+test.describe('new board', () => {
+  /** The board's identity, which a reset must replace rather than reuse. */
+  async function boardId(page: Page) {
+    return page.evaluate(
+      () => (window as unknown as { mindflow: { store: { document: { id: string } } } }).mindflow.store.document.id,
+    );
+  }
+
+  test('the top bar offers a New board button', async ({ page }) => {
+    // Cmd/Ctrl+N is swallowed by the browser in an ordinary tab, so this button
+    // is the only dependable way to start a blank board. Its absence would make
+    // the feature unreachable without leaving the app.
+    await expect(page.getByRole('button', { name: 'New board' })).toBeVisible();
+  });
+
+  test('resets a dirty board once the discard is confirmed', async ({ page }) => {
+    const before = await boardId(page);
+
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    const input = page.locator('.mf-board-name');
+    await input.fill('Sprint planning');
+    await input.press('Enter');
+
+    await page.getByRole('button', { name: 'New board' }).click();
+    await page.getByRole('button', { name: 'Discard' }).click();
+
+    const doc = await getDocument(page);
+    expect(doc.elements).toHaveLength(0);
+    expect(doc.meta.name).toBe('Untitled board');
+    // A fresh identity matters: reusing the id would make the new board
+    // overwrite the old one on the next Drive save.
+    expect(await boardId(page)).not.toBe(before);
+    await expect(page.locator('.mf-dirty-dot')).not.toHaveClass(/is-visible/);
+  });
+
+  test('keeps the board when the discard is cancelled', async ({ page }) => {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [250, 200]);
+
+    await page.getByRole('button', { name: 'New board' }).click();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+
+    expect((await getDocument(page)).elements).toHaveLength(1);
+  });
+
+  test('skips the prompt when there is nothing to lose', async ({ page }) => {
+    // A clean board has no unsaved work, so asking would be pure friction.
+    const before = await boardId(page);
+    await page.getByRole('button', { name: 'New board' }).click();
+
+    await expect(page.locator('dialog.mf-dialog')).toHaveCount(0);
+    expect(await boardId(page)).not.toBe(before);
+  });
+});
+
 test.describe('performance', () => {
   test('stays responsive with 2,000 elements', async ({ page }) => {
     // Viewport culling is the one optimisation implemented, and this is the

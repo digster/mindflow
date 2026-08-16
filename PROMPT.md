@@ -56,3 +56,20 @@ artifact.
 Both fixed. The first was a baseline mismatch between the canvas renderer and the
 DOM text editor; the second was a one-way door created by three individually
 reasonable decisions about locked elements.
+
+---
+
+## 2026-08-16 — New board discoverability
+
+> How do I create a new blank board? Do not change anything in the repo yet.
+
+Answered from the source: `Cmd/Ctrl+N` → `Application.newBoard()` → `store.reset()`.
+The investigation turned up two things worth acting on — the top bar had no New
+button at all (`ToolbarCallbacks.onNew` was wired up but never rendered), and the
+shortcut is one browsers reserve for "new window", so it usually never reaches
+the page.
+
+> Yes, add it.
+
+Added the New board button to the top bar, plus the honest documentation of the
+shortcut's limits that the button's existence implies.

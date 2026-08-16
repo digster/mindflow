@@ -371,3 +371,26 @@ synthetic events for gesture tests.
 `points[0]` is `PointTuple | undefined`. It makes geometry code slightly noisier,
 and it has caught several real off-by-one errors in path handling. Guard or assert;
 do not disable it.
+
+---
+
+## `Cmd`/`Ctrl` + `N` never reaches the page in an ordinary browser tab
+
+**Symptom:** the "New board" shortcut appears to do nothing — or worse, opens a
+new browser window — even though `installKeyboardShortcuts` clearly handles it
+and calls `preventDefault()`.
+
+**Cause:** `Cmd`/`Ctrl` + `N` is reserved by Chrome, Safari and Firefox for "new
+window". Reserved shortcuts are handled by the browser chrome before the keydown
+is dispatched to the document, so the page's handler never runs and there is
+nothing to prevent. This is not something a web page can opt out of. The same is
+true of `Cmd+T` and `Cmd+W`; MindFlow already avoids those deliberately.
+
+It *does* fire in installed/standalone windows, where the browser has no tab UI
+to serve, which is why the handler is still worth keeping.
+
+**Consequence:** any file action bound to a reserved chord needs a visible
+control as well, or the feature is unreachable. `New board` lives in the top bar
+for exactly this reason, and its tooltip deliberately omits the shortcut hint
+that every other file button shows. Before binding a new `Cmd`-chord, check it
+against the browser's reserved list rather than assuming `preventDefault` wins.

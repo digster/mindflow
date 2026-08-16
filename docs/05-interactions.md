@@ -268,6 +268,12 @@ not switch tools.
 | `Cmd` + `N` | New board |
 | `Cmd` + `Shift` + `E` | Export |
 
+`Cmd`/`Ctrl` + `N` is the one shortcut that is not dependable: browsers reserve
+it for "new window" and generally never deliver the keydown to the page, so the
+handler cannot suppress it. It works in installed/standalone windows. Everywhere
+else, the **New board** button in the top bar is the reliable path — which is why
+that button exists even though every other file action is shortcut-first.
+
 Two rules govern shortcut handling:
 
 1. **Never steal a keystroke from a focused text field.** A user renaming a board

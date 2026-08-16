@@ -25,6 +25,7 @@ export const ICONS = {
   zoomOut: 'M11 4a7 7 0 100 14 7 7 0 000-14z M20 20l-4-4 M8 11h6',
   fit: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
   menu: 'M4 7h16M4 12h16M4 17h16',
+  newBoard: 'M14 4H6v16h12V10z M14 4v6h4 M12 13v5 M9.5 15.5h5',
   save: 'M5 4h11l3 3v13H5z M8 4v6h7V4 M8 20v-6h8v6',
   open: 'M4 6h6l2 2h8v10H4z',
   download: 'M12 4v11m0 0l-4-4m4 4l4-4 M5 19h14',
