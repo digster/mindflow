@@ -289,6 +289,12 @@ export class MindflowApp {
   // -------------------------------------------------------------------------
 
   private applyLoad(result: LoadResult, origin: BoardOrigin): void {
+    // An open editor must never outlive the document it was editing. Blur alone
+    // is not enough to rely on: whether clicking a toolbar button moves focus
+    // out of a textarea is a platform convention, not a guarantee — macOS
+    // browsers traditionally do not focus buttons on click. Left open, the
+    // editor floats over the incoming board still showing the old one's text.
+    this.textEditor.commit();
     this.images.clear();
     this.store.load(result, origin);
     this.images.sync(result.document);
@@ -306,6 +312,10 @@ export class MindflowApp {
   }
 
   private async newBoard(): Promise<void> {
+    // Before confirmDiscard, not after: a pending edit is part of the board
+    // being left, so it has to land before the user is asked whether losing the
+    // board's changes is acceptable. See applyLoad for why blur is not enough.
+    this.textEditor.commit();
     if (!(await this.confirmDiscard())) return;
     this.images.clear();
     this.store.reset();

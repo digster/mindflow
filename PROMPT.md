@@ -73,3 +73,11 @@ the page.
 
 Added the New board button to the top bar, plus the honest documentation of the
 shortcut's limits that the button's existence implies.
+
+> ok, look at the text-editor one.
+
+The suspected bug (a floating editor over the new board) did not reproduce in
+Chromium, but the investigation found a real one underneath: `TextEditor.commit`
+dirtied the board for edits that changed nothing, because `Store.execute` detects
+no-op commands by reference and `commit` always rebuilds the element. Fixed with
+a `touched` flag, plus a defensive editor close on both document-swap paths.

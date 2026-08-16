@@ -394,3 +394,26 @@ control as well, or the feature is unreachable. `New board` lives in the top bar
 for exactly this reason, and its tooltip deliberately omits the shortcut hint
 that every other file button shows. Before binding a new `Cmd`-chord, check it
 against the browser's reserved list rather than assuming `preventDefault` wins.
+
+---
+
+## `Store.execute` detects no-op commands by reference, not by value
+
+**Symptom:** a board goes dirty, and gains an undo step, after an interaction
+that changed nothing — double-clicking a shape and closing the editor without
+typing was enough. Users then get "Discard unsaved changes?" for changes they
+never made.
+
+**Cause:** `execute` bails out with `if (next === this.state.document) return
+false`, which only fires when `applyCommand` returns the very same object. Any
+command built from a rebuilt element — `{ ...element, text }` — produces a
+structurally identical element with a *new identity*, so the check passes it
+through as a real change.
+
+**Consequence:** the "did anything actually change?" decision cannot be pushed
+down into `execute`; a deep comparison there would cost more than it saves on the
+hot path. It belongs to the caller, which knows whether the user did anything.
+`TextEditor` tracks a `touched` flag set from `onInput`, and commits nothing when
+it is false. Any other UI that writes an element back wholesale on close needs
+the same guard — comparing values at commit time does **not** work, because the
+transient live-update has already written them into the document.

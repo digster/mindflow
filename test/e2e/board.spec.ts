@@ -49,6 +49,42 @@ async function getDocument(page: Page) {
   });
 }
 
+/** Which element the text editor is open on, if any. */
+async function editingId(page: Page) {
+  return page.evaluate(
+    () =>
+      (window as unknown as { mindflow: { store: { getState(): { editingId: string | null } } } }).mindflow.store
+        .getState().editingId,
+  );
+}
+
+/** Whether the board is carrying unsaved changes. */
+async function isDirty(page: Page) {
+  return page.evaluate(
+    () => (window as unknown as { mindflow: { store: { getState(): { dirty: boolean } } } }).mindflow.store.getState().dirty,
+  );
+}
+
+/**
+ * Puts the app in the state it is in just after opening a file: same content,
+ * no unsaved changes. Goes through `store.load`, the same call `applyLoad`
+ * makes, rather than reaching in and setting `dirty` — so a test that depends on
+ * a clean board depends on the real load path staying clean.
+ */
+async function markClean(page: Page) {
+  await page.evaluate(() => {
+    const mf = (
+      window as unknown as {
+        mindflow: { store: { document: unknown; load(result: unknown, origin: unknown): void } };
+      }
+    ).mindflow;
+    mf.store.load(
+      { document: mf.store.document, warnings: [], preserved: [] },
+      { kind: 'local', name: 'board.mindflow.json' },
+    );
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -463,6 +499,45 @@ test.describe('text editing', () => {
     expect(Math.abs(gap)).toBeLessThan(0.5 * zoom);
   });
 
+  test('opening and closing an editor without typing is not an edit', async ({ page }) => {
+    // `commit` rebuilds the element unconditionally, and `Store.execute` can
+    // only recognise a no-op by reference — so an untouched element used to
+    // dirty the board and push a phantom undo step. The visible symptom was
+    // being asked to discard unsaved changes after only double-clicking.
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [400, 300]);
+    await page.keyboard.press('Escape');
+    await markClean(page);
+
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 250, box.y + 200);
+    expect(await editingId(page)).not.toBeNull();
+    await page.keyboard.press('Escape');
+
+    expect(await editingId(page)).toBeNull();
+    expect(await isDirty(page)).toBe(false);
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { mindflow: { store: { history: { canUndo(): boolean } } } }).mindflow.store.history.canUndo(),
+      ),
+    ).toBe(false);
+  });
+
+  test('still commits when the text did change', async ({ page }) => {
+    // The guard above must not swallow real edits.
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [400, 300]);
+
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 250, box.y + 200);
+    await typeIntoEditor(page, 'Real edit');
+    await page.keyboard.press('Escape');
+
+    const doc = await getDocument(page);
+    expect((doc.elements[0] as { text: string }).text).toBe('Real edit');
+    expect(await isDirty(page)).toBe(true);
+  });
+
   test('committed text keeps the geometry the editor was showing', async ({ page }) => {
     await page.locator('[data-tool="text"]').click();
     const box = await canvasBox(page);
@@ -681,6 +756,34 @@ test.describe('new board', () => {
 
     await expect(page.locator('dialog.mf-dialog')).toHaveCount(0);
     expect(await boardId(page)).not.toBe(before);
+  });
+
+  test('closes an open text editor instead of leaving it floating', async ({ page }) => {
+    // The clean-board path is the one that bites: no confirm dialog appears, so
+    // nothing steals focus from the textarea, so its blur-to-commit never fires.
+    // The editor was left visible over the new blank board still showing the old
+    // board's text.
+    // A sticky, not a rectangle: an unfilled shape is not hit-testable through
+    // its middle, so a centre double-click would miss it.
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [400, 300]);
+    await page.keyboard.press('Escape');
+
+    // Opening the editor does not itself dirty the board, but typing into it
+    // would — and a dirty board gets a confirm dialog whose focus() closes the
+    // editor as a side effect, hiding the bug. So: load, then edit, do not type.
+    await markClean(page);
+
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 250, box.y + 200);
+    await expect(page.locator('.mf-text-editor')).toBeVisible();
+    expect(await editingId(page)).not.toBeNull();
+
+    await page.getByRole('button', { name: 'New board' }).click();
+
+    await expect(page.locator('.mf-text-editor')).toBeHidden();
+    expect(await editingId(page)).toBeNull();
+    expect((await getDocument(page)).elements).toHaveLength(0);
   });
 });
 

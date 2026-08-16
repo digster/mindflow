@@ -137,6 +137,14 @@ export class TextEditor {
   readonly element: HTMLTextAreaElement;
   private editingId: string | null = null;
   private committed = false;
+  /**
+   * Whether any keystroke actually reached the document this session.
+   *
+   * `commit` cannot infer this by comparing text: `onInput` has already written
+   * every keystroke into the document transiently, so by commit time the live
+   * element always matches what is in the textarea.
+   */
+  private touched = false;
 
   constructor(private readonly store: Store) {
     this.element = el('textarea', {
@@ -166,6 +174,7 @@ export class TextEditor {
 
     this.editingId = element.id;
     this.committed = false;
+    this.touched = false;
     this.store.setEditing(element.id);
 
     this.element.hidden = false;
@@ -299,6 +308,7 @@ export class TextEditor {
 
     const next = this.withText(element, this.element.value);
     this.store.execute(replaceElements(this.store.document, [next], 'Edit text', true), true);
+    this.touched = true;
     this.position(next);
   }
 
@@ -357,6 +367,13 @@ export class TextEditor {
     const element = this.store.document.elements.find((candidate) => candidate.id === id);
     this.store.setEditing(null);
     if (!element) return;
+
+    // Opening an editor and closing it again is not an edit. The write-back
+    // below always builds a fresh object, and `Store.execute` can only detect a
+    // no-op by reference — so an untouched element still marks the board dirty
+    // and pushes a phantom "Edit text" onto the undo stack. That surfaces as a
+    // "Discard unsaved changes?" prompt after merely double-clicking a shape.
+    if (!this.touched) return;
 
     const next = this.withText(element, text);
 
