@@ -141,8 +141,16 @@ export const MAX_ZOOM = 30;
 // Document
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_URL =
-  'https://digster.github.io/mindflow/docs/schema/mindflow-1.0.0.schema.json';
+/**
+ * Where the published schema for the version this build writes lives.
+ *
+ * Derived from `CURRENT_SCHEMA_VERSION` rather than written out, because it is
+ * stamped into every board MindFlow saves and nothing would have caught the two
+ * drifting apart: a version bump that forgot this line would ship files whose
+ * `$schema` pointed at the wrong document, silently and forever. The contract
+ * test now also asserts the file it names actually exists.
+ */
+export const SCHEMA_URL = `https://digster.github.io/mindflow/docs/schema/mindflow-${CURRENT_SCHEMA_VERSION}.schema.json`;
 
 declare const __APP_VERSION__: string;
 

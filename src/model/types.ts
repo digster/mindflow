@@ -137,13 +137,13 @@ export interface ElementStyle {
   fill: string;
   fillStyle: FillStyle;
   /**
-   * Hand-drawn jitter amount, 0..2. `0` renders clean geometric shapes and is
-   * the only value MindFlow currently produces.
+   * Hand-drawn jitter amount, 0..2. `0` renders clean geometric shapes.
    *
-   * This field exists in v1.0.0 on purpose despite being unimplemented: adding a
-   * field later is a breaking schema change for strict readers, whereas
-   * reserving it now costs nothing. Readers must accept and preserve non-zero
-   * values even if they render everything as `0`.
+   * Reserved but unwritten in 1.0.0; rendered as of 1.1.0. No seed accompanies
+   * it — the jitter is seeded from the element's `id`, which is already stored
+   * and already stable across a round trip. The full algorithm is published in
+   * `docs/07-rendering.md`; readers that cannot reproduce it must still accept
+   * and preserve the value, and may render everything as `0`.
    */
   roughness: number;
 }
@@ -185,6 +185,7 @@ export const ELEMENT_TYPES = [
   'text',
   'sticky',
   'image',
+  'diamond',
 ] as const;
 export type ElementType = (typeof ELEMENT_TYPES)[number];
 
@@ -274,6 +275,16 @@ export interface RectangleElement extends BaseElement {
 
 export interface EllipseElement extends BaseElement {
   type: 'ellipse';
+}
+
+/**
+ * A rhombus inscribed in the element's box, for flowchart decision nodes.
+ *
+ * Carries no fields of its own — the four vertices are the midpoints of the
+ * box's edges, so the box is the entire geometry.
+ */
+export interface DiamondElement extends BaseElement {
+  type: 'diamond';
 }
 
 export const ARROWHEADS = ['none', 'arrow', 'triangle', 'dot', 'bar'] as const;
@@ -402,7 +413,8 @@ export type MindflowElement =
   | DrawElement
   | TextElement
   | StickyElement
-  | ImageElement;
+  | ImageElement
+  | DiamondElement;
 
 /** Elements whose geometry is a point list rather than a box. */
 export type PathElement = LinearElement | DrawElement;
@@ -493,7 +505,7 @@ export interface MindflowDocument {
 }
 
 /** The schema version this build reads and writes natively. */
-export const CURRENT_SCHEMA_VERSION = '1.0.0';
+export const CURRENT_SCHEMA_VERSION = '1.1.0';
 
 /** Canonical filename extension for a board. */
 export const FILE_EXTENSION = '.mindflow.json';

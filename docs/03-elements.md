@@ -22,6 +22,7 @@ a connector can attach.
 |---|---|---|---|---|---|---|
 | `rectangle` | ✓ | | | ✓ | ✓ | ✓ |
 | `ellipse` | ✓ | | | ✓ | ✓ | ✓ |
+| `diamond` | ✓ | | | ✓ | ✓ | ✓ |
 | `line` | ✓ | ✓ | | ✓ | ✓ | |
 | `arrow` | ✓ | ✓ | | ✓ | ✓ | |
 | `draw` | | ✓ | | ✓ | ✓ | |
@@ -80,6 +81,35 @@ Adds no fields.
 
 **Hit-testing:** filled — anywhere inside the ellipse (not the box). Unfilled —
 within tolerance of the outline.
+
+---
+
+## diamond
+
+A rhombus, for flowchart decision nodes.
+
+Adds no fields.
+
+**Geometry:** the four vertices are the midpoints of the box's edges — in local
+coordinates, clockwise from the top: `(w/2, 0)`, `(w, h/2)`, `(w/2, h)`,
+`(0, h/2)`. The box is the entire geometry, so a diamond is fully described by
+`x`, `y`, `width`, `height` and `angle`.
+
+**Hit-testing:** as for every closed shape — a filled diamond (or one carrying
+non-empty label text) is hit anywhere inside its outline, and an unfilled one only
+near its edges, so a click passes through the hollow middle.
+
+**Connector anchoring:** an `auto`-bound connector attaches to the *rhombus*, not
+its bounding box. Substituting a ray `(t·dx, t·dy)` into `|x|/a + |y|/b = 1`,
+where `a = width/2` and `b = height/2`, gives the crossing directly:
+
+```
+t = 1 / (|dx|/a + |dy|/b)
+```
+
+Falling back to the rectangular default would leave an arrow aimed near a corner
+stopping up to `min(width, height) / 2` short of the visible edge. See
+[07-rendering.md](07-rendering.md#binding-resolution).
 
 ---
 

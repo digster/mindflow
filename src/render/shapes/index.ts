@@ -17,6 +17,7 @@ import './draw.ts';
 import './text.ts';
 import './sticky.ts';
 import './image.ts';
+import './diamond.ts';
 
 export { rectangleDefinition } from './rectangle.ts';
 export { ellipseDefinition } from './ellipse.ts';
@@ -25,3 +26,4 @@ export { drawDefinition } from './draw.ts';
 export { textDefinition, measureTextElement } from './text.ts';
 export { stickyDefinition, STICKY_DEFAULT_SIZE } from './sticky.ts';
 export { imageDefinition } from './image.ts';
+export { diamondDefinition } from './diamond.ts';

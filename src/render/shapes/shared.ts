@@ -8,7 +8,7 @@
  * {@link wrapText} below and in `docs/07-rendering.md`.
  */
 
-import type { ElementLabel, ElementStyle, FontFamily, MindflowElement } from '../../model/types.ts';
+import type { ElementLabel, ElementStyle, FontFamily, MindflowElement, Point } from '../../model/types.ts';
 import { clamp } from '../../model/geometry.ts';
 
 // ---------------------------------------------------------------------------
@@ -316,6 +316,26 @@ export function paintPath(ctx: CanvasRenderingContext2D, style: ElementStyle): v
     ctx.stroke();
     ctx.setLineDash([]); // Leave the context clean for the next element.
   }
+}
+
+/**
+ * Traces a polyline as the current path.
+ *
+ * The single entry point for hand-drawn rendering: a shape hands over the points
+ * of its clean outline and this decides whether to displace them, so no shape
+ * module carries a roughness branch of its own.
+ */
+export function tracePoints(
+  ctx: CanvasRenderingContext2D,
+  points: readonly Point[],
+  closed: boolean,
+): void {
+  ctx.beginPath();
+  const first = points[0];
+  if (!first) return;
+  ctx.moveTo(first.x, first.y);
+  for (const point of points.slice(1)) ctx.lineTo(point.x, point.y);
+  if (closed) ctx.closePath();
 }
 
 /**

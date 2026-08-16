@@ -230,14 +230,16 @@ keep boards portable; never store a concrete typeface.
 
 ### The hand-drawn look
 
-`style.roughness` is reserved in 1.0.0 for exactly this and is currently always
-written as `0`. Implementing it means jittering path geometry in the shape
-modules — and, critically, **specifying the jitter algorithm and its seeding** in
-[07-rendering.md](07-rendering.md), or two renderers will disagree about what a
-board looks like.
+Implemented in 1.1.0, and worth reading as a worked example of specifying a
+*computed* value rather than a stored one — see
+[07-rendering.md](07-rendering.md#hand-drawn-rendering).
 
-Seed the jitter from the element's `id` so a shape looks the same on every render
-rather than shimmering on each frame.
+To give a new type a hand-drawn form, implement the optional `roughOutline` member
+on its definition, returning its outline as a closed polygon in the local frame
+with any curves already sampled. Displacement is applied centrally by
+`roughOutlineFor` in `src/render/rough.ts`, which both the canvas renderer and the
+SVG exporter call — that shared call is the only reason the two agree. Omit
+`roughOutline` and the type simply renders cleanly whatever `roughness` says.
 
 ## Using `meta` instead
 

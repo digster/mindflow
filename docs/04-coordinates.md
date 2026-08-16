@@ -203,6 +203,7 @@ area.
 |---|---|
 | `rectangle` | Filled or labelled → anywhere inside. Otherwise → near the outline only. |
 | `ellipse` | Filled or labelled → inside the ellipse. Otherwise → near the outline. |
+| `diamond` | Filled or labelled → inside the rhombus. Otherwise → near its four edges. |
 | `line`, `arrow` | Within `tolerance + strokeWidth/2` of the routed polyline. |
 | `draw` | Within `tolerance + strokeWidth/2` of the stroke path. |
 | `text`, `sticky`, `image` | Anywhere in the box — these have no hollow interior. |

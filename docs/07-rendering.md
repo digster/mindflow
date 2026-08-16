@@ -250,14 +250,24 @@ Inputs: the target element, the binding, and a **reference point** (see below).
 
 1. Transform the reference point into the target's local frame (`worldToLocal`).
 2. Cast a ray from the target's local centre `(w/2, h/2)` toward it. With
-   `d = reference_local − centre`:
-   - **Ellipse:** solve `(t·dx/rx)² + (t·dy/ry)² = 1`, giving
-     `t = 1 / hypot(dx/rx, dy/ry)` where `rx = w/2`, `ry = h/2`.
-   - **Every other shape:** the rectangular outline. The ray exits through
-     whichever pair of edges it reaches first:
-     `t = min(|cx/dx|, |cy/dy|)`, treating a zero denominator as `∞`.
+   `d = reference_local − centre`, the scale factor `t` at which the ray leaves
+   the outline is **per shape**, with the rectangular case as the default for any
+   type not listed:
+
+   | Target | `t` |
+   |---|---|
+   | `ellipse` | `1 / hypot(dx/a, dy/b)` — solving `(t·dx/a)² + (t·dy/b)² = 1` |
+   | `diamond` | `1 / (\|dx\|/a + \|dy\|/b)` — solving `\|x\|/a + \|y\|/b = 1` |
+   | **everything else** | `min(\|a/dx\|, \|b/dy\|)`, treating a zero denominator as `∞` — the ray exits through whichever pair of box edges it reaches first |
+
+   In all three, `a = w/2` and `b = h/2`.
+
 3. The attachment point is `centre + d × t`, transformed back to world space.
 4. If `d` is exactly zero, the attachment point is the target's centre.
+
+A reader that does not recognise a type should use the rectangular default: it is
+always a defined answer, and it is what MindFlow itself does for any shape that
+does not declare an outline of its own.
 
 **Then, in both cases**, apply the gap. With `c` = the target's world centre and
 `a` = the attachment point:
@@ -297,6 +307,109 @@ does this on every geometry change, and skips connectors whose endpoints did not
 actually shift so a no-op move produces no patch.
 
 ---
+
+## Hand-drawn rendering
+
+`style.roughness` displaces a shape's outline to make it look sketched. `0` — and
+any value at or below `0.001` — renders clean geometry. This section specifies
+the displacement completely, because a partially specified one would be worse
+than none: two renderers would each draw something plausible, and disagree.
+
+### The seed is derived, not stored
+
+Jitter needs a seed. There is no `seed` field, and there deliberately never will
+be: **the seed is the element's `id`.**
+
+Ids are already in the file, already stable across a save/load round trip, and
+already re-minted when an element is duplicated — so a copy gets its own squiggle
+without any extra machinery. Storing a seed would have been a structural change
+to every element for a value that can be computed from one already there.
+
+The consequence to be aware of: **changing an element's `id` changes how it
+looks.** Ids are stable in normal use, so this is only a trap for a tool that
+rewrites them.
+
+### Hashing the id
+
+FNV-1a, 32-bit, over the id's UTF-16 code units:
+
+```js
+function hashSeed(id) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;   // × 16777619, mod 2³²
+  }
+  return hash >>> 0;
+}
+```
+
+Reference values: `hashSeed("")` is `2166136261` (`0x811c9dc5`), and
+`hashSeed("el_q2WikW58Aw")` is `3578049225`.
+
+### The generator
+
+Mulberry32, producing values in `[0, 1)`:
+
+```js
+function mulberry32(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+```
+
+Seeded with `hashSeed("el_q2WikW58Aw")`, the first three values are
+`0.8391014873`, `0.2622082005`, `0.6914683564`.
+
+**One stream per element**, created once and drawn from in the order below. Two
+edges of the same shape must not restart it, or opposite sides would jitter
+identically.
+
+### Which shapes are roughened
+
+| Type | Outline sampled to |
+|---|---|
+| `rectangle` | Its rounded outline. Straight sides are single edges; each corner arc is sampled at **4 segments per quarter turn**, with the radius clamped to half the shorter side as usual. A radius of `0` gives the four corners only. |
+| `ellipse` | A closed polygon of `clamp(ceil(perimeter / 24), 8, 64)` evenly spaced points, where `perimeter` is Ramanujan's first approximation `π(3(a+b) − √((3a+b)(a+3b)))` with `a = w/2`, `b = h/2`. |
+| `diamond` | Its four vertices. |
+| everything else | **Not roughened.** `line`, `arrow`, `draw`, `text`, `sticky` and `image` render cleanly whatever `roughness` says. |
+
+Curves are sampled to polylines *before* displacement so that exactly one jitter
+rule exists.
+
+### The displacement
+
+Walk the polygon edge by edge, in order. For an edge from `p` to `q` of length
+`L`:
+
+1. `samples = clamp(ceil(L / 24) + 1, 2, 32)`.
+2. For each sample `s` in `0 … samples−1`, the point on the edge is
+   `p + (q − p) × s/(samples−1)`.
+3. **Sample `0` is emitted unchanged.** It is a vertex, and displacing it would
+   tear the outline open where two edges meet.
+4. **The last sample is not emitted at all** — it is the next edge's sample `0`,
+   and emitting it would duplicate every vertex. (On an *open* polyline the final
+   edge does emit it, so the line reaches its end.)
+5. Every interior sample is displaced along the edge's unit normal
+   `n = (−dy/L, dx/L)` by `(random() × 2 − 1) × 1.6 × roughness`, drawing exactly
+   one value from the stream per interior sample.
+
+A closed polygon repeats its first emitted point at the end.
+
+So the amplitude at `roughness = 1` is ±1.6 scene units, and the field's maximum
+of `2` gives ±3.2.
+
+### Reader expectations
+
+A reader that cannot reproduce this **must still accept and preserve** any
+`roughness` value, and may render the shape cleanly. Rendering at `0` is a
+legitimate degradation; silently dropping the field is not.
 
 ## Freehand strokes
 

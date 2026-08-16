@@ -14,6 +14,7 @@ import { Renderer } from '../render/renderer.ts';
 import { ImageCache } from '../render/images.ts';
 import { drawOverlay } from '../render/overlay.ts';
 import { exportToPNG, exportToSVG } from '../render/export.ts';
+import { roughOutlineFor } from '../render/rough.ts';
 import { InteractionController } from '../input/controller.ts';
 import { installKeyboardShortcuts } from '../input/keyboard.ts';
 import { screenToScene } from '../model/geometry.ts';
@@ -611,8 +612,24 @@ export class MindflowApp {
   }
 
   /** Exposed for end-to-end tests to drive the app without synthesising input. */
-  get testHooks(): { store: Store; actions: Actions; supportsFileSystemAccess: boolean } {
-    return { store: this.store, actions: this.actions, supportsFileSystemAccess: supportsFileSystemAccess() };
+  get testHooks(): {
+    store: Store;
+    actions: Actions;
+    supportsFileSystemAccess: boolean;
+    exportToSVG: typeof exportToSVG;
+    roughOutlineFor: typeof roughOutlineFor;
+  } {
+    return {
+      store: this.store,
+      actions: this.actions,
+      supportsFileSystemAccess: supportsFileSystemAccess(),
+      // Exposed so the e2e suite can assert that the SVG exporter and the canvas
+      // renderer consume the SAME generated outline for a rough shape. They are
+      // two independent renderers, and that shared call is the only thing making
+      // them agree — worth a test that would notice if it stopped being true.
+      exportToSVG,
+      roughOutlineFor,
+    };
   }
 }
 

@@ -52,7 +52,23 @@ export interface Migration {
  *     migrate(doc) { ... return doc; },
  *   },
  */
-const MIGRATIONS: Record<string, Migration> = {};
+const MIGRATIONS: Record<string, Migration> = {
+  /**
+   * Identity, and deliberately not omitted.
+   *
+   * 1.0.0 → 1.1.0 is purely additive: it introduces the `diamond` type and
+   * starts writing non-zero `style.roughness`, neither of which changes an
+   * existing file. Nothing needs transforming — but `needsMigration` triggers on
+   * *any* version inequality, so leaving this out would make every 1.0.0 board
+   * ever saved load with a "no migration is available" warning. An identity step
+   * turns that into the ordinary "upgraded this board" note.
+   */
+  '1.0.0': {
+    to: '1.1.0',
+    description: 'Additive: the `diamond` element type, and `style.roughness` is now rendered.',
+    migrate: (document) => document,
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Version comparison

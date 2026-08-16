@@ -12,7 +12,7 @@ import type { MindflowElement } from '../model/types.ts';
 import { ARROWHEADS, CURVE_STYLES, FILL_STYLES, FONT_FAMILIES, STROKE_STYLES } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
 import type { Actions } from '../app/actions.ts';
-import { capabilitiesOf } from '../model/registry.ts';
+import { capabilitiesOf, getDefinition } from '../model/registry.ts';
 import { PALETTE } from '../model/defaults.ts';
 import { updateElements } from '../store/commands.ts';
 import { clear, el, icon } from './dom.ts';
@@ -23,6 +23,13 @@ const STROKE_WIDTHS: [string, number][] = [
   ['Medium', 2],
   ['Bold', 4],
   ['Heavy', 8],
+];
+
+/** Sketchiness presets. The format allows 0..2; these are the useful points. */
+const ROUGHNESS_LEVELS: [string, number][] = [
+  ['Clean', 0],
+  ['Light', 0.6],
+  ['Sketchy', 1.4],
 ];
 
 const FONT_SIZES: [string, number][] = [
@@ -119,6 +126,21 @@ export class StylePanel {
         })),
       ),
     );
+
+    // Only offered when something in the selection actually has a hand-drawn
+    // form — a sticky or an image would show a control that does nothing.
+    if (selected.some((element) => Boolean(getDefinition(element.type).roughOutline))) {
+      this.element.append(
+        this.buttonRow(
+          'Sketch',
+          ROUGHNESS_LEVELS.map(([label, value]) => ({
+            label,
+            active: first.style.roughness === value,
+            onSelect: () => this.actions.restyle({ roughness: value }, 'Change sketchiness'),
+          })),
+        ),
+      );
+    }
 
     if (anyFillable) {
       this.element.append(

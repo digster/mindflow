@@ -22,6 +22,10 @@
  */
 
 import type { AABB, MindflowElement, PathElement, Point, PointTuple, Viewport } from './types.ts';
+// Value import, and deliberately one-way: the registry imports only types, so
+// this does not form a cycle. It is what lets outline resolution be per-shape
+// without this module knowing which shapes exist.
+import { findDefinition } from './registry.ts';
 
 // ---------------------------------------------------------------------------
 // Angles
@@ -350,22 +354,34 @@ export function rayIntersectElementOutline(el: MindflowElement, target: Point): 
 
   if (dx === 0 && dy === 0) return elementCenter(el);
 
-  let t: number;
-  if (el.type === 'ellipse') {
-    // Solve (t*dx/rx)^2 + (t*dy/ry)^2 = 1 for t.
-    const rx = el.width / 2;
-    const ry = el.height / 2;
-    const denominator = Math.hypot(dx / rx, dy / ry);
-    t = denominator === 0 ? 0 : 1 / denominator;
-  } else {
-    // Rectangular outline: the ray exits through whichever pair of edges it
-    // reaches first, which is the smaller of the two axis-wise scale factors.
-    const tx = dx === 0 ? Infinity : Math.abs(cx / dx);
-    const ty = dy === 0 ? Infinity : Math.abs(cy / dy);
-    t = Math.min(tx, ty);
-  }
+  // A shape that knows its own outline says so through the registry; everything
+  // else is treated as its bounding rectangle. That default is why most types
+  // implement nothing, and why this function no longer branches on `el.type` —
+  // which no code outside `render/shapes/` is allowed to do.
+  const direction = { x: dx, y: dy };
+  const definition = findDefinition(el.type);
+  const crossing = definition?.outlineIntersect?.(el, direction) ?? rectOutlineIntersect(el, direction);
 
-  return localToWorld(el, { x: cx + dx * t, y: cy + dy * t });
+  return localToWorld(el, crossing);
+}
+
+/**
+ * The rectangular-outline case, and the default for any type that does not
+ * implement `outlineIntersect`.
+ *
+ * The ray exits through whichever pair of edges it reaches first, which is the
+ * smaller of the two axis-wise scale factors.
+ */
+export function rectOutlineIntersect(
+  el: { width: number; height: number },
+  direction: Point,
+): Point {
+  const cx = el.width / 2;
+  const cy = el.height / 2;
+  const tx = direction.x === 0 ? Infinity : Math.abs(cx / direction.x);
+  const ty = direction.y === 0 ? Infinity : Math.abs(cy / direction.y);
+  const t = Math.min(tx, ty);
+  return { x: cx + direction.x * t, y: cy + direction.y * t };
 }
 
 // ---------------------------------------------------------------------------

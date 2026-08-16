@@ -121,8 +121,8 @@ test.describe('boot', () => {
     await expect(page.locator('.mf-tools')).toBeVisible();
   });
 
-  test('shows all eleven tools', async ({ page }) => {
-    await expect(page.locator('.mf-tool')).toHaveCount(11);
+  test('shows all twelve tools', async ({ page }) => {
+    await expect(page.locator('.mf-tool')).toHaveCount(12);
   });
 
   test('starts with an empty board', async ({ page }) => {
@@ -1127,6 +1127,115 @@ test.describe('find on board', () => {
         (window as unknown as { mindflow: { store: { viewport: { x: number; y: number } } } }).mindflow.store.viewport,
     );
     expect(viewport.x).toBeLessThan(1000);
+  });
+});
+
+test.describe('diamond', () => {
+  test('has a tool that draws one', async ({ page }) => {
+    await page.locator('[data-tool="diamond"]').click();
+    await drag(page, [100, 100], [280, 220]);
+
+    const doc = await getDocument(page);
+    expect(doc.elements[0]).toMatchObject({ type: 'diamond', width: 180, height: 120 });
+  });
+
+  test('binds a connector to its slanted edge, not its bounding box', async ({ page }) => {
+    // The whole reason diamond implements outlineIntersect. Falling back to the
+    // rectangular default would stop the arrow up to half the box short.
+    await page.locator('[data-tool="diamond"]').click();
+    await drag(page, [400, 300], [560, 420]);
+
+    await page.locator('[data-tool="arrow"]').click();
+    // Drag from up-and-left towards the diamond's centre, so the ray meets the
+    // top-left edge at its most slanted.
+    await drag(page, [200, 120], [480, 360]);
+
+    const doc = await getDocument(page);
+    const arrow = doc.elements.find((element) => element.type === 'arrow');
+    expect(arrow).toBeDefined();
+    expect((arrow as { endBinding: unknown }).endBinding).not.toBeNull();
+
+    // The tip must land inside the bounding box, past where a rectangle would
+    // have stopped it (the box's top-left corner region).
+    const tipX = (arrow!.x as number) + (arrow!.width as number);
+    const tipY = (arrow!.y as number) + (arrow!.height as number);
+    expect(tipX).toBeGreaterThan(400);
+    expect(tipY).toBeGreaterThan(300);
+  });
+
+  test('survives a save and load round trip', async ({ page }) => {
+    await page.locator('[data-tool="diamond"]').click();
+    await drag(page, [100, 100], [280, 220]);
+
+    const restored = await page.evaluate(() => {
+      const mf = (
+        window as unknown as {
+          mindflow: { store: { document: unknown; load(r: unknown, o: unknown): void } };
+        }
+      ).mindflow;
+      const serialised = JSON.stringify(mf.store.document);
+      return JSON.parse(serialised) as { elements: { type: string }[] };
+    });
+
+    expect(restored.elements[0]?.type).toBe('diamond');
+  });
+});
+
+test.describe('hand-drawn rendering', () => {
+  test('offers a sketch control for shapes that have one', async ({ page }) => {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [280, 220]);
+
+    await expect(page.getByRole('button', { name: 'Sketchy' })).toBeVisible();
+  });
+
+  test('does not offer it for a sticky, which has no hand-drawn form', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [260, 260]);
+
+    await expect(page.getByRole('button', { name: 'Sketchy' })).toHaveCount(0);
+  });
+
+  test('writes roughness into the document and renders without error', async ({ page }) => {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [280, 220]);
+    await page.getByRole('button', { name: 'Sketchy' }).click();
+
+    const doc = await getDocument(page);
+    expect((doc.elements[0]?.style as { roughness: number }).roughness).toBeGreaterThan(0);
+  });
+
+  test('the SVG export contains the same polygon the canvas drew', async ({ page }) => {
+    // PNG and SVG are two independent renderers. They agree only because both
+    // consume roughOutlineFor(); this is the check that they still do.
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [280, 220]);
+    await page.getByRole('button', { name: 'Sketchy' }).click();
+
+    const { svg, outline } = await page.evaluate(() => {
+      const mf = (
+        window as unknown as {
+          mindflow: {
+            store: { document: { elements: unknown[] } };
+            exportToSVG(doc: unknown): string;
+            roughOutlineFor(el: unknown): { x: number; y: number }[] | null;
+          };
+        }
+      ).mindflow;
+      return {
+        svg: mf.exportToSVG(mf.store.document),
+        outline: mf.roughOutlineFor(mf.store.document.elements[0]),
+      };
+    });
+
+    expect(outline, 'the shape should have a rough outline').not.toBeNull();
+    const points = outline!.map((p) => `${Math.round(p.x * 100) / 100},${Math.round(p.y * 100) / 100}`);
+    expect(svg).toContain('<polygon');
+    // Not just "a polygon exists" — the exporter must have emitted the exact
+    // points the canvas generated, which only holds while both call the same
+    // seeded generator.
+    expect(svg).toContain(points[0]!);
+    expect(svg).toContain(points[Math.floor(points.length / 2)]!);
   });
 });
 

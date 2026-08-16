@@ -227,6 +227,7 @@ export class InteractionController {
       case 'rectangle':
       case 'ellipse':
       case 'sticky':
+      case 'diamond':
         this.beginBoxCreate(tool, scene);
         break;
       case 'line':
@@ -314,7 +315,7 @@ export class InteractionController {
     }
   }
 
-  private beginBoxCreate(tool: 'rectangle' | 'ellipse' | 'sticky', scene: Point): void {
+  private beginBoxCreate(tool: 'rectangle' | 'ellipse' | 'sticky' | 'diamond', scene: Point): void {
     const { store } = this.options;
     const definition = getDefinition(tool);
     const element = definition.create({

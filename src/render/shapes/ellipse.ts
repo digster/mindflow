@@ -10,7 +10,8 @@ import { registerElement } from '../../model/registry.ts';
 import type { BaseElement, EllipseElement, Point } from '../../model/types.ts';
 import { DEFAULT_STYLE, newElementId } from '../../model/defaults.ts';
 import { distanceToEllipseOutline, pointInEllipse } from '../../model/geometry.ts';
-import { drawLabel, hasFill, paintPath } from './shared.ts';
+import { drawLabel, hasFill, paintPath, tracePoints } from './shared.ts';
+import { ellipsePoints, roughOutlineFor } from '../rough.ts';
 
 export const ellipseDefinition: ElementDefinition<EllipseElement> = {
   type: 'ellipse',
@@ -49,9 +50,19 @@ export const ellipseDefinition: ElementDefinition<EllipseElement> = {
     return { ...base, type: 'ellipse' };
   },
 
+  roughOutline(el: EllipseElement) {
+    // Sampled to a polygon first, so one displacement rule covers every shape.
+    return ellipsePoints(el.width, el.height);
+  },
+
   draw(el: EllipseElement, { ctx }: RenderContext): void {
-    ctx.beginPath();
-    ctx.ellipse(el.width / 2, el.height / 2, el.width / 2, el.height / 2, 0, 0, Math.PI * 2);
+    const rough = roughOutlineFor(el);
+    if (rough) {
+      tracePoints(ctx, rough, true);
+    } else {
+      ctx.beginPath();
+      ctx.ellipse(el.width / 2, el.height / 2, el.width / 2, el.height / 2, 0, 0, Math.PI * 2);
+    }
     paintPath(ctx, el.style);
     drawLabel(ctx, el);
   },
@@ -66,6 +77,21 @@ export const ellipseDefinition: ElementDefinition<EllipseElement> = {
       );
     }
     return distanceToEllipseOutline(local, el.width, el.height) <= tolerance;
+  },
+
+  /**
+   * Solves `(t·dx/rx)² + (t·dy/ry)² = 1` for `t` — where the ray leaves the
+   * ellipse rather than its bounding box.
+   *
+   * This used to be a `type === 'ellipse'` branch inside `geometry.ts`, the one
+   * place outside this directory that switched on an element type.
+   */
+  outlineIntersect(el: EllipseElement, direction: Point): Point {
+    const rx = el.width / 2;
+    const ry = el.height / 2;
+    const denominator = Math.hypot(direction.x / rx, direction.y / ry);
+    const t = denominator === 0 ? 0 : 1 / denominator;
+    return { x: rx + direction.x * t, y: ry + direction.y * t };
   },
 };
 

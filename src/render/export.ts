@@ -32,6 +32,7 @@ import type {
 import type { RenderContext } from '../model/registry.ts';
 import { drawElement } from '../model/registry.ts';
 import { clamp, degToRad, unionAABB } from '../model/geometry.ts';
+import { roughOutlineFor } from './rough.ts';
 import {
   BASELINE_RATIO,
   FONT_STACKS,
@@ -330,6 +331,16 @@ function arrowheadToSvg(element: LinearElement, atEnd: boolean): string {
 function elementToSvg(element: MindflowElement, document: MindflowDocument): string {
   const style = styleAttributes(element);
 
+  // A rough shape is a polygon in both renderers, generated from the same seeded
+  // stream. SVG is a second renderer and cannot be otherwise (see LEARNINGS.md),
+  // so the only way it and the canvas can agree is to consume identical points
+  // rather than each approximating the outline its own way.
+  const rough = roughOutlineFor(element);
+  if (rough) {
+    const serialised = rough.map((point) => `${round(point.x)},${round(point.y)}`).join(' ');
+    return `<polygon points="${serialised}" ${style}/>${labelToSvg(element)}`;
+  }
+
   switch (element.type) {
     case 'rectangle': {
       const rect = element as RectangleElement;
@@ -339,6 +350,15 @@ function elementToSvg(element: MindflowElement, document: MindflowDocument): str
 
     case 'ellipse':
       return `<ellipse cx="${round(element.width / 2)}" cy="${round(element.height / 2)}" rx="${round(element.width / 2)}" ry="${round(element.height / 2)}" ${style}/>${labelToSvg(element)}`;
+
+    case 'diamond': {
+      // Vertices are the midpoints of the box's edges, clockwise from the top —
+      // the same four points `render/shapes/diamond.ts` draws.
+      const w = round(element.width);
+      const h = round(element.height);
+      const points = `${round(w / 2)},0 ${w},${round(h / 2)} ${round(w / 2)},${h} 0,${round(h / 2)}`;
+      return `<polygon points="${points}" ${style}/>${labelToSvg(element)}`;
+    }
 
     case 'line':
     case 'arrow': {
