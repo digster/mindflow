@@ -1,7 +1,7 @@
 {
-  "$schema": "https://digster.github.io/mindflow/docs/schema/mindflow-1.1.0.schema.json",
+  "$schema": "https://digster.github.io/mindflow/docs/schema/mindflow-1.2.0.schema.json",
   "type": "mindflow.board",
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "id": "brd_AllElement",
   "meta": {
     "name": "Every element type",
@@ -59,7 +59,8 @@
         "padding": 8
       },
       "meta": {},
-      "cornerRadius": 8
+      "cornerRadius": 8,
+      "frameId": null
     },
     {
       "id": "el_EllipseRot1",
@@ -85,7 +86,8 @@
       "label": null,
       "meta": {
         "exampleNote": "meta is reserved for tools other than MindFlow; it is preserved verbatim across a round trip"
-      }
+      },
+      "frameId": null
     },
     {
       "id": "el_PlainLine01",
@@ -111,15 +113,25 @@
       "label": null,
       "meta": {},
       "points": [
-        [0, 0],
-        [100, 60],
-        [200, 0]
+        [
+          0,
+          0
+        ],
+        [
+          100,
+          60
+        ],
+        [
+          200,
+          0
+        ]
       ],
       "startArrowhead": "none",
       "endArrowhead": "none",
       "curve": "curved",
       "startBinding": null,
-      "endBinding": null
+      "endBinding": null,
+      "frameId": null
     },
     {
       "id": "el_FreeArrow01",
@@ -145,15 +157,25 @@
       "label": null,
       "meta": {},
       "points": [
-        [0, 0],
-        [90, 40],
-        [180, 0]
+        [
+          0,
+          0
+        ],
+        [
+          90,
+          40
+        ],
+        [
+          180,
+          0
+        ]
       ],
       "startArrowhead": "dot",
       "endArrowhead": "triangle",
       "curve": "elbow",
       "startBinding": null,
-      "endBinding": null
+      "endBinding": null,
+      "frameId": null
     },
     {
       "id": "el_Freehand001",
@@ -179,14 +201,39 @@
       "label": null,
       "meta": {},
       "points": [
-        [0, 30, 0.2],
-        [40, 0, 0.55],
-        [80, 55, 0.9],
-        [120, 5, 0.7],
-        [160, 50, 0.4],
-        [200, 20, 0.15]
+        [
+          0,
+          30,
+          0.2
+        ],
+        [
+          40,
+          0,
+          0.55
+        ],
+        [
+          80,
+          55,
+          0.9
+        ],
+        [
+          120,
+          5,
+          0.7
+        ],
+        [
+          160,
+          50,
+          0.4
+        ],
+        [
+          200,
+          20,
+          0.15
+        ]
       ],
-      "pressureSensitive": true
+      "pressureSensitive": true,
+      "frameId": null
     },
     {
       "id": "el_TextBlock01",
@@ -219,7 +266,8 @@
       "color": "#1e1e1e",
       "textAlign": "left",
       "verticalAlign": "top",
-      "autoWidth": true
+      "autoWidth": true,
+      "frameId": null
     },
     {
       "id": "el_StickyNote1",
@@ -252,7 +300,8 @@
       "color": "#1e1e1e",
       "textAlign": "left",
       "verticalAlign": "top",
-      "padding": 12
+      "padding": 12,
+      "frameId": null
     },
     {
       "id": "el_LockedImage",
@@ -280,7 +329,8 @@
       "fileId": "6b7fa434f92a8b80aab02d9bf1a12e49ffcae424e4013a1c4f68b67e3d2bbcd0",
       "naturalWidth": 1,
       "naturalHeight": 1,
-      "objectFit": "contain"
+      "objectFit": "contain",
+      "frameId": null
     },
     {
       "id": "el_DecisionDia",
@@ -314,7 +364,8 @@
         "verticalAlign": "middle",
         "padding": 8
       },
-      "meta": {}
+      "meta": {},
+      "frameId": null
     }
   ],
   "files": {

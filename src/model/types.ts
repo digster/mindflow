@@ -186,6 +186,7 @@ export const ELEMENT_TYPES = [
   'sticky',
   'image',
   'diamond',
+  'frame',
 ] as const;
 export type ElementType = (typeof ELEMENT_TYPES)[number];
 
@@ -245,6 +246,22 @@ export interface BaseElement {
    */
   groupId: GroupId | null;
 
+  /**
+   * The `frame` element containing this one, or `null`.
+   *
+   * Containment is by reference from the child, exactly like `groupId`, so the
+   * element array stays flat and coordinates stay absolute — a framed element's
+   * `x`/`y` are scene coordinates, NOT relative to its frame. Membership is
+   * assigned by position when an element is dropped; see
+   * `docs/05-interactions.md`.
+   *
+   * A `frame`'s own `frameId` is always `null`. Frames do not nest.
+   *
+   * Added in 1.2.0. A reader that does not understand it should ignore it and
+   * preserve it, which degrades to "frames do not clip" rather than to breakage.
+   */
+  frameId: ElementId | null;
+
   style: ElementStyle;
 
   /** Optional text drawn inside this element. `null` when the element has no label. */
@@ -285,6 +302,20 @@ export interface EllipseElement extends BaseElement {
  */
 export interface DiamondElement extends BaseElement {
   type: 'diamond';
+}
+
+/**
+ * A named region that clips and moves its contents.
+ *
+ * Membership is an ID reference held by the CHILD (`frameId`), mirroring
+ * `groupId` — the element array stays flat, sortable and diffable, and there is
+ * no ambiguity about relative versus absolute coordinates. A frame's own
+ * `frameId` is always `null`: frames do not nest.
+ */
+export interface FrameElement extends BaseElement {
+  type: 'frame';
+  /** Shown above the frame's top-left corner. May be empty. */
+  name: string;
 }
 
 export const ARROWHEADS = ['none', 'arrow', 'triangle', 'dot', 'bar'] as const;
@@ -414,7 +445,8 @@ export type MindflowElement =
   | TextElement
   | StickyElement
   | ImageElement
-  | DiamondElement;
+  | DiamondElement
+  | FrameElement;
 
 /** Elements whose geometry is a point list rather than a box. */
 export type PathElement = LinearElement | DrawElement;
@@ -505,7 +537,7 @@ export interface MindflowDocument {
 }
 
 /** The schema version this build reads and writes natively. */
-export const CURRENT_SCHEMA_VERSION = '1.1.0';
+export const CURRENT_SCHEMA_VERSION = '1.2.0';
 
 /** Canonical filename extension for a board. */
 export const FILE_EXTENSION = '.mindflow.json';

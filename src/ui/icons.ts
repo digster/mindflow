@@ -13,6 +13,7 @@ export const ICONS = {
   rectangle: 'M4 5h16v14H4z',
   ellipse: 'M12 5c4.4 0 8 3.1 8 7s-3.6 7-8 7-8-3.1-8-7 3.6-7 8-7z',
   diamond: 'M12 4l8 8-8 8-8-8z',
+  frame: 'M4 8h16v12H4z M4 8V4h16v4 M8 4v4 M16 4v4',
   line: 'M5 19L19 5',
   arrow: 'M5 19L19 5m0 0h-7m7 0v7',
   draw: 'M3 21s.5-3.5 2-5 9-9 9-9l3 3s-7.5 7.5-9 9-5 2-5 2zM14 7l3 3M16 5l3 3',

@@ -27,8 +27,8 @@ a format.
 Plus:
 
 - [CHANGELOG.md](CHANGELOG.md) — schema version history and migration notes.
-- [schema/mindflow-1.1.0.schema.json](schema/mindflow-1.1.0.schema.json) — machine-readable JSON Schema (draft 2020-12), current version. Earlier versions stay published and unchanged; see the changelog.
-- [schema/examples/](schema/examples/) — valid boards covering minimal, complete and connector-heavy cases.
+- [schema/mindflow-1.2.0.schema.json](schema/mindflow-1.2.0.schema.json) — machine-readable JSON Schema (draft 2020-12), current version. Earlier versions stay published and unchanged; see the changelog.
+- [schema/examples/](schema/examples/) — valid boards covering minimal, complete, connector-heavy and frame cases.
 
 ## If you only read one thing
 

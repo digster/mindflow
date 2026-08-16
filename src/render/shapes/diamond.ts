@@ -57,6 +57,7 @@ export const diamondDefinition: ElementDefinition<DiamondElement> = {
       locked: false,
       visible: true,
       groupId: null,
+      frameId: null,
       style: { ...DEFAULT_STYLE, ...(init.style as object | undefined) },
       label: null,
       meta: {},

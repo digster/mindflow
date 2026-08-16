@@ -68,6 +68,16 @@ const MIGRATIONS: Record<string, Migration> = {
     description: 'Additive: the `diamond` element type, and `style.roughness` is now rendered.',
     migrate: (document) => document,
   },
+
+  /**
+   * Also identity. 1.2.0 adds the `frame` type and the `frameId` field, and a
+   * 1.1.0 file simply has no frames — the loader defaults `frameId` to null.
+   */
+  '1.1.0': {
+    to: '1.2.0',
+    description: 'Additive: the `frame` element type and `frameId` containment.',
+    migrate: (document) => document,
+  },
 };
 
 // ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@
 
 import type {
   DrawElement,
+  FrameElement,
   ImageElement,
   LinearElement,
   MindflowDocument,
@@ -33,6 +34,7 @@ import type { RenderContext } from '../model/registry.ts';
 import { drawElement } from '../model/registry.ts';
 import { clamp, degToRad, unionAABB } from '../model/geometry.ts';
 import { roughOutlineFor } from './rough.ts';
+import { FRAME_NAME_GAP, FRAME_NAME_SIZE } from './shapes/frame.ts';
 import {
   BASELINE_RATIO,
   FONT_STACKS,
@@ -351,6 +353,18 @@ function elementToSvg(element: MindflowElement, document: MindflowDocument): str
     case 'ellipse':
       return `<ellipse cx="${round(element.width / 2)}" cy="${round(element.height / 2)}" rx="${round(element.width / 2)}" ry="${round(element.height / 2)}" ${style}/>${labelToSvg(element)}`;
 
+    case 'frame': {
+      const frame = element as FrameElement;
+      const box = `<rect width="${round(frame.width)}" height="${round(frame.height)}" ${style}/>`;
+      if (frame.name === '') return box;
+      // Matches the canvas: left-aligned to the frame's left edge, baseline
+      // FRAME_NAME_GAP above the top edge. See docs/03-elements.md.
+      const name =
+        `<text x="0" y="${round(-FRAME_NAME_GAP)}" font-family="${escapeXml(FONT_STACKS.sans)}" ` +
+        `font-size="${FRAME_NAME_SIZE}" font-weight="600" fill="#6b7280">${escapeXml(frame.name)}</text>`;
+      return box + name;
+    }
+
     case 'diamond': {
       // Vertices are the midpoints of the box's edges, clockwise from the top —
       // the same four points `render/shapes/diamond.ts` draws.
@@ -425,12 +439,33 @@ export function exportToSVG(document: MindflowDocument, options: ExportOptions =
   const bounds = exportBounds(elements, padding);
   if (!bounds) throw new Error('There is nothing on this board to export.');
 
+  // One clipPath per frame, referenced by its members. Frames are never rotated,
+  // so each is a plain rect in scene coordinates — the same clip the canvas
+  // renderer applies before the element's own transform.
+  const clipDefs = elements
+    .filter((element) => element.type === 'frame')
+    .map(
+      (frame) =>
+        `<clipPath id="frame-${escapeXml(frame.id)}" clipPathUnits="userSpaceOnUse">` +
+        `<rect x="${round(frame.x)}" y="${round(frame.y)}" width="${round(frame.width)}" height="${round(frame.height)}"/>` +
+        `</clipPath>`,
+    )
+    .join('\n    ');
+
+  const frameIds = new Set(elements.filter((element) => element.type === 'frame').map((el) => el.id));
+
   const body = elements
     .filter((element) => element.visible)
     .map((element) => {
       const inner = elementToSvg(element, document);
       if (inner === '') return '';
-      return `<g transform="${transformAttribute(element)}">${inner}</g>`;
+      const group = `<g transform="${transformAttribute(element)}">${inner}</g>`;
+      // A dangling frameId clips to nothing, which would render the element
+      // invisible with no explanation — so it is ignored, matching the loader.
+      if (element.frameId !== null && frameIds.has(element.frameId)) {
+        return `<g clip-path="url(#frame-${escapeXml(element.frameId)})">${group}</g>`;
+      }
+      return group;
     })
     .filter(Boolean)
     .join('\n    ');
@@ -446,6 +481,7 @@ export function exportToSVG(document: MindflowDocument, options: ExportOptions =
      viewBox="${round(bounds.x)} ${round(bounds.y)} ${round(bounds.width)} ${round(bounds.height)}">
   <title>${escapeXml(document.meta.name)}</title>
   <desc>Exported from MindFlow. Source format: mindflow.board ${document.schemaVersion}</desc>
+  ${clipDefs === '' ? '' : `<defs>\n    ${clipDefs}\n  </defs>`}
   <g>
     ${background}${body}
   </g>

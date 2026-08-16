@@ -30,6 +30,7 @@ import type {
   MindflowElement,
 } from '../model/types.ts';
 import { Z_INDEX_STEP, newGroupId } from '../model/defaults.ts';
+import { withFrameMembers } from '../model/frames.ts';
 
 /**
  * The change to one element.
@@ -137,7 +138,10 @@ export function deleteElements(
   ids: readonly ElementId[],
   label = 'Delete',
 ): Command {
-  const targets = new Set(ids);
+  // Deleting a frame deletes what it contains. A frame is presented as a
+  // container, so leaving its contents floating where the frame used to be would
+  // be a surprise — and undo restores the whole thing in one step either way.
+  const targets = withFrameMembers(document, ids);
   const patches: ElementPatch[] = [];
 
   for (const el of document.elements) {

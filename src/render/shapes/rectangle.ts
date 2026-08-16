@@ -45,6 +45,7 @@ export const rectangleDefinition: ElementDefinition<RectangleElement> = {
       locked: false,
       visible: true,
       groupId: null,
+      frameId: null,
       style: { ...DEFAULT_STYLE, ...(init.style as object | undefined) },
       label: null,
       meta: {},

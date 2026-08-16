@@ -161,11 +161,52 @@ they will apply to the next type too:
 
 ---
 
+## 1.2.0 — 2026-08-16
+
+Additive. A 1.1.0 file is a valid 1.2.0 file with no frames.
+
+### Added
+
+**`frame` element type**, and **`frameId` on every element**. A frame is a named
+region that clips and moves its contents. Full reference in
+[03-elements.md](03-elements.md#frame).
+
+The design decisions, since each rules out something that looks more obvious:
+
+**Containment is an ID reference held by the child**, mirroring `groupId`, rather
+than a `childIds` list on the frame or an actual tree. The flat array is the thing
+this format keeps defending — sortable, sliceable, diffable, with no ambiguity
+about relative versus absolute transforms — and a parent-pointer preserves all of
+it. A framed element's `x`/`y` remain ordinary scene coordinates.
+
+**Frames do not nest.** A frame's own `frameId` is always `null`. Nesting would
+reintroduce the tree by the back door, along with questions about how a clip
+composes with an ancestor's clip, for a use case that has not appeared.
+
+**Membership is decided by the element's centre**, not by overlap. An element
+straddling a border needs exactly one answer, and the centre gives one without a
+tie-break rule.
+
+**Frames are never rotated.** `rotatable` is false and `angle` is always `0`,
+which is what keeps the clip region a plain rectangle in every renderer rather
+than a rotated polygon that each would have to intersect for itself.
+
+**The interior is click-through.** A frame that swallowed clicks would make its
+own contents unselectable. It is grabbed by its border, exactly like an unfilled
+rectangle — no new concept.
+
+### Notes for implementers
+
+`frameId` is `required` in the schema, as `groupId` already was. A 1.1.0 reader
+meeting it should ignore and preserve it, which degrades to "frames do not clip"
+rather than to breakage.
+
+---
+
 ## Unreleased
 
 Candidates under consideration, in rough priority order:
 
-- `frame` element type — named regions that clip and move their contents.
 - Google Picker support, to lift the `drive.file` limitation described in
   [08-google-drive.md](08-google-drive.md#the-limitation-stated-plainly).
 - Nested groups — only if a real use case appears. The flat model has not been

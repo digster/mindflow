@@ -121,8 +121,8 @@ test.describe('boot', () => {
     await expect(page.locator('.mf-tools')).toBeVisible();
   });
 
-  test('shows all twelve tools', async ({ page }) => {
-    await expect(page.locator('.mf-tool')).toHaveCount(12);
+  test('shows all thirteen tools', async ({ page }) => {
+    await expect(page.locator('.mf-tool')).toHaveCount(13);
   });
 
   test('starts with an empty board', async ({ page }) => {
@@ -1236,6 +1236,130 @@ test.describe('hand-drawn rendering', () => {
     // seeded generator.
     expect(svg).toContain(points[0]!);
     expect(svg).toContain(points[Math.floor(points.length / 2)]!);
+  });
+});
+
+test.describe('frames', () => {
+  /** Draws a frame, then a sticky whose centre lands inside it. */
+  async function frameWithMember(page: Page) {
+    await page.locator('[data-tool="frame"]').click();
+    await drag(page, [100, 100], [500, 400]);
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [180, 180], [300, 300]);
+    await page.keyboard.press('Escape');
+  }
+
+  test('has a tool that draws one', async ({ page }) => {
+    await page.locator('[data-tool="frame"]').click();
+    await drag(page, [100, 100], [500, 400]);
+
+    const doc = await getDocument(page);
+    expect(doc.elements[0]).toMatchObject({ type: 'frame', width: 400, height: 300 });
+  });
+
+  test('claims an element dropped inside it', async ({ page }) => {
+    await frameWithMember(page);
+
+    const doc = await getDocument(page);
+    const frame = doc.elements.find((element) => element.type === 'frame');
+    const sticky = doc.elements.find((element) => element.type === 'sticky');
+    expect(sticky?.frameId).toBe(frame?.id);
+  });
+
+  test('releases an element dragged out', async ({ page }) => {
+    await frameWithMember(page);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+
+    // Drag the sticky well clear of the frame.
+    await drag(page, [240, 240], [900, 600]);
+
+    const doc = await getDocument(page);
+    const sticky = doc.elements.find((element) => element.type === 'sticky');
+    expect(sticky?.frameId).toBeNull();
+  });
+
+  test('its interior is click-through, so contents stay selectable', async ({ page }) => {
+    await frameWithMember(page);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+
+    // Click empty space inside the frame but not on the sticky.
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 430, box.y + 350);
+    expect(await selectedCount(page)).toBe(0);
+
+    // Clicking the sticky inside the frame selects the sticky, not the frame.
+    await page.mouse.click(box.x + 240, box.y + 240);
+    const doc = await getDocument(page);
+    const selectedIds = await page.evaluate(
+      () => (window as unknown as { mindflow: { store: { selectedIds(): string[] } } }).mindflow.store.selectedIds(),
+    );
+    const sticky = doc.elements.find((element) => element.type === 'sticky');
+    expect(selectedIds).toEqual([sticky?.id]);
+  });
+
+  test('is grabbed by its border and drags its contents along', async ({ page }) => {
+    await frameWithMember(page);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+
+    const before = await getDocument(page);
+    const stickyBefore = before.elements.find((element) => element.type === 'sticky');
+
+    // Grab the frame's bottom border, away from any handle or content.
+    await drag(page, [300, 400], [300, 460]);
+
+    const after = await getDocument(page);
+    const frame = after.elements.find((element) => element.type === 'frame');
+    const stickyAfter = after.elements.find((element) => element.type === 'sticky');
+
+    expect(frame?.y).toBeCloseTo(160, 0);
+    // The member travelled by the same delta.
+    expect((stickyAfter?.y as number) - (stickyBefore?.y as number)).toBeCloseTo(60, 0);
+  });
+
+  test('deleting it deletes its contents, in one undo step', async ({ page }) => {
+    await frameWithMember(page);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+
+    // Select the frame by its border, then delete.
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 300, box.y + 400);
+    await page.keyboard.press('Delete');
+
+    expect((await getDocument(page)).elements).toHaveLength(0);
+
+    await page.keyboard.press('ControlOrMeta+z');
+    expect((await getDocument(page)).elements).toHaveLength(2);
+  });
+
+  test('renames from the style panel', async ({ page }) => {
+    await page.locator('[data-tool="frame"]').click();
+    await drag(page, [100, 100], [500, 400]);
+
+    const input = page.locator('.mf-style-panel input[aria-label="Frame name"]');
+    await expect(input).toBeVisible();
+    await input.fill('Sprint 12');
+    await input.press('Enter');
+
+    const doc = await getDocument(page);
+    expect((doc.elements[0] as { name: string }).name).toBe('Sprint 12');
+  });
+
+  test('the SVG export clips members to the frame', async ({ page }) => {
+    await frameWithMember(page);
+
+    const svg = await page.evaluate(() => {
+      const mf = (
+        window as unknown as { mindflow: { store: { document: unknown }; exportToSVG(d: unknown): string } }
+      ).mindflow;
+      return mf.exportToSVG(mf.store.document);
+    });
+
+    expect(svg).toContain('<clipPath');
+    expect(svg).toContain('clip-path="url(#frame-');
   });
 });
 

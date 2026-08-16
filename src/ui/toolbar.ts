@@ -28,6 +28,7 @@ const TOOLS: ToolSpec[] = [
   { id: 'draw', icon: 'draw', label: 'Draw', shortcut: 'P' },
   { id: 'text', icon: 'text', label: 'Text', shortcut: 'T' },
   { id: 'sticky', icon: 'sticky', label: 'Sticky note', shortcut: 'N' },
+  { id: 'frame', icon: 'frame', label: 'Frame', shortcut: 'F' },
   { id: 'image', icon: 'image', label: 'Image', shortcut: '' },
   { id: 'eraser', icon: 'eraser', label: 'Eraser', shortcut: 'E' },
 ];

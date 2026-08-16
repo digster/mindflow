@@ -86,6 +86,14 @@ export class StylePanel {
 
     const first = selected[0] as MindflowElement;
 
+    // A frame's name is edited here rather than on the canvas: the name is drawn
+    // outside the frame's box, so it cannot be part of the hit region without
+    // putting hitTest at odds with the AABB pre-rejection every caller relies on.
+    const frames = selected.filter((element) => element.type === 'frame');
+    if (frames.length === 1 && selected.length === 1) {
+      this.element.append(this.nameRow(frames[0] as MindflowElement & { name: string }));
+    }
+
     this.element.append(
       this.swatchRow('Stroke', PALETTE.stroke, first.style.stroke, (color) =>
         this.actions.restyle({ stroke: color }, 'Change stroke'),
@@ -215,6 +223,34 @@ export class StylePanel {
     const alignRow = this.alignRow(selected);
     if (alignRow) this.element.append(alignRow);
     this.element.append(this.arrangeRow(selected));
+  }
+
+  /** Text field for a frame's name. */
+  private nameRow(frame: MindflowElement & { name: string }): HTMLElement {
+    const input = el('input', {
+      class: 'mf-input',
+      type: 'text',
+      value: frame.name,
+      spellcheck: 'false',
+      'aria-label': 'Frame name',
+      // On change, not on input: one undo step per rename rather than one per
+      // keystroke, matching how the board name behaves.
+      onchange: (event: Event) => {
+        const name = (event.target as HTMLInputElement).value;
+        this.store.execute(
+          updateElements(
+            this.store.document,
+            [frame.id],
+            (element) => ({ ...element, name }) as MindflowElement,
+            'Rename frame',
+          ),
+        );
+      },
+      onkeydown: (event: Event) => {
+        if ((event as KeyboardEvent).key === 'Enter') (event.target as HTMLInputElement).blur();
+      },
+    });
+    return this.section('Name', input);
   }
 
   private updateLinear(patch: Record<string, unknown>): void {

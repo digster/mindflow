@@ -206,6 +206,7 @@ area.
 | `diamond` | Filled or labelled → inside the rhombus. Otherwise → near its four edges. |
 | `line`, `arrow` | Within `tolerance + strokeWidth/2` of the routed polyline. |
 | `draw` | Within `tolerance + strokeWidth/2` of the stroke path. |
+| `frame` | Near its border only. The interior is click-through so contents stay reachable. |
 | `text`, `sticky`, `image` | Anywhere in the box — these have no hollow interior. |
 
 Elements that are `locked` or `!visible` are skipped entirely.

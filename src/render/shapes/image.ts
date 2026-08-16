@@ -114,6 +114,7 @@ export const imageDefinition: ElementDefinition<ImageElement> = {
       locked: false,
       visible: true,
       groupId: null,
+      frameId: null,
       style: { ...DEFAULT_STYLE, stroke: 'transparent', strokeWidth: 0, fillStyle: 'none' },
       label: null,
       meta: {},

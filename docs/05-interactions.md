@@ -14,11 +14,13 @@ Reference implementation: [`src/input/controller.ts`](../src/input/controller.ts
 | Pan | `H` | Drag to pan. |
 | Rectangle | `R` | Drag to size, or click for a default 100 × 80. |
 | Ellipse | `O` | Drag to size, or click for a default 100 × 100. |
+| Diamond | `D` | Drag to size, or click for a default 120 × 80. |
 | Line | `L` | Drag from start to end. |
 | Arrow | `A` | Drag from start to end; binds to shapes at either end. |
 | Draw | `P` | Drag to draw freehand. |
 | Text | `T` | Click to place and start typing. |
 | Sticky note | `N` | Drag to size, or click for a default 160 × 160. |
+| Frame | `F` | Drag to size, or click for a default 400 × 300. |
 | Image | — | Opens a file picker, then places the image. |
 | Eraser | `E` | Click or drag over elements to delete them. |
 
@@ -136,6 +138,32 @@ its neighbours; equal gaps is what reads as evenly distributed. A negative `gap`
 (overlapping elements) is left as-is — the spacing is still even.
 
 Each operation is a single undo step, and bound connectors re-route afterwards.
+
+## Frames
+
+A **frame** is a named region that clips and moves its contents. Draw one with the
+frame tool (`F`), and rename it in the style panel.
+
+- **Membership is decided on drop.** When an element is released, it joins the
+  topmost frame whose box contains the element's **centre**, and leaves whatever
+  frame it was in. Centre containment rather than overlap means an element
+  straddling a border has exactly one unambiguous answer, and it matches the feel
+  of dragging — the pointer's end of the thing is what decides.
+- **Moving a frame moves its contents** by the same delta. Its members are *not*
+  added to the selection, though: selecting a frame should offer to reposition its
+  contents, not to restyle them.
+- **Resizing a frame does not resize its contents.** It re-clips them.
+- **Deleting a frame deletes its contents**, in one undo step. A frame is
+  presented as a container, so leaving its contents floating where it used to be
+  would be the surprising outcome.
+- **The interior is click-through**, exactly like an unfilled rectangle, so
+  contents stay selectable. The frame is grabbed by its **border**.
+- **Frames are not rotatable**, and do not nest.
+
+The frame's name renders above its top-left corner, outside the box. It is
+deliberately not clickable — it sits outside the element's own bounding box, and
+extending the hit region there would put hit-testing at odds with the bounds every
+other part of the app uses for culling and selection.
 
 ## Modifiers during a drag
 

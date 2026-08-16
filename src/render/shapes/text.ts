@@ -70,6 +70,7 @@ export const textDefinition: ElementDefinition<TextElement> = {
       locked: false,
       visible: true,
       groupId: null,
+      frameId: null,
       // Text draws with its own `color`; the shared stroke/fill are unused, so
       // they are set to inert values rather than left to inherit a visible box.
       style: { ...DEFAULT_STYLE, stroke: 'transparent', fill: 'transparent', fillStyle: 'none' },

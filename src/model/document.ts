@@ -53,6 +53,7 @@ import {
   newElementId,
 } from './defaults.ts';
 import { findDefinition } from './registry.ts';
+import { danglingFrameRefs } from './frames.ts';
 import { clamp, normalizeAngle, roundCoord } from './geometry.ts';
 import { migrateDocument, needsMigration } from './migrate.ts';
 
@@ -248,6 +249,7 @@ function normalizeBase(raw: Record<string, unknown>, index: number): BaseElement
     locked: asBoolean(raw.locked, false),
     visible: asBoolean(raw.visible, true),
     groupId: typeof raw.groupId === 'string' && raw.groupId !== '' ? raw.groupId : null,
+    frameId: typeof raw.frameId === 'string' && raw.frameId !== '' ? raw.frameId : null,
     style: normalizeStyle(raw.style),
     label: normalizeLabel(raw.label),
     meta: isRecord(raw.meta) ? { ...raw.meta } : {},
@@ -392,6 +394,20 @@ export function loadDocument(input: string | unknown): LoadResult {
     elements,
     files: normalizeFiles(source.files, warnings),
   };
+
+  // Repair `frameId` references that name something absent or not a frame.
+  // Clipping to a missing frame would render the element invisibly with no
+  // explanation, which is a far worse failure than losing the containment.
+  const dangling = danglingFrameRefs(document);
+  if (dangling.length > 0) {
+    const repaired = new Map(dangling.map((element) => [element.id, element]));
+    document.elements = document.elements.map((element) => repaired.get(element.id) ?? element);
+    warnings.push({
+      level: 'warning',
+      path: 'elements',
+      message: `${dangling.length} element(s) referenced a frame that is not in this board. The containment was dropped.`,
+    });
+  }
 
   warnings.push(...validateDocument(document));
   return { document, warnings, preserved };

@@ -65,6 +65,7 @@ export const stickyDefinition: ElementDefinition<StickyElement> = {
       locked: false,
       visible: true,
       groupId: null,
+      frameId: null,
       style: {
         ...DEFAULT_STYLE,
         // Notes read as paper, not as outlined boxes, so the default has a fill

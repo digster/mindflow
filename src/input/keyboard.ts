@@ -29,6 +29,7 @@ const TOOL_KEYS: Record<string, ToolId> = {
   t: 'text',
   n: 'sticky',
   d: 'diamond',
+  f: 'frame',
   e: 'eraser',
 };
 

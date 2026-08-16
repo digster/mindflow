@@ -40,6 +40,7 @@ export const ellipseDefinition: ElementDefinition<EllipseElement> = {
       locked: false,
       visible: true,
       groupId: null,
+      frameId: null,
       style: { ...DEFAULT_STYLE, ...(init.style as object | undefined) },
       label: null,
       meta: {},

@@ -1,0 +1,475 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://digster.github.io/mindflow/docs/schema/mindflow-1.2.0.schema.json",
+  "title": "MindFlow board",
+  "description": "A MindFlow whiteboard document (.mindflow.json), schema version 1.0.0. Prose specification: https://github.com/digster/mindflow/tree/main/docs. IMPORTANT: this schema describes structure only. Several stored values are computed rather than literal - notably auto-anchored connector endpoints and wrapped text lines - and the algorithms for those are specified in docs/07-rendering.md. Structural validity is necessary but not sufficient to render a board correctly.",
+  "type": "object",
+  "required": ["type", "schemaVersion", "id", "meta", "canvas", "viewport", "elements", "files"],
+  "additionalProperties": false,
+
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL of this schema. Writers SHOULD emit it; readers MUST NOT depend on it."
+    },
+    "type": {
+      "const": "mindflow.board",
+      "description": "Format discriminator. A reader MUST reject any other value."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Version of the FORMAT, not of the application that wrote it."
+    },
+    "id": {
+      "$ref": "#/$defs/identifier",
+      "description": "Board identity. Stable across saves; survives renames."
+    },
+    "meta": { "$ref": "#/$defs/meta" },
+    "canvas": { "$ref": "#/$defs/canvas" },
+    "viewport": { "$ref": "#/$defs/viewport" },
+    "elements": {
+      "type": "array",
+      "description": "The board. Conventionally sorted ascending by zIndex, but zIndex is the source of truth for paint order and readers SHOULD sort defensively.",
+      "items": { "$ref": "#/$defs/element" }
+    },
+    "files": {
+      "type": "object",
+      "description": "Embedded binary assets, keyed by the SHA-256 hex digest of the decoded bytes. Keys MUST be treated as opaque: when crypto.subtle is unavailable MindFlow falls back to a non-cryptographic hash prefixed 'fnv-'.",
+      "additionalProperties": { "$ref": "#/$defs/embeddedFile" }
+    }
+  },
+
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "description": "An opaque string, unique within one document (not globally). Readers MUST NOT parse an identifier, infer order or type from one, or assume a prefix is present."
+    },
+
+    "color": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A CSS colour. MindFlow writes #rrggbb, #rrggbbaa, or the exact keyword 'transparent'. Readers SHOULD accept any valid CSS colour."
+    },
+
+    "isoDateTime": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp."
+    },
+
+    "meta": {
+      "type": "object",
+      "required": ["name", "createdAt", "updatedAt", "app"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Display name. NOT a filename - it may contain characters a filesystem rejects."
+        },
+        "createdAt": { "$ref": "#/$defs/isoDateTime" },
+        "updatedAt": { "$ref": "#/$defs/isoDateTime" },
+        "app": {
+          "type": "object",
+          "required": ["name", "version"],
+          "additionalProperties": false,
+          "description": "Which program wrote this file. Informational only - a reader that branches on it is doing something wrong.",
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "canvas": {
+      "type": "object",
+      "required": ["background", "grid"],
+      "additionalProperties": false,
+      "properties": {
+        "background": { "$ref": "#/$defs/color" },
+        "grid": {
+          "type": "object",
+          "required": ["visible", "size", "snap"],
+          "additionalProperties": false,
+          "properties": {
+            "visible": { "type": "boolean" },
+            "size": { "type": "number", "exclusiveMinimum": 0, "description": "Spacing in scene units." },
+            "snap": { "type": "boolean" }
+          }
+        }
+      }
+    },
+
+    "viewport": {
+      "type": "object",
+      "required": ["x", "y", "zoom"],
+      "additionalProperties": false,
+      "description": "Saved camera position. Carries no semantic weight - two boards differing only in viewport are the same drawing. Readers MAY ignore it entirely.",
+      "properties": {
+        "x": { "type": "number", "description": "Scene x shown at the canvas's left edge." },
+        "y": { "type": "number", "description": "Scene y shown at the canvas's top edge." },
+        "zoom": { "type": "number", "minimum": 0.1, "maximum": 30 }
+      }
+    },
+
+    "embeddedFile": {
+      "type": "object",
+      "required": ["mimeType", "dataUri", "byteLength", "createdAt"],
+      "additionalProperties": false,
+      "properties": {
+        "mimeType": { "type": "string" },
+        "dataUri": {
+          "type": "string",
+          "pattern": "^data:",
+          "description": "RFC 2397 data URI, including the 'data:' prefix."
+        },
+        "byteLength": { "type": "integer", "minimum": 0, "description": "Decoded size, so a reader can budget before decoding." },
+        "createdAt": { "$ref": "#/$defs/isoDateTime" }
+      }
+    },
+
+    "pointTuple": {
+      "type": "array",
+      "description": "A point in the element's LOCAL frame, relative to its x/y. Two or three numbers: [x, y] or [x, y, pressure]. Tuples rather than {x,y} objects because a freehand stroke holds hundreds of points.",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 3
+    },
+
+    "style": {
+      "type": "object",
+      "required": ["stroke", "strokeWidth", "strokeStyle", "fill", "fillStyle", "roughness"],
+      "additionalProperties": false,
+      "description": "Fully resolved. Nothing is inherited from a parent, a theme, or a document default - which is what makes a single element interpretable in isolation.",
+      "properties": {
+        "stroke": { "$ref": "#/$defs/color", "description": "'transparent' means no outline." },
+        "strokeWidth": { "type": "number", "minimum": 0, "description": "Scene units. 0 also means no outline." },
+        "strokeStyle": { "enum": ["solid", "dashed", "dotted"] },
+        "fill": { "$ref": "#/$defs/color", "description": "Ignored entirely when fillStyle is 'none'." },
+        "fillStyle": { "enum": ["solid", "none"] },
+        "roughness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Hand-drawn jitter. 0 renders clean geometric shapes. Non-zero values displace the outline using a seeded PRNG specified in docs/07-rendering.md; the seed is derived from the element id, so no seed is stored. Readers that cannot reproduce the jitter MUST still accept and preserve the value, and may render it as 0."
+        }
+      }
+    },
+
+    "fontFamily": {
+      "enum": ["sans", "serif", "mono", "hand"],
+      "description": "A LOGICAL name, not a typeface. Each maps to a CSS font stack listed in docs/07-rendering.md. Keeps boards portable across machines with different fonts installed."
+    },
+
+    "textAlign": { "enum": ["left", "center", "right"] },
+    "verticalAlign": { "enum": ["top", "middle", "bottom"] },
+
+    "label": {
+      "type": ["object", "null"],
+      "required": ["text", "fontFamily", "fontSize", "fontWeight", "lineHeight", "color", "textAlign", "verticalAlign", "padding"],
+      "additionalProperties": false,
+      "description": "Text drawn INSIDE the element, or null. It has no coordinates of its own - it is laid out within the host's box and rotates with it. Line breaking is computed; see docs/07-rendering.md#text-wrapping.",
+      "properties": {
+        "text": { "type": "string" },
+        "fontFamily": { "$ref": "#/$defs/fontFamily" },
+        "fontSize": { "type": "number", "exclusiveMinimum": 0, "description": "Em size in scene units." },
+        "fontWeight": { "type": "integer", "minimum": 100, "maximum": 900 },
+        "lineHeight": { "type": "number", "minimum": 0.5, "description": "Line advance as a multiple of fontSize." },
+        "color": { "$ref": "#/$defs/color" },
+        "textAlign": { "$ref": "#/$defs/textAlign" },
+        "verticalAlign": { "$ref": "#/$defs/verticalAlign" },
+        "padding": { "type": "number", "minimum": 0, "description": "Inset between the host's box and the text, in scene units." }
+      }
+    },
+
+    "binding": {
+      "type": ["object", "null"],
+      "required": ["elementId", "anchor", "gap"],
+      "additionalProperties": false,
+      "description": "How a connector endpoint attaches to another element. The connector's stored points are a CACHE of the last computed route - a reader that moves a bound element MUST recompute them using docs/07-rendering.md#binding-resolution.",
+      "properties": {
+        "elementId": {
+          "$ref": "#/$defs/identifier",
+          "description": "MUST reference an existing element in the same document, and that element MUST be bindable (not a line or arrow)."
+        },
+        "anchor": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["mode"],
+              "additionalProperties": false,
+              "description": "Recomputed whenever either element moves: cast a ray from the target's centre toward the connector's other end and take where it crosses the outline.",
+              "properties": { "mode": { "const": "auto" } }
+            },
+            {
+              "type": "object",
+              "required": ["mode", "u", "v"],
+              "additionalProperties": false,
+              "description": "Pinned to a spot on the target's local unrotated box, then transformed by its rotation.",
+              "properties": {
+                "mode": { "const": "fixed" },
+                "u": { "type": "number", "minimum": 0, "maximum": 1, "description": "0 = left edge, 1 = right edge." },
+                "v": { "type": "number", "minimum": 0, "maximum": 1, "description": "0 = top edge, 1 = bottom edge." }
+              }
+            }
+          ]
+        },
+        "gap": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Clearance between the target's outline and the connector tip, in scene units. This is why an arrow never quite touches the shape it points at."
+        }
+      }
+    },
+
+    "baseElement": {
+      "type": "object",
+      "required": ["id", "type", "x", "y", "width", "height", "angle", "zIndex", "opacity", "locked", "visible", "groupId", "frameId", "style", "label", "meta"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "type": { "enum": ["rectangle", "ellipse", "line", "arrow", "draw", "text", "sticky", "image", "diamond", "frame"] },
+        "x": {
+          "type": "number",
+          "description": "Left edge of the UNROTATED bounding box, in scene units. Once angle is non-zero this is NOT the visually top-left corner."
+        },
+        "y": { "type": "number", "description": "Top edge of the UNROTATED bounding box, in scene units." },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Always strictly positive. A flipped element is expressed by mirrored geometry or a 180 degree angle, never by a negative dimension."
+        },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "angle": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 360,
+          "description": "DEGREES, clockwise, about the box centre. Degrees rather than radians so raw JSON stays legible to humans and language models."
+        },
+        "zIndex": {
+          "type": "number",
+          "description": "Paint order; higher draws on top. Fractional by design, so inserting between two elements rewrites one number instead of renumbering the stack."
+        },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1, "description": "Applies to stroke and fill together." },
+        "locked": { "type": "boolean", "description": "Renders normally but cannot be selected or edited." },
+        "visible": { "type": "boolean", "description": "When false: not rendered, not exported, not hit-testable." },
+        "groupId": {
+          "type": ["string", "null"],
+          "description": "Flat grouping by reference. Elements sharing a groupId move, rotate and delete as a unit. There is no group object and no nesting; a group exists exactly as long as two or more elements name it."
+        },
+        "frameId": {
+          "type": ["string", "null"],
+          "description": "Id of the `frame` element containing this one, or null. Containment is by reference from the CHILD, exactly like groupId, and coordinates stay absolute - a framed element's x/y are scene coordinates, not relative to its frame. A frame's own frameId is always null; frames do not nest. Added in 1.2.0."
+        },
+        "style": { "$ref": "#/$defs/style" },
+        "label": { "$ref": "#/$defs/label" },
+        "meta": {
+          "type": "object",
+          "description": "RESERVED FOR TOOLS OTHER THAN MINDFLOW. MindFlow never reads, writes, interprets or validates the contents, but always preserves them across a load/save round trip."
+        }
+      }
+    },
+
+    "rectangleElement": {
+      "allOf": [
+        { "$ref": "#/$defs/baseElement" },
+        {
+          "type": "object",
+          "required": ["type", "cornerRadius"],
+          "properties": {
+            "type": { "const": "rectangle" },
+            "cornerRadius": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Scene units. Clamped AT RENDER TIME to half the shorter side, so a large value yields a stadium rather than invalid geometry. The stored value is never clamped."
+            }
+          }
+        }
+      ]
+    },
+
+    "frameElement": {
+      "allOf": [
+        { "$ref": "#/$defs/baseElement" },
+        {
+          "type": "object",
+          "required": ["type", "name"],
+          "description": "A named region that clips and moves its contents. Never rotated (angle is always 0) so the clip region is a plain rectangle. The interior is click-through; the frame is grabbed by its border.",
+          "properties": {
+            "type": { "const": "frame" },
+            "name": {
+              "type": "string",
+              "description": "Drawn above the frame's top-left corner. May be empty."
+            }
+          }
+        }
+      ]
+    },
+
+    "diamondElement": {
+      "allOf": [
+        { "$ref": "#/$defs/baseElement" },
+        {
+          "type": "object",
+          "required": ["type"],
+          "description": "A rhombus inscribed in the element's box, for flowchart decision nodes. The four vertices are the midpoints of the box's edges, so the box is the entire geometry.",
+          "properties": {
+            "type": { "const": "diamond" }
+          }
+        }
+      ]
+    },
+
+    "ellipseElement": {
+      "allOf": [
+        { "$ref": "#/$defs/baseElement" },
+        {
+          "type": "object",
+          "required": ["type"],
+          "description": "An ellipse inscribed in the element's box. A square box yields a circle.",
+          "properties": { "type": { "const": "ellipse" } }
+        }
+      ]
+    },
+
+    "linearElement": {
+      "allOf": [
+        { "$ref": "#/$defs/baseElement" },
+        {
+          "type": "object",
+          "required": ["type", "points", "startArrowhead", "endArrowhead", "curve", "startBinding", "endBinding"],
+          "description": "A line or arrow. Both share one implementation and differ only in default arrowheads - the type records what the author meant, the arrowhead fields record what is drawn.",
+          "properties": {
+            "type": { "enum": ["line", "arrow"] },
+            "points": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/pointTuple" },
+              "minItems": 2,
+              "description": "Vertices relative to x/y, so translating the element never touches this array. The first and last are the endpoints bindings apply to."
+            },
+            "startArrowhead": { "enum": ["none", "arrow", "triangle", "dot", "bar"] },
+            "endArrowhead": { "enum": ["none", "arrow", "triangle", "dot", "bar"] },
+            "curve": {
+              "enum": ["straight", "curved", "elbow"],
+              "description": "Routing style. The elbow and curve algorithms are specified in docs/07-rendering.md#connector-routing."
+            },
+            "startBinding": { "$ref": "#/$defs/binding" },
+            "endBinding": { "$ref": "#/$defs/binding" }
+          }
+        }
+      ]
+    },
+
+    "drawElement": {
+      "allOf": [
+        { "$ref": "#/$defs/baseElement" },
+        {
+          "type": "object",
+          "required": ["type", "points", "pressureSensitive"],
+          "properties": {
+            "type": { "const": "draw" },
+            "points": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/pointTuple" },
+              "minItems": 1,
+              "description": "Freehand path relative to x/y, in capture order. Thinned with Douglas-Peucker on commit."
+            },
+            "pressureSensitive": {
+              "type": "boolean",
+              "description": "When true the third tuple component is stylus pressure in [0,1] and the stroke is drawn with variable width. When false any pressure values are ignored for rendering but still preserved on save."
+            }
+          }
+        }
+      ]
+    },
+
+    "textElement": {
+      "allOf": [
+        { "$ref": "#/$defs/baseElement" },
+        {
+          "type": "object",
+          "required": ["type", "text", "fontFamily", "fontSize", "fontWeight", "lineHeight", "color", "textAlign", "verticalAlign", "autoWidth"],
+          "description": "Free-standing text. Distinct from a label, which is text inside another element. style.stroke and style.fill are unused - text draws with its own colour.",
+          "properties": {
+            "type": { "const": "text" },
+            "text": { "type": "string" },
+            "fontFamily": { "$ref": "#/$defs/fontFamily" },
+            "fontSize": { "type": "number", "exclusiveMinimum": 0 },
+            "fontWeight": { "type": "integer", "minimum": 100, "maximum": 900 },
+            "lineHeight": { "type": "number", "minimum": 0.5 },
+            "color": { "$ref": "#/$defs/color" },
+            "textAlign": { "$ref": "#/$defs/textAlign" },
+            "verticalAlign": { "$ref": "#/$defs/verticalAlign" },
+            "autoWidth": {
+              "type": "boolean",
+              "description": "True: width is derived from the text and it never wraps. False: width is authoritative and the text wraps to fit. Either way width/height are written out correctly, so a reader that cannot measure text should trust them and ignore this flag."
+            }
+          }
+        }
+      ]
+    },
+
+    "stickyElement": {
+      "allOf": [
+        { "$ref": "#/$defs/baseElement" },
+        {
+          "type": "object",
+          "required": ["type", "text", "fontFamily", "fontSize", "fontWeight", "lineHeight", "color", "textAlign", "verticalAlign", "padding"],
+          "description": "A sticky note. Deliberately its own type rather than a rectangle with a label: a distinct type preserves authorial intent, so a program can answer 'what are the sticky notes here?' from the data rather than from styling heuristics.",
+          "properties": {
+            "type": { "const": "sticky" },
+            "text": { "type": "string" },
+            "fontFamily": { "$ref": "#/$defs/fontFamily" },
+            "fontSize": { "type": "number", "exclusiveMinimum": 0 },
+            "fontWeight": { "type": "integer", "minimum": 100, "maximum": 900 },
+            "lineHeight": { "type": "number", "minimum": 0.5 },
+            "color": { "$ref": "#/$defs/color" },
+            "textAlign": { "$ref": "#/$defs/textAlign" },
+            "verticalAlign": { "$ref": "#/$defs/verticalAlign" },
+            "padding": { "type": "number", "minimum": 0 }
+          }
+        }
+      ]
+    },
+
+    "imageElement": {
+      "allOf": [
+        { "$ref": "#/$defs/baseElement" },
+        {
+          "type": "object",
+          "required": ["type", "fileId", "naturalWidth", "naturalHeight", "objectFit"],
+          "properties": {
+            "type": { "const": "image" },
+            "fileId": {
+              "$ref": "#/$defs/identifier",
+              "description": "Key into the document's files map. MUST resolve; a dangling reference renders as a placeholder and is reported by validation."
+            },
+            "naturalWidth": { "type": "number", "exclusiveMinimum": 0, "description": "Intrinsic pixel width of the source." },
+            "naturalHeight": { "type": "number", "exclusiveMinimum": 0 },
+            "objectFit": {
+              "enum": ["fill", "contain", "cover"],
+              "description": "As per CSS object-fit. Rendering is always clipped to the element's box."
+            }
+          }
+        }
+      ]
+    },
+
+    "element": {
+      "description": "Discriminated on the 'type' field.",
+      "oneOf": [
+        { "$ref": "#/$defs/rectangleElement" },
+        { "$ref": "#/$defs/ellipseElement" },
+        { "$ref": "#/$defs/linearElement" },
+        { "$ref": "#/$defs/drawElement" },
+        { "$ref": "#/$defs/textElement" },
+        { "$ref": "#/$defs/stickyElement" },
+        { "$ref": "#/$defs/imageElement" },
+        { "$ref": "#/$defs/diamondElement" },
+        { "$ref": "#/$defs/frameElement" }
+      ]
+    }
+  }
+}

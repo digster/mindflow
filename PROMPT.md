@@ -81,3 +81,24 @@ Chromium, but the investigation found a real one underneath: `TextEditor.commit`
 dirtied the board for edits that changed nothing, because `Store.execute` detects
 no-op commands by reference and `commit` always rebuilds the element. Fixed with
 a `touched` flag, plus a defensive editor close on both document-swap paths.
+
+---
+
+> Suggest the next set of features to add. Do not change anything in the repo yet.
+
+Read the README, ARCHITECTURE, docs contract and both memory files, then surveyed
+the source. Proposed three tiers, led by a finding: `Actions.align` was fully
+implemented and had no caller — the same defect class as the New board button.
+
+> Create a plan for the tier one and tier two features.
+
+Explored the affected surfaces and wrote a plan. Decisions taken with the user:
+all three Tier 2 features, two batches on one branch, and one shared popover
+module rather than three bespoke overlays.
+
+> implement the plan.
+
+Implemented both batches. Tier 1: fixed and exposed align (plus distribute), a
+context menu, a command palette, find on board, and a style clipboard. Tier 2:
+schema 1.1.0 (`diamond` and hand-drawn rendering) and 1.2.0 (`frame`), plus the
+registry extension points both needed and two contract-test gaps they exposed.

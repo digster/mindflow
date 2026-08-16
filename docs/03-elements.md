@@ -23,6 +23,7 @@ a connector can attach.
 | `rectangle` | ✓ | | | ✓ | ✓ | ✓ |
 | `ellipse` | ✓ | | | ✓ | ✓ | ✓ |
 | `diamond` | ✓ | | | ✓ | ✓ | ✓ |
+| `frame` | | | | ✓ | | ✓ |
 | `line` | ✓ | ✓ | | ✓ | ✓ | |
 | `arrow` | ✓ | ✓ | | ✓ | ✓ | |
 | `draw` | | ✓ | | ✓ | ✓ | |
@@ -110,6 +111,54 @@ t = 1 / (|dx|/a + |dy|/b)
 Falling back to the rectangular default would leave an arrow aimed near a corner
 stopping up to `min(width, height) / 2` short of the visible edge. See
 [07-rendering.md](07-rendering.md#binding-resolution).
+
+---
+
+## frame
+
+A named region that clips and moves its contents.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `name` | string | `"Frame"` | Drawn above the top-left corner. May be empty. |
+
+**Containment is by reference from the child.** An element inside a frame carries
+`"frameId": "<the frame's id>"`; the frame holds no list of its own. This mirrors
+`groupId` and keeps the element array flat, sortable and diffable.
+
+**Coordinates stay absolute.** A framed element's `x`/`y` are ordinary scene
+coordinates, *not* relative to its frame. Nothing about containment changes how
+geometry is read.
+
+**Frames do not nest.** A `frame`'s own `frameId` is always `null`. Readers should
+enforce this rather than trust it — MindFlow does, on load.
+
+**Never rotated.** `angle` is always `0`, and `rotatable` is false. This is what
+keeps the clip region a plain rectangle instead of a rotated polygon, in every
+renderer.
+
+**Rendering:** the frame is painted as an ordinary filled and stroked rectangle,
+in `zIndex` order like anything else — put it *below* its contents by giving it a
+lower `zIndex`. Every element with a matching `frameId` is then clipped to the
+frame's box. The `name` is drawn outside the box, left-aligned to the frame's left
+edge with its baseline 6 scene units above the top edge, in 13px semibold `sans`.
+
+**Membership:** an element belongs to the topmost frame whose box contains the
+element's **centre**. Centre containment, not overlap, so an element straddling a
+border has exactly one unambiguous answer. MindFlow recomputes this whenever an
+element is dropped; see [05-interactions.md](05-interactions.md#frames).
+
+**Moving and deleting:** moving a frame moves its members by the same delta.
+Deleting a frame deletes its members. Resizing a frame does **not** resize its
+members — it re-clips them.
+
+**Hit-testing:** the interior is click-through, so contents stay reachable. The
+frame is hit only near its border, within the usual tolerance. Its `name` is
+decorative and is not part of the hit region.
+
+**Dangling references:** a `frameId` naming an element that is absent or is not a
+frame should be treated as `null`. A reader that clips to a missing frame would
+render the element invisibly with no explanation.
 
 ---
 
