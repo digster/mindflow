@@ -165,6 +165,18 @@ export class Renderer {
     ctx.save();
     ctx.globalAlpha = element.opacity;
 
+    // Frame clipping. Applied BEFORE the element's own transform, so the clip
+    // stays in scene space where the frame's box is defined — a frame is never
+    // rotated, which is what keeps this a plain rectangle rather than a path.
+    if (element.frameId !== null) {
+      const frame = render.document.elements.find((candidate) => candidate.id === element.frameId);
+      if (frame) {
+        ctx.beginPath();
+        ctx.rect(frame.x, frame.y, frame.width, frame.height);
+        ctx.clip();
+      }
+    }
+
     const centerX = element.x + element.width / 2;
     const centerY = element.y + element.height / 2;
     ctx.translate(centerX, centerY);

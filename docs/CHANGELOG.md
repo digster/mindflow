@@ -106,17 +106,107 @@ Recorded so they are not rediscovered as surprises.
 
 ---
 
-## Unreleased
+## 1.1.0 — 2026-08-16
 
-Nothing yet.
+Additive. Every 1.0.0 file remains valid, and a 1.0.0 reader can load a 1.1.0
+file, degrading only on what it does not recognise.
+
+### Added
+
+**`diamond` element type.** A rhombus for flowchart decision nodes, carrying no
+fields of its own — the four vertices are the midpoints of the box's edges, so
+the box is the entire geometry. Full reference in
+[03-elements.md](03-elements.md#diamond).
+
+It was chosen as the first new type deliberately: it is the smallest possible
+complete addition, which makes it the honest test of whether the extension path
+in [09-extending.md](09-extending.md) actually works. It did not, quite — see
+below.
+
+### Changed
+
+**`style.roughness` is now rendered rather than reserved.** The field has existed
+since 1.0.0, always written as `0`. It now drives a hand-drawn look, specified in
+[07-rendering.md](07-rendering.md#hand-drawn-rendering).
+
+The interesting decision is the seed. Jitter needs one, or the same file draws
+differently on every open — and if the seed were unspecified, two renderers would
+disagree about a file that validates perfectly, which is exactly the failure this
+format exists to prevent. Storing a `seed` field was the obvious option and was
+rejected: it is a structural change to every element for a value that can be
+derived. **The seed is the element's `id`**, hashed as specified in
+07-rendering.md. Ids are already stored, already stable across a save/load round
+trip, and already re-minted on duplicate — so a copy legitimately gets its own
+squiggle, which is the behaviour you want anyway.
+
+Consequently there is no schema change for roughness at all: `0..2` was already
+the constraint, and only the field's *description* differs from 1.0.0.
+
+**Auto-anchor resolution is now specified per shape**, with the rectangular
+outline as the documented default rather than an implicit else-branch. See
+[07-rendering.md](07-rendering.md#binding-resolution). A reader that meets an
+unknown type should use the rectangular default.
+
+### Notes for implementers
+
+Two things this release exposed about the format's own tooling, recorded because
+they will apply to the next type too:
+
+- **A new type must appear in `$defs.element.oneOf`**, not merely as a `$defs`
+  entry with its name added to the `baseElement` type enum. The union is what a
+  validator actually walks.
+- **The `$schema` URL every saved file carries is derived from the version
+  constant**, so it can no longer drift from it. It was previously a hand-written
+  literal that no test checked.
+
+---
+
+## 1.2.0 — 2026-08-16
+
+Additive. A 1.1.0 file is a valid 1.2.0 file with no frames.
+
+### Added
+
+**`frame` element type**, and **`frameId` on every element**. A frame is a named
+region that clips and moves its contents. Full reference in
+[03-elements.md](03-elements.md#frame).
+
+The design decisions, since each rules out something that looks more obvious:
+
+**Containment is an ID reference held by the child**, mirroring `groupId`, rather
+than a `childIds` list on the frame or an actual tree. The flat array is the thing
+this format keeps defending — sortable, sliceable, diffable, with no ambiguity
+about relative versus absolute transforms — and a parent-pointer preserves all of
+it. A framed element's `x`/`y` remain ordinary scene coordinates.
+
+**Frames do not nest.** A frame's own `frameId` is always `null`. Nesting would
+reintroduce the tree by the back door, along with questions about how a clip
+composes with an ancestor's clip, for a use case that has not appeared.
+
+**Membership is decided by the element's centre**, not by overlap. An element
+straddling a border needs exactly one answer, and the centre gives one without a
+tie-break rule.
+
+**Frames are never rotated.** `rotatable` is false and `angle` is always `0`,
+which is what keeps the clip region a plain rectangle in every renderer rather
+than a rotated polygon that each would have to intersect for itself.
+
+**The interior is click-through.** A frame that swallowed clicks would make its
+own contents unselectable. It is grabbed by its border, exactly like an unfilled
+rectangle — no new concept.
+
+### Notes for implementers
+
+`frameId` is `required` in the schema, as `groupId` already was. A 1.1.0 reader
+meeting it should ignore and preserve it, which degrades to "frames do not clip"
+rather than to breakage.
+
+---
+
+## Unreleased
 
 Candidates under consideration, in rough priority order:
 
-- `diamond` element type — flowchart decision nodes. Worked through end to end as
-  the example in [09-extending.md](09-extending.md).
-- `frame` element type — named regions that clip and move their contents.
-- `style.roughness` implementation — the hand-drawn look. Requires specifying the
-  jitter algorithm and its seeding, or two renderers will disagree.
 - Google Picker support, to lift the `drive.file` limitation described in
   [08-google-drive.md](08-google-drive.md#the-limitation-stated-plainly).
 - Nested groups — only if a real use case appears. The flat model has not been

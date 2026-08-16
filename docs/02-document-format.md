@@ -198,12 +198,20 @@ annotations without any risk of colliding with a future MindFlow field.
 | `strokeStyle` | `solid` \| `dashed` \| `dotted` | `"solid"` | Dash pattern scales with width — see [07-rendering.md](07-rendering.md#dash-patterns). |
 | `fill` | CSS colour | `"transparent"` | Ignored entirely when `fillStyle` is `"none"`. |
 | `fillStyle` | `solid` \| `none` | `"none"` | |
-| `roughness` | number 0–2 | `0` | **Reserved.** See below. |
+| `roughness` | number 0–2 | `0` | Hand-drawn jitter. See below. |
 
-`roughness` describes hand-drawn jitter. MindFlow 1.0.0 only ever writes `0` and
-renders everything as clean geometry. The field exists now because adding a field
-later is a breaking change for strict readers, while reserving one costs nothing.
-Readers MUST accept and preserve non-zero values even if they render them as `0`.
+`roughness` describes hand-drawn jitter. `0` renders clean geometry; higher values
+displace the outline. The field was reserved-but-unwritten in 1.0.0 and is
+rendered as of 1.1.0.
+
+The displacement is **fully specified** in
+[07-rendering.md](07-rendering.md#hand-drawn-rendering), including the hash and
+PRNG, because a partially specified jitter is worse than none: two renderers would
+each draw something plausible and disagree. Note that **no seed is stored** — it is
+derived from the element's `id`, which is already in the file and already stable.
+
+Readers that cannot reproduce the jitter MUST still accept and preserve the value,
+and MAY render the shape as though it were `0`.
 
 Colours: MindFlow writes `#rrggbb`, `#rrggbbaa`, or the exact keyword
 `"transparent"`. Readers SHOULD accept any valid CSS colour.

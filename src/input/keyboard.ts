@@ -28,6 +28,8 @@ const TOOL_KEYS: Record<string, ToolId> = {
   p: 'draw',
   t: 'text',
   n: 'sticky',
+  d: 'diamond',
+  f: 'frame',
   e: 'eraser',
 };
 
@@ -40,6 +42,8 @@ export interface KeyboardOptions {
   onNew: () => void;
   onExport: () => void;
   onSpaceChange: (held: boolean) => void;
+  onCommandPalette: () => void;
+  onFind: () => void;
 }
 
 /**
@@ -118,19 +122,49 @@ export function installKeyboardShortcuts(options: KeyboardOptions): () => void {
       return;
     }
 
+    // ---- Overlays ---------------------------------------------------------
+    // Cmd+K is unclaimed by browsers. Cmd+F is not, and taking it is deliberate:
+    // the browser's find searches the DOM, and canvas text is painted pixels, so
+    // its dialog could never match anything on the board.
+    if (primary && key === 'k') {
+      event.preventDefault();
+      options.onCommandPalette();
+      return;
+    }
+    if (primary && key === 'f') {
+      event.preventDefault();
+      options.onFind();
+      return;
+    }
+
+    // ---- Style clipboard --------------------------------------------------
+    // Checked BEFORE the element clipboard below, and the element clipboard now
+    // tests `!event.altKey` — otherwise Cmd+Alt+C would match the plain Cmd+C
+    // branch first and copy the elements instead of their appearance.
+    if (primary && event.altKey && key === 'c') {
+      event.preventDefault();
+      actions.copyStyle();
+      return;
+    }
+    if (primary && event.altKey && key === 'v') {
+      event.preventDefault();
+      actions.pasteStyle();
+      return;
+    }
+
     // ---- Clipboard --------------------------------------------------------
     // Note: copy/cut/paste are ALSO wired to the native clipboard events in
     // `main.ts`. These handlers cover browsers that do not deliver those events
     // to a canvas, and are harmless duplicates where they do.
-    if (primary && key === 'c') {
+    if (primary && !event.altKey && key === 'c') {
       void actions.copy();
       return;
     }
-    if (primary && key === 'x') {
+    if (primary && !event.altKey && key === 'x') {
       void actions.cut();
       return;
     }
-    if (primary && key === 'v') {
+    if (primary && !event.altKey && key === 'v') {
       void actions.paste();
       return;
     }
@@ -274,6 +308,7 @@ export const SHORTCUT_REFERENCE: { group: string; items: [string, string][] }[] 
       ['Cmd/Ctrl + Z', 'Undo'],
       ['Cmd/Ctrl + Shift + Z', 'Redo'],
       ['Cmd/Ctrl + C / X / V', 'Copy / Cut / Paste'],
+      ['Cmd/Ctrl + Alt + C / V', 'Copy / paste style'],
       ['Cmd/Ctrl + D', 'Duplicate'],
       ['Cmd/Ctrl + A', 'Select all'],
       ['Delete', 'Delete selection'],
@@ -287,6 +322,14 @@ export const SHORTCUT_REFERENCE: { group: string; items: [string, string][] }[] 
       ['Cmd/Ctrl + Shift + G', 'Ungroup'],
       ['Cmd/Ctrl + ]', 'Bring forward (Shift: to front)'],
       ['Cmd/Ctrl + [', 'Send backward (Shift: to back)'],
+    ],
+  },
+  {
+    group: 'Find and run',
+    items: [
+      ['Cmd/Ctrl + K', 'Command palette'],
+      ['Cmd/Ctrl + F', 'Find on board'],
+      ['Right-click', 'Context menu'],
     ],
   },
   {

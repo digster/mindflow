@@ -16,7 +16,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
@@ -24,6 +24,8 @@ import addFormats from 'ajv-formats';
 import '../../src/render/shapes/index.ts';
 import { allDefinitions, registeredTypes } from '../../src/model/registry.ts';
 import { CURRENT_SCHEMA_VERSION, ELEMENT_TYPES } from '../../src/model/types.ts';
+import { SCHEMA_URL } from '../../src/model/defaults.ts';
+import { registeredMigrations } from '../../src/model/migrate.ts';
 import { loadDocument, serializeDocument } from '../../src/model/document.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..');
@@ -106,6 +108,39 @@ describe('registry ↔ documentation', () => {
       changelog.includes(`## ${CURRENT_SCHEMA_VERSION}`),
       `docs/CHANGELOG.md has no "## ${CURRENT_SCHEMA_VERSION}" entry`,
     ).toBe(true);
+  });
+
+  /**
+   * `SCHEMA_URL` is stamped into every board MindFlow saves. It was a
+   * hand-written literal until 1.1.0, with nothing tying it to the version
+   * constant — so a bump that forgot to update it would have shipped files
+   * pointing at the wrong schema document, silently and permanently.
+   */
+  it('the advertised $schema URL names the current schema, and that file exists', () => {
+    expect(SCHEMA_URL).toContain(`mindflow-${CURRENT_SCHEMA_VERSION}.schema.json`);
+    expect(
+      existsSync(SCHEMA_PATH),
+      `${SCHEMA_URL} names a schema that is not published in docs/schema/`,
+    ).toBe(true);
+  });
+
+  /**
+   * A version bump with no migration entry is not an error — but it makes every
+   * previously saved file load with a "no migration is available" warning, which
+   * reads as data loss to anyone who sees it.
+   */
+  it('every published version can be migrated to the current one', () => {
+    const changelog = readFileSync(join(DOCS, 'CHANGELOG.md'), 'utf8');
+    const published = [...changelog.matchAll(/^## (\d+\.\d+\.\d+)/gm)].map((match) => match[1] as string);
+    const migrations = registeredMigrations();
+
+    for (const version of published) {
+      if (version === CURRENT_SCHEMA_VERSION) continue;
+      expect(
+        migrations[version],
+        `no migration from ${version}; every 1.0.0-era board would load with a warning`,
+      ).toBeDefined();
+    }
   });
 
   it('every definition declares a complete capability set', () => {

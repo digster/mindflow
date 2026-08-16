@@ -63,6 +63,7 @@ import {
   topZIndex,
 } from '../store/commands.ts';
 import { boxFromPoints, elementAt, elementsInBox, elementsByIds } from './hitTest.ts';
+import { reassignFrames, withFrameMembers } from '../model/frames.ts';
 import { computeSnap } from './snapping.ts';
 import {
   BIND_DISTANCE,
@@ -117,6 +118,12 @@ export interface ControllerOptions {
   onOverlayChange: () => void;
   /** Prompts for an image file, used by the image tool. */
   onRequestImage: (scenePoint: Point) => void;
+  /**
+   * Opens the context menu. `screen` is in viewport coordinates for placement,
+   * `scene` in board coordinates for position-dependent actions like "Paste
+   * here". `hit` is whatever was under the pointer, locked elements included.
+   */
+  onContextMenu?: (context: { scene: Point; screen: Point; hit: MindflowElement | null }) => void;
 }
 
 export class InteractionController {
@@ -124,6 +131,8 @@ export class InteractionController {
   private pointerDownScreen: Point | null = null;
   private movedPastThreshold = false;
   private spaceHeld = false;
+  /** The pointer the canvas most recently captured; see `onContextMenu`. */
+  private capturedPointerId: number | null = null;
 
   /** Live overlay state, read by the renderer each frame. */
   marquee: ReturnType<typeof boxFromPoints> | null = null;
@@ -189,6 +198,9 @@ export class InteractionController {
     }
 
     this.options.canvas.setPointerCapture(event.pointerId);
+    // Remembered so `onContextMenu` can release it. A `contextmenu` event is a
+    // MouseEvent and carries no pointerId of its own.
+    this.capturedPointerId = event.pointerId;
     this.pointerDownScreen = this.screenPoint(event);
     this.movedPastThreshold = false;
 
@@ -216,6 +228,8 @@ export class InteractionController {
       case 'rectangle':
       case 'ellipse':
       case 'sticky':
+      case 'diamond':
+      case 'frame':
         this.beginBoxCreate(tool, scene);
         break;
       case 'line':
@@ -296,14 +310,33 @@ export class InteractionController {
     }
 
     // Move whatever is selected after the click resolved, which may be a whole
-    // group even though only one member was hit.
-    const moving = store.selectedElements();
-    if (moving.length > 0 && canTransform(moving)) {
+    // group even though only one member was hit — and, if a frame is in there,
+    // everything the frame contains. Members travel with their frame but are NOT
+    // added to the selection: selecting a frame should not offer to restyle its
+    // contents, only to reposition them.
+    const dragged = store.selectedElements();
+    const movingIds = withFrameMembers(store.document, dragged.map((el) => el.id));
+    const moving = store.document.elements.filter((el) => movingIds.has(el.id));
+    if (moving.length > 0 && canTransform(dragged)) {
       this.gesture = { kind: 'move', origin: scene, originals: moving.map((el) => ({ ...el })) };
     }
   }
 
-  private beginBoxCreate(tool: 'rectangle' | 'ellipse' | 'sticky', scene: Point): void {
+  /**
+   * Re-evaluates frame membership after a move, as its own command.
+   *
+   * Separate from the geometry commit deliberately: membership is a
+   * consequence of where things landed, and keeping it distinct means a drag
+   * that never crosses a frame border produces no patch at all.
+   */
+  private reassignFrames(movedIds: ReadonlySet<ElementId>): void {
+    const { store } = this.options;
+    const changed = reassignFrames(store.document, movedIds);
+    if (changed.length === 0) return;
+    store.execute(replaceElements(store.document, changed, 'Reframe'));
+  }
+
+  private beginBoxCreate(tool: 'rectangle' | 'ellipse' | 'sticky' | 'diamond' | 'frame', scene: Point): void {
     const { store } = this.options;
     const definition = getDefinition(tool);
     const element = definition.create({
@@ -641,6 +674,10 @@ export class InteractionController {
         const ids = new Set(this.gesture.originals.map((el) => el.id));
         const finalElements = elementsByIds(store.document, ids);
         this.commitGesture(this.gesture.originals, finalElements, labelFor(this.gesture.kind));
+        // Membership is decided on drop, by where each element ended up. Done
+        // after the commit so it lands as its own step rather than being folded
+        // into the transient replay.
+        this.reassignFrames(ids);
         break;
       }
 
@@ -719,6 +756,10 @@ export class InteractionController {
     // stack holds exactly one "add" entry.
     store.execute(deleteElements(store.document, [element.id]), true);
     store.execute(addElements([element], `Add ${getDefinition(element.type).title.toLowerCase()}`));
+    // Drawing something inside a frame must join it, exactly as dropping it there
+    // would. Creation is not a move, so it needs its own call — without this, an
+    // element drawn straight into a frame is never clipped by it.
+    this.reassignFrames(new Set([element.id]));
     store.setSelection([element.id]);
     store.setTool('select');
   }
@@ -817,6 +858,19 @@ export class InteractionController {
       elementAt(store.document, scene, zoom) ??
       elementAt(store.document, scene, zoom, { includeLocked: true });
     if (hit && !store.isSelected(hit.id)) store.setSelection([hit.id]);
+
+    // A menu opened mid-gesture would act on a selection that is still moving,
+    // and its dismissal would race the pointerup that ends the drag.
+    if (this.gesture.kind !== 'none') return;
+
+    // `contextmenu` fires between pointerdown and pointerup, and pointerdown has
+    // already captured the pointer (before the right-button bail). Releasing it
+    // here stops the canvas swallowing the pointer events the menu needs.
+    if (this.capturedPointerId !== null && this.options.canvas.hasPointerCapture(this.capturedPointerId)) {
+      this.options.canvas.releasePointerCapture(this.capturedPointerId);
+    }
+
+    this.options.onContextMenu?.({ scene, screen: { x: event.clientX, y: event.clientY }, hit });
   };
 
   /**

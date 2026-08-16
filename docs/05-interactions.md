@@ -14,11 +14,13 @@ Reference implementation: [`src/input/controller.ts`](../src/input/controller.ts
 | Pan | `H` | Drag to pan. |
 | Rectangle | `R` | Drag to size, or click for a default 100 × 80. |
 | Ellipse | `O` | Drag to size, or click for a default 100 × 100. |
+| Diamond | `D` | Drag to size, or click for a default 120 × 80. |
 | Line | `L` | Drag from start to end. |
 | Arrow | `A` | Drag from start to end; binds to shapes at either end. |
 | Draw | `P` | Drag to draw freehand. |
 | Text | `T` | Click to place and start typing. |
 | Sticky note | `N` | Drag to size, or click for a default 160 × 160. |
+| Frame | `F` | Drag to size, or click for a default 400 × 300. |
 | Image | — | Opens a file picker, then places the image. |
 | Eraser | `E` | Click or drag over elements to delete them. |
 
@@ -102,6 +104,66 @@ A locked element that has been selected this way:
 - shows a style panel collapsed to a single **Unlock** button.
 
 Unlocking is the one edit a locked element accepts.
+
+### Align and distribute
+
+The style panel gains an **Align** row whenever the selection covers two or more
+*units*, and enables the two distribute buttons at three or more.
+
+A **unit** is a group, or an ungrouped element. Three rules follow from that, and
+they are what make the result predictable:
+
+- **A group moves as one box.** Selecting any member expands the selection to the
+  whole group, so aligning members individually would stack them on top of one
+  another. The group's combined bounding box is aligned, and every member is
+  shifted by the same delta, preserving the internal layout.
+- **Locked elements are excluded**, and do not contribute to the bounds. They can
+  be in the selection — right-clicking one is how it is reached — so, as with
+  delete and nudge, they are filtered rather than assumed editable.
+- **Alignment uses the rotated world box.** `x`, `y`, `width` and `height` describe
+  the *unrotated* box (see [04-coordinates.md](04-coordinates.md)), so a rotated
+  element's visible left edge is not `x`. Each unit's axis-aligned world bounds
+  are computed first, then the difference is applied as a translation.
+
+Distribution equalises the **gaps between boxes**, not the spacing of centres, and
+holds the two extreme units in place:
+
+```
+gap = (span − Σ box widths) / (unit count − 1)
+```
+
+where `span` runs from the leading edge of the first unit to the trailing edge of
+the last. Equal centre spacing looks wrong as soon as one element is wider than
+its neighbours; equal gaps is what reads as evenly distributed. A negative `gap`
+(overlapping elements) is left as-is — the spacing is still even.
+
+Each operation is a single undo step, and bound connectors re-route afterwards.
+
+## Frames
+
+A **frame** is a named region that clips and moves its contents. Draw one with the
+frame tool (`F`), and rename it in the style panel.
+
+- **Membership is decided on drop.** When an element is released, it joins the
+  topmost frame whose box contains the element's **centre**, and leaves whatever
+  frame it was in. Centre containment rather than overlap means an element
+  straddling a border has exactly one unambiguous answer, and it matches the feel
+  of dragging — the pointer's end of the thing is what decides.
+- **Moving a frame moves its contents** by the same delta. Its members are *not*
+  added to the selection, though: selecting a frame should offer to reposition its
+  contents, not to restyle them.
+- **Resizing a frame does not resize its contents.** It re-clips them.
+- **Deleting a frame deletes its contents**, in one undo step. A frame is
+  presented as a container, so leaving its contents floating where it used to be
+  would be the surprising outcome.
+- **The interior is click-through**, exactly like an unfilled rectangle, so
+  contents stay selectable. The frame is grabbed by its **border**.
+- **Frames are not rotatable**, and do not nest.
+
+The frame's name renders above its top-left corner, outside the box. It is
+deliberately not clickable — it sits outside the element's own bounding box, and
+extending the hit region there would put hit-testing at odds with the bounds every
+other part of the app uses for culling and selection.
 
 ## Modifiers during a drag
 
@@ -232,6 +294,7 @@ not switch tools.
 | `Cmd` + `Z` | Undo |
 | `Cmd` + `Shift` + `Z`, `Cmd` + `Y` | Redo |
 | `Cmd` + `C` / `X` / `V` | Copy / Cut / Paste |
+| `Cmd` + `Alt` + `C` / `V` | Copy / paste style |
 | `Cmd` + `D` | Duplicate |
 | `Cmd` + `A` | Select all |
 | `Delete` / `Backspace` | Delete selection |
@@ -249,6 +312,14 @@ not switch tools.
 | `Cmd` + `Shift` + `]` | Bring to front |
 | `Cmd` + `[` | Send backward |
 | `Cmd` + `Shift` + `[` | Send to back |
+
+### Find and run
+
+| Shortcut | Action |
+|---|---|
+| `Cmd` + `K` | Command palette |
+| `Cmd` + `F` | Find on board |
+| Right-click | Context menu |
 
 ### View
 
@@ -299,6 +370,73 @@ Pasted elements get **fresh IDs**, and:
   carries the pixels.
 
 Pasting an image from the system clipboard imports it directly.
+
+### The style clipboard
+
+`Cmd`/`Ctrl` + `Alt` + `C` and `V` copy and paste **appearance** rather than
+elements: the full `style` object plus `opacity`, and the typography of whichever
+field the source element keeps its text in.
+
+That last part is the reason it is not simply a `style` spread. A `text` or
+`sticky` element holds its typography directly; every other shape holds it inside
+`label`. The clipboard reads from whichever the source uses and writes to
+whichever the target uses, so a sticky's font can be pasted onto a rectangle's
+label. What an element *says* never travels — `text` is content, not appearance.
+
+The style clipboard lives for the session only and is never written to the
+document. Pasting onto many elements is one undo step, and locked elements are
+skipped.
+
+## The context menu
+
+Right-click opens a menu of actions for the current selection, or for the board
+when the click lands on empty canvas. Every entry delegates to the same action
+layer the toolbar and keyboard use, so behaviour cannot drift between routes.
+
+- Right-clicking an unselected element selects it first; right-clicking inside an
+  existing multi-selection leaves that selection intact.
+- Entries that do not apply are **disabled rather than hidden**, so the menu keeps
+  a stable shape and can be used from muscle memory.
+- On a **locked** element the menu collapses to a single **Unlock**, matching the
+  style panel. This is the other half of the escape hatch described above.
+- `Escape` dismisses the menu without clearing the selection.
+
+## The command palette
+
+`Cmd`/`Ctrl` + `K` opens a searchable list of every command, generated from one
+registry (`src/app/commands.ts`) rather than a hand-maintained copy of what the
+toolbar and keyboard already do.
+
+- Matching is a **subsequence**, so `zf` finds "Zoom to fit". A literal hit ranks
+  above a scattered one, and a hit at a word boundary above one buried mid-word.
+- Commands that cannot currently run are **greyed out rather than hidden**, which
+  is what keeps them discoverable.
+- Entries are rebuilt each time the palette opens, because whether a command
+  applies depends on live state.
+
+The palette is also the keyboard route to the **file** actions. `Cmd`/`Ctrl` + `N`
+is claimed by every major browser for "new window" and never reaches the page, so
+before the palette existed the toolbar button was the only way to start a blank
+board.
+
+## Find on board
+
+`Cmd`/`Ctrl` + `F` searches the text of `text` and `sticky` elements and the
+`label` of every other shape, case-insensitively.
+
+Taking `Cmd`+`F` from the browser is deliberate, and is the one exception to the
+rule above about not overriding browser shortcuts. Canvas text is painted pixels,
+not DOM, so the browser's own find can never match anything on a board — its
+dialog would be strictly useless here.
+
+- `Enter` and `Shift`+`Enter` step forward and back through matches, wrapping at
+  the ends.
+- Each match is selected and the viewport centred on it, at the current zoom.
+- **Hidden elements are skipped** — centring on something invisible is not a
+  useful answer. **Locked elements are still found**, since locked means scenery,
+  not unreadable.
+- `meta` is never searched. It is the namespace reserved for third-party tools,
+  which MindFlow does not interpret.
 
 ## Drag and drop
 

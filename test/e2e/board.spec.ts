@@ -121,8 +121,8 @@ test.describe('boot', () => {
     await expect(page.locator('.mf-tools')).toBeVisible();
   });
 
-  test('shows all eleven tools', async ({ page }) => {
-    await expect(page.locator('.mf-tool')).toHaveCount(11);
+  test('shows all thirteen tools', async ({ page }) => {
+    await expect(page.locator('.mf-tool')).toHaveCount(13);
   });
 
   test('starts with an empty board', async ({ page }) => {
@@ -784,6 +784,582 @@ test.describe('new board', () => {
     await expect(page.locator('.mf-text-editor')).toBeHidden();
     expect(await editingId(page)).toBeNull();
     expect((await getDocument(page)).elements).toHaveLength(0);
+  });
+});
+
+test.describe('align and distribute', () => {
+  /** Draws `count` rectangles at staggered positions and selects them all. */
+  async function drawAndSelectAll(page: Page, boxes: [number, number][][]) {
+    for (const [from, to] of boxes) {
+      await page.locator('[data-tool="rectangle"]').click();
+      await drag(page, from as [number, number], to as [number, number]);
+    }
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('ControlOrMeta+a');
+  }
+
+  test('the panel offers align controls once two things are selected', async ({ page }) => {
+    // The whole point of this feature: Actions.align existed but nothing called
+    // it. If the button disappears, the action is unreachable again.
+    await drawAndSelectAll(page, [
+      [[100, 100], [200, 180]],
+      [[300, 260], [420, 340]],
+    ]);
+
+    await expect(page.getByRole('button', { name: 'Align left' })).toBeVisible();
+    // Two units have no interior to distribute.
+    await expect(page.getByRole('button', { name: 'Distribute horizontally' })).toBeDisabled();
+  });
+
+  test('offers no align controls for a single element', async ({ page }) => {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [200, 180]);
+
+    await expect(page.getByRole('button', { name: 'Align left' })).toHaveCount(0);
+  });
+
+  test('aligning from the panel moves the elements and is one undo step', async ({ page }) => {
+    await drawAndSelectAll(page, [
+      [[100, 100], [200, 180]],
+      [[300, 260], [420, 340]],
+    ]);
+
+    await page.getByRole('button', { name: 'Align left' }).click();
+
+    const xs = (await getDocument(page)).elements.map((element) => element.x as number);
+    expect(new Set(xs).size).toBe(1);
+
+    await page.keyboard.press('ControlOrMeta+z');
+    const after = (await getDocument(page)).elements.map((element) => element.x as number);
+    expect(new Set(after).size).toBe(2);
+  });
+
+  test('distribute becomes available at three units and evens the gaps', async ({ page }) => {
+    await drawAndSelectAll(page, [
+      [[80, 100], [180, 180]],
+      [[220, 100], [320, 180]],
+      [[600, 100], [700, 180]],
+    ]);
+
+    const button = page.getByRole('button', { name: 'Distribute horizontally' });
+    await expect(button).toBeEnabled();
+    await button.click();
+
+    const boxes = (await getDocument(page)).elements
+      .map((element) => ({ minX: element.x as number, maxX: (element.x as number) + (element.width as number) }))
+      .sort((a, b) => a.minX - b.minX);
+
+    const firstGap = (boxes[1]?.minX ?? 0) - (boxes[0]?.maxX ?? 0);
+    const secondGap = (boxes[2]?.minX ?? 0) - (boxes[1]?.maxX ?? 0);
+    expect(firstGap).toBeCloseTo(secondGap, 3);
+  });
+});
+
+test.describe('context menu', () => {
+  /** Right-clicks at a canvas-relative point. */
+  async function rightClick(page: Page, at: [number, number]) {
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + at[0], box.y + at[1], { button: 'right' });
+  }
+
+  test('opens on empty canvas with board-level actions', async ({ page }) => {
+    await rightClick(page, [400, 300]);
+
+    await expect(page.locator('.mf-menu')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Select all' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Paste here' })).toBeVisible();
+  });
+
+  test('selects the element under the pointer and offers element actions', async ({ page }) => {
+    // A sticky, not a rectangle: the default rectangle is unfilled and therefore
+    // hollow to clicks by design, so its interior would never be hit.
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+
+    await rightClick(page, [170, 150]);
+
+    expect(await selectedCount(page)).toBe(1);
+    await expect(page.locator('.mf-menu').getByRole('button', { name: 'Duplicate' })).toBeVisible();
+  });
+
+  test('runs the chosen action', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+
+    await rightClick(page, [170, 150]);
+    await page.locator('.mf-menu').getByRole('button', { name: 'Duplicate' }).click();
+
+    expect((await getDocument(page)).elements).toHaveLength(2);
+    await expect(page.locator('.mf-menu')).toHaveCount(0);
+  });
+
+  test('closes on Escape without clearing the selection', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+
+    await rightClick(page, [170, 150]);
+    await page.keyboard.press('Escape');
+
+    await expect(page.locator('.mf-menu')).toHaveCount(0);
+    // Escape dismisses the menu and stops there — the app's own Escape handler
+    // would otherwise also deselect, losing what the menu was about to act on.
+    expect(await selectedCount(page)).toBe(1);
+  });
+
+  test('closes when clicking away', async ({ page }) => {
+    await rightClick(page, [400, 300]);
+    await expect(page.locator('.mf-menu')).toBeVisible();
+
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 600, box.y + 500);
+
+    await expect(page.locator('.mf-menu')).toHaveCount(0);
+  });
+
+  test('offers only Unlock for a locked element', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+    await page.evaluate(
+      () => (window as unknown as { mindflow: { actions: { toggleLock(): void } } }).mindflow.actions.toggleLock(),
+    );
+
+    await rightClick(page, [170, 150]);
+
+    // Scoped to the menu: the style panel offers its own Unlock button, which is
+    // the other half of the same escape hatch.
+    await expect(page.locator('.mf-menu').getByRole('button', { name: 'Unlock' })).toBeVisible();
+    await expect(page.locator('.mf-menu').getByRole('button', { name: 'Duplicate' })).toHaveCount(0);
+  });
+
+  test('does not leave the canvas holding pointer capture', async ({ page }) => {
+    // contextmenu fires between pointerdown and pointerup, and pointerdown has
+    // already captured the pointer. If it is not released, the next left-drag
+    // silently does nothing.
+    await rightClick(page, [400, 300]);
+    await page.keyboard.press('Escape');
+
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [500, 400], [620, 480]);
+
+    expect((await getDocument(page)).elements).toHaveLength(1);
+  });
+});
+
+test.describe('style clipboard', () => {
+  test('copies appearance from one element onto another', async ({ page }) => {
+    // Stickies, so clicking the interior actually selects them.
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [400, 100], [550, 200]);
+
+    await page.locator('[data-tool="select"]').click();
+    // Restyle the second, copy it, then paste onto the first.
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 470, box.y + 150);
+    await page.locator('.mf-swatch[aria-label="Stroke #e03131"]').click();
+    await page.keyboard.press('ControlOrMeta+Alt+c');
+
+    await page.mouse.click(box.x + 170, box.y + 150);
+    await page.keyboard.press('ControlOrMeta+Alt+v');
+
+    const strokes = (await getDocument(page)).elements.map(
+      (element) => (element.style as { stroke: string }).stroke,
+    );
+    expect(new Set(strokes)).toEqual(new Set(['#e03131']));
+  });
+
+  test('Cmd+Alt+C does not copy the elements themselves', async ({ page }) => {
+    // The plain Cmd+C branch had no altKey guard, so it would have matched first
+    // and put elements on the clipboard instead of a style.
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('ControlOrMeta+a');
+
+    await page.keyboard.press('ControlOrMeta+Alt+c');
+    await page.keyboard.press('ControlOrMeta+v');
+
+    expect((await getDocument(page)).elements).toHaveLength(1);
+  });
+});
+
+test.describe('command palette', () => {
+  test('opens on Cmd+K and runs a command', async ({ page }) => {
+    await page.keyboard.press('ControlOrMeta+k');
+    await expect(page.locator('.mf-palette')).toBeVisible();
+
+    await page.keyboard.type('sticky');
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator('.mf-palette')).toHaveCount(0);
+    await expect(page.locator('[data-tool="sticky"]')).toHaveClass(/is-active/);
+  });
+
+  test('gives New board a keyboard route again', async ({ page }) => {
+    // Cmd+N never reaches the page in an ordinary browser tab, which left the
+    // toolbar button as the only way in. The palette is the second route.
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [250, 200]);
+
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.type('new board');
+    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: 'Discard' }).click();
+
+    expect((await getDocument(page)).elements).toHaveLength(0);
+  });
+
+  test('filters as you type and reports when nothing matches', async ({ page }) => {
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.type('zzzznope');
+
+    await expect(page.locator('.mf-palette-empty')).toBeVisible();
+  });
+
+  test('greys out commands that do not apply', async ({ page }) => {
+    // Nothing is selected, so Duplicate cannot run — but it stays listed, which
+    // is what makes it discoverable in the first place.
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.type('duplicate');
+
+    await expect(page.locator('.mf-palette').getByRole('option', { name: /Duplicate/ })).toBeDisabled();
+  });
+
+  test('closes on Escape', async ({ page }) => {
+    await page.keyboard.press('ControlOrMeta+k');
+    await expect(page.locator('.mf-palette')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.mf-palette')).toHaveCount(0);
+  });
+
+  test('typing in the palette does not also drive the canvas', async ({ page }) => {
+    // Tool shortcuts are bare letters. Without the typing-target guard, typing
+    // "rectangle" into the palette would switch tools nine times.
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.type('rectangle');
+
+    await expect(page.locator('[data-tool="select"]')).toHaveClass(/is-active/);
+  });
+});
+
+test.describe('find on board', () => {
+  /**
+   * Creates a sticky carrying `text`.
+   *
+   * Waits for the editor to be FOCUSED, not merely attached: `TextEditor.open`
+   * focuses inside a requestAnimationFrame, so typing a frame early loses the
+   * leading keystrokes to the canvas, where letters are tool shortcuts.
+   */
+  async function stickyWithText(page: Page, at: [number, number], text: string) {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, at, [at[0] + 140, at[1] + 120]);
+    await page.keyboard.press('Escape');
+
+    // Creating a sticky does not open the editor; double-clicking does.
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + at[0] + 70, box.y + at[1] + 60);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type(text);
+    await page.keyboard.press('Escape');
+  }
+
+  test('finds a sticky by its text and selects it', async ({ page }) => {
+    await stickyWithText(page, [100, 120], 'deploy on friday');
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+
+    await page.keyboard.press('ControlOrMeta+f');
+    await page.keyboard.type('friday');
+
+    await expect(page.locator('.mf-find-status')).toHaveText('1 of 1');
+    expect(await selectedCount(page)).toBe(1);
+  });
+
+  test('reports when there are no matches', async ({ page }) => {
+    await stickyWithText(page, [100, 120], 'deploy on friday');
+
+    await page.keyboard.press('ControlOrMeta+f');
+    await page.keyboard.type('saturday');
+
+    await expect(page.locator('.mf-find-status')).toHaveText('No matches');
+  });
+
+  test('cycles through matches with Enter', async ({ page }) => {
+    await stickyWithText(page, [100, 120], 'release one');
+    await stickyWithText(page, [400, 120], 'release two');
+    await page.locator('[data-tool="select"]').click();
+
+    await page.keyboard.press('ControlOrMeta+f');
+    await page.keyboard.type('release');
+    await expect(page.locator('.mf-find-status')).toHaveText('1 of 2');
+
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.mf-find-status')).toHaveText('2 of 2');
+
+    // Wraps around rather than stopping at the end.
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.mf-find-status')).toHaveText('1 of 2');
+  });
+
+  test('centres the viewport on an off-screen match', async ({ page }) => {
+    await stickyWithText(page, [100, 120], 'far away note');
+    await page.locator('[data-tool="select"]').click();
+    // Push the note well outside the viewport.
+    await page.evaluate(() =>
+      (window as unknown as { mindflow: { store: { setViewport(v: unknown): void } } }).mindflow.store.setViewport({
+        x: 8000,
+        y: 8000,
+        zoom: 1,
+      }),
+    );
+
+    await page.keyboard.press('ControlOrMeta+f');
+    await page.keyboard.type('far away');
+
+    const viewport = await page.evaluate(
+      () =>
+        (window as unknown as { mindflow: { store: { viewport: { x: number; y: number } } } }).mindflow.store.viewport,
+    );
+    expect(viewport.x).toBeLessThan(1000);
+  });
+});
+
+test.describe('diamond', () => {
+  test('has a tool that draws one', async ({ page }) => {
+    await page.locator('[data-tool="diamond"]').click();
+    await drag(page, [100, 100], [280, 220]);
+
+    const doc = await getDocument(page);
+    expect(doc.elements[0]).toMatchObject({ type: 'diamond', width: 180, height: 120 });
+  });
+
+  test('binds a connector to its slanted edge, not its bounding box', async ({ page }) => {
+    // The whole reason diamond implements outlineIntersect. Falling back to the
+    // rectangular default would stop the arrow up to half the box short.
+    await page.locator('[data-tool="diamond"]').click();
+    await drag(page, [400, 300], [560, 420]);
+
+    await page.locator('[data-tool="arrow"]').click();
+    // Drag from up-and-left towards the diamond's centre, so the ray meets the
+    // top-left edge at its most slanted.
+    await drag(page, [200, 120], [480, 360]);
+
+    const doc = await getDocument(page);
+    const arrow = doc.elements.find((element) => element.type === 'arrow');
+    expect(arrow).toBeDefined();
+    expect((arrow as { endBinding: unknown }).endBinding).not.toBeNull();
+
+    // The tip must land inside the bounding box, past where a rectangle would
+    // have stopped it (the box's top-left corner region).
+    const tipX = (arrow!.x as number) + (arrow!.width as number);
+    const tipY = (arrow!.y as number) + (arrow!.height as number);
+    expect(tipX).toBeGreaterThan(400);
+    expect(tipY).toBeGreaterThan(300);
+  });
+
+  test('survives a save and load round trip', async ({ page }) => {
+    await page.locator('[data-tool="diamond"]').click();
+    await drag(page, [100, 100], [280, 220]);
+
+    const restored = await page.evaluate(() => {
+      const mf = (
+        window as unknown as {
+          mindflow: { store: { document: unknown; load(r: unknown, o: unknown): void } };
+        }
+      ).mindflow;
+      const serialised = JSON.stringify(mf.store.document);
+      return JSON.parse(serialised) as { elements: { type: string }[] };
+    });
+
+    expect(restored.elements[0]?.type).toBe('diamond');
+  });
+});
+
+test.describe('hand-drawn rendering', () => {
+  test('offers a sketch control for shapes that have one', async ({ page }) => {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [280, 220]);
+
+    await expect(page.getByRole('button', { name: 'Sketchy' })).toBeVisible();
+  });
+
+  test('does not offer it for a sticky, which has no hand-drawn form', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [260, 260]);
+
+    await expect(page.getByRole('button', { name: 'Sketchy' })).toHaveCount(0);
+  });
+
+  test('writes roughness into the document and renders without error', async ({ page }) => {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [280, 220]);
+    await page.getByRole('button', { name: 'Sketchy' }).click();
+
+    const doc = await getDocument(page);
+    expect((doc.elements[0]?.style as { roughness: number }).roughness).toBeGreaterThan(0);
+  });
+
+  test('the SVG export contains the same polygon the canvas drew', async ({ page }) => {
+    // PNG and SVG are two independent renderers. They agree only because both
+    // consume roughOutlineFor(); this is the check that they still do.
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [280, 220]);
+    await page.getByRole('button', { name: 'Sketchy' }).click();
+
+    const { svg, outline } = await page.evaluate(() => {
+      const mf = (
+        window as unknown as {
+          mindflow: {
+            store: { document: { elements: unknown[] } };
+            exportToSVG(doc: unknown): string;
+            roughOutlineFor(el: unknown): { x: number; y: number }[] | null;
+          };
+        }
+      ).mindflow;
+      return {
+        svg: mf.exportToSVG(mf.store.document),
+        outline: mf.roughOutlineFor(mf.store.document.elements[0]),
+      };
+    });
+
+    expect(outline, 'the shape should have a rough outline').not.toBeNull();
+    const points = outline!.map((p) => `${Math.round(p.x * 100) / 100},${Math.round(p.y * 100) / 100}`);
+    expect(svg).toContain('<polygon');
+    // Not just "a polygon exists" — the exporter must have emitted the exact
+    // points the canvas generated, which only holds while both call the same
+    // seeded generator.
+    expect(svg).toContain(points[0]!);
+    expect(svg).toContain(points[Math.floor(points.length / 2)]!);
+  });
+});
+
+test.describe('frames', () => {
+  /** Draws a frame, then a sticky whose centre lands inside it. */
+  async function frameWithMember(page: Page) {
+    await page.locator('[data-tool="frame"]').click();
+    await drag(page, [100, 100], [500, 400]);
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [180, 180], [300, 300]);
+    await page.keyboard.press('Escape');
+  }
+
+  test('has a tool that draws one', async ({ page }) => {
+    await page.locator('[data-tool="frame"]').click();
+    await drag(page, [100, 100], [500, 400]);
+
+    const doc = await getDocument(page);
+    expect(doc.elements[0]).toMatchObject({ type: 'frame', width: 400, height: 300 });
+  });
+
+  test('claims an element dropped inside it', async ({ page }) => {
+    await frameWithMember(page);
+
+    const doc = await getDocument(page);
+    const frame = doc.elements.find((element) => element.type === 'frame');
+    const sticky = doc.elements.find((element) => element.type === 'sticky');
+    expect(sticky?.frameId).toBe(frame?.id);
+  });
+
+  test('releases an element dragged out', async ({ page }) => {
+    await frameWithMember(page);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+
+    // Drag the sticky well clear of the frame.
+    await drag(page, [240, 240], [900, 600]);
+
+    const doc = await getDocument(page);
+    const sticky = doc.elements.find((element) => element.type === 'sticky');
+    expect(sticky?.frameId).toBeNull();
+  });
+
+  test('its interior is click-through, so contents stay selectable', async ({ page }) => {
+    await frameWithMember(page);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+
+    // Click empty space inside the frame but not on the sticky.
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 430, box.y + 350);
+    expect(await selectedCount(page)).toBe(0);
+
+    // Clicking the sticky inside the frame selects the sticky, not the frame.
+    await page.mouse.click(box.x + 240, box.y + 240);
+    const doc = await getDocument(page);
+    const selectedIds = await page.evaluate(
+      () => (window as unknown as { mindflow: { store: { selectedIds(): string[] } } }).mindflow.store.selectedIds(),
+    );
+    const sticky = doc.elements.find((element) => element.type === 'sticky');
+    expect(selectedIds).toEqual([sticky?.id]);
+  });
+
+  test('is grabbed by its border and drags its contents along', async ({ page }) => {
+    await frameWithMember(page);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+
+    const before = await getDocument(page);
+    const stickyBefore = before.elements.find((element) => element.type === 'sticky');
+
+    // Grab the frame's bottom border, away from any handle or content.
+    await drag(page, [300, 400], [300, 460]);
+
+    const after = await getDocument(page);
+    const frame = after.elements.find((element) => element.type === 'frame');
+    const stickyAfter = after.elements.find((element) => element.type === 'sticky');
+
+    expect(frame?.y).toBeCloseTo(160, 0);
+    // The member travelled by the same delta.
+    expect((stickyAfter?.y as number) - (stickyBefore?.y as number)).toBeCloseTo(60, 0);
+  });
+
+  test('deleting it deletes its contents, in one undo step', async ({ page }) => {
+    await frameWithMember(page);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+
+    // Select the frame by its border, then delete.
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 300, box.y + 400);
+    await page.keyboard.press('Delete');
+
+    expect((await getDocument(page)).elements).toHaveLength(0);
+
+    await page.keyboard.press('ControlOrMeta+z');
+    expect((await getDocument(page)).elements).toHaveLength(2);
+  });
+
+  test('renames from the style panel', async ({ page }) => {
+    await page.locator('[data-tool="frame"]').click();
+    await drag(page, [100, 100], [500, 400]);
+
+    const input = page.locator('.mf-style-panel input[aria-label="Frame name"]');
+    await expect(input).toBeVisible();
+    await input.fill('Sprint 12');
+    await input.press('Enter');
+
+    const doc = await getDocument(page);
+    expect((doc.elements[0] as { name: string }).name).toBe('Sprint 12');
+  });
+
+  test('the SVG export clips members to the frame', async ({ page }) => {
+    await frameWithMember(page);
+
+    const svg = await page.evaluate(() => {
+      const mf = (
+        window as unknown as { mindflow: { store: { document: unknown }; exportToSVG(d: unknown): string } }
+      ).mindflow;
+      return mf.exportToSVG(mf.store.document);
+    });
+
+    expect(svg).toContain('<clipPath');
+    expect(svg).toContain('clip-path="url(#frame-');
   });
 });
 

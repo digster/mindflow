@@ -22,11 +22,13 @@ const TOOLS: ToolSpec[] = [
   { id: 'pan', icon: 'pan', label: 'Pan', shortcut: 'H' },
   { id: 'rectangle', icon: 'rectangle', label: 'Rectangle', shortcut: 'R' },
   { id: 'ellipse', icon: 'ellipse', label: 'Ellipse', shortcut: 'O' },
+  { id: 'diamond', icon: 'diamond', label: 'Diamond', shortcut: 'D' },
   { id: 'line', icon: 'line', label: 'Line', shortcut: 'L' },
   { id: 'arrow', icon: 'arrow', label: 'Arrow', shortcut: 'A' },
   { id: 'draw', icon: 'draw', label: 'Draw', shortcut: 'P' },
   { id: 'text', icon: 'text', label: 'Text', shortcut: 'T' },
   { id: 'sticky', icon: 'sticky', label: 'Sticky note', shortcut: 'N' },
+  { id: 'frame', icon: 'frame', label: 'Frame', shortcut: 'F' },
   { id: 'image', icon: 'image', label: 'Image', shortcut: '' },
   { id: 'eraser', icon: 'eraser', label: 'Eraser', shortcut: 'E' },
 ];

@@ -25,12 +25,16 @@ drift apart.
 
 **Canvas** — infinite pan and zoom, grid with snapping, alignment guides.
 
-**Tools** — select, pan, rectangle, ellipse, line, arrow, freehand, text, sticky
-note, image, eraser.
+**Tools** — select, pan, rectangle, ellipse, diamond, line, arrow, freehand, text,
+sticky note, frame, image, eraser. Shapes can render clean or hand-drawn.
 
 **Editing** — move, resize and rotate (including correct rotated resizing),
-multi-select, marquee, grouping, z-order, in-place text editing, full undo/redo,
-clipboard with cross-tab support.
+multi-select, marquee, grouping, frames that clip and move their contents, align
+and distribute, z-order, in-place text editing, full undo/redo, clipboard with
+cross-tab support, and a style clipboard that copies appearance without content.
+
+**Getting around** — a command palette (`Cmd K`), text search across the board
+(`Cmd F`), and a right-click context menu.
 
 **Connectors** — arrows that bind to shapes and re-route automatically when those
 shapes move. Straight, curved or elbow routing; five arrowhead styles.
@@ -80,7 +84,7 @@ default — so any single element is interpretable in isolation.
 ```json
 {
   "type": "mindflow.board",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.2.0",
   "elements": [
     {
       "id": "el_q2WikW58Aw",
@@ -125,7 +129,7 @@ MindFlow itself, which would defeat the point.
 **Start here:** [`docs/README.md`](docs/README.md) ·
 [format](docs/02-document-format.md) · [elements](docs/03-elements.md) ·
 [geometry](docs/04-coordinates.md) · [rendering algorithms](docs/07-rendering.md) ·
-[JSON Schema](docs/schema/mindflow-1.0.0.schema.json)
+[JSON Schema](docs/schema/mindflow-1.2.0.schema.json)
 
 ## Google Drive
 
@@ -157,19 +161,21 @@ list.
 
 | | |
 |---|---|
-| `V` `H` `R` `O` `L` `A` `P` `T` `N` `E` | Select, pan, rectangle, ellipse, line, arrow, draw, text, note, eraser |
+| `V` `H` `R` `O` `D` `L` `A` `P` `T` `N` `F` `E` | Select, pan, rectangle, ellipse, diamond, line, arrow, draw, text, note, frame, eraser |
 | `Space` + drag · `Cmd` + scroll | Pan · Zoom |
+| `Cmd` `K` / `Cmd` `F` | Command palette / Find on board |
 | `Cmd` `Z` / `Cmd` `Shift` `Z` | Undo / Redo |
+| `Cmd` `Alt` `C` / `Cmd` `Alt` `V` | Copy / paste style |
 | `Cmd` `G` / `Cmd` `Shift` `G` | Group / Ungroup |
 | `Cmd` `[` / `Cmd` `]` | Send backward / Bring forward |
 | `Cmd` `0` / `Cmd` `1` | Reset zoom / Zoom to fit |
 | `Cmd` `S` / `Cmd` `O` / `Cmd` `Shift` `E` | Save / Open / Export |
 | `Shift` / `Alt` while dragging | Constrain / From centre, or suspend snapping |
-| Right-click | Select a locked element, so it can be unlocked |
+| Right-click | Context menu (and the way to select a locked element) |
 
 A locked element is scenery — clicks pass through it and a marquee ignores it.
-Right-click is how you get one back: it selects the locked element and the style
-panel collapses to a single **Unlock** button.
+Right-click is how you get one back: it selects the locked element, and both the
+context menu and the style panel collapse to a single **Unlock** action.
 
 ## Development
 
@@ -221,11 +227,8 @@ GitHub Pages, **source: `main` branch, `/` (root)**.
 Considered, in rough order — see
 [`docs/CHANGELOG.md`](docs/CHANGELOG.md#unreleased):
 
-- `diamond` and `frame` element types
-- Hand-drawn rendering (`style.roughness` is already reserved in the format)
 - Google Picker, to lift the `drive.file` limitation
 - Laser pointer and presentation mode
-- Command palette
 
 ## License
 

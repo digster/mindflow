@@ -12,7 +12,7 @@ import type { MindflowElement } from '../model/types.ts';
 import { ARROWHEADS, CURVE_STYLES, FILL_STYLES, FONT_FAMILIES, STROKE_STYLES } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
 import type { Actions } from '../app/actions.ts';
-import { capabilitiesOf } from '../model/registry.ts';
+import { capabilitiesOf, getDefinition } from '../model/registry.ts';
 import { PALETTE } from '../model/defaults.ts';
 import { updateElements } from '../store/commands.ts';
 import { clear, el, icon } from './dom.ts';
@@ -23,6 +23,13 @@ const STROKE_WIDTHS: [string, number][] = [
   ['Medium', 2],
   ['Bold', 4],
   ['Heavy', 8],
+];
+
+/** Sketchiness presets. The format allows 0..2; these are the useful points. */
+const ROUGHNESS_LEVELS: [string, number][] = [
+  ['Clean', 0],
+  ['Light', 0.6],
+  ['Sketchy', 1.4],
 ];
 
 const FONT_SIZES: [string, number][] = [
@@ -79,6 +86,14 @@ export class StylePanel {
 
     const first = selected[0] as MindflowElement;
 
+    // A frame's name is edited here rather than on the canvas: the name is drawn
+    // outside the frame's box, so it cannot be part of the hit region without
+    // putting hitTest at odds with the AABB pre-rejection every caller relies on.
+    const frames = selected.filter((element) => element.type === 'frame');
+    if (frames.length === 1 && selected.length === 1) {
+      this.element.append(this.nameRow(frames[0] as MindflowElement & { name: string }));
+    }
+
     this.element.append(
       this.swatchRow('Stroke', PALETTE.stroke, first.style.stroke, (color) =>
         this.actions.restyle({ stroke: color }, 'Change stroke'),
@@ -119,6 +134,21 @@ export class StylePanel {
         })),
       ),
     );
+
+    // Only offered when something in the selection actually has a hand-drawn
+    // form — a sticky or an image would show a control that does nothing.
+    if (selected.some((element) => Boolean(getDefinition(element.type).roughOutline))) {
+      this.element.append(
+        this.buttonRow(
+          'Sketch',
+          ROUGHNESS_LEVELS.map(([label, value]) => ({
+            label,
+            active: first.style.roughness === value,
+            onSelect: () => this.actions.restyle({ roughness: value }, 'Change sketchiness'),
+          })),
+        ),
+      );
+    }
 
     if (anyFillable) {
       this.element.append(
@@ -177,7 +207,9 @@ export class StylePanel {
           })),
         ),
         this.buttonRow(
-          'Align',
+          // "Text align" rather than "Align": the row below aligns the elements
+          // themselves, and two rows both labelled "Align" would be a coin toss.
+          'Text align',
           (['left', 'center', 'right'] as const).map((align) => ({
             label: align[0]?.toUpperCase() + align.slice(1),
             active: false,
@@ -188,7 +220,37 @@ export class StylePanel {
     }
 
     this.element.append(this.opacityRow(first.opacity));
+    const alignRow = this.alignRow(selected);
+    if (alignRow) this.element.append(alignRow);
     this.element.append(this.arrangeRow(selected));
+  }
+
+  /** Text field for a frame's name. */
+  private nameRow(frame: MindflowElement & { name: string }): HTMLElement {
+    const input = el('input', {
+      class: 'mf-input',
+      type: 'text',
+      value: frame.name,
+      spellcheck: 'false',
+      'aria-label': 'Frame name',
+      // On change, not on input: one undo step per rename rather than one per
+      // keystroke, matching how the board name behaves.
+      onchange: (event: Event) => {
+        const name = (event.target as HTMLInputElement).value;
+        this.store.execute(
+          updateElements(
+            this.store.document,
+            [frame.id],
+            (element) => ({ ...element, name }) as MindflowElement,
+            'Rename frame',
+          ),
+        );
+      },
+      onkeydown: (event: Event) => {
+        if ((event as KeyboardEvent).key === 'Enter') (event.target as HTMLInputElement).blur();
+      },
+    });
+    return this.section('Name', input);
   }
 
   private updateLinear(patch: Record<string, unknown>): void {
@@ -296,6 +358,59 @@ export class StylePanel {
         oninput: (event: Event) =>
           this.actions.setOpacity(Number((event.target as HTMLInputElement).value) / 100),
       }),
+    );
+  }
+
+  /**
+   * Align and distribute, or `null` when the selection is too small to have a
+   * meaningful arrangement.
+   *
+   * The unit count — not the element count — is what gates these, matching
+   * `Actions.alignmentUnits`: a group moves as one box, so selecting a pair of
+   * grouped shapes offers nothing to align them against.
+   */
+  private alignRow(selected: readonly MindflowElement[]): HTMLElement | null {
+    const units = new Set(selected.map((element) => element.groupId ?? element.id));
+    if (units.size < 2) return null;
+
+    const button = (name: keyof typeof ICONS, title: string, onClick: () => void, disabled = false) =>
+      el(
+        'button',
+        {
+          class: 'mf-icon-button mf-icon-button--small',
+          type: 'button',
+          title,
+          'aria-label': title,
+          disabled,
+          onclick: onClick,
+        },
+        icon(ICONS[name], 16),
+      );
+
+    // Distribution needs an interior to space out; with two units the extremes
+    // are the whole selection and there is nothing between them to move.
+    const noInterior = units.size < 3;
+
+    return this.section(
+      'Align',
+      button('alignLeft', 'Align left', () => this.actions.align('left')),
+      button('alignCenterX', 'Align horizontal centres', () => this.actions.align('centerX')),
+      button('alignRight', 'Align right', () => this.actions.align('right')),
+      button('alignTop', 'Align top', () => this.actions.align('top')),
+      button('alignCenterY', 'Align vertical centres', () => this.actions.align('centerY')),
+      button('alignBottom', 'Align bottom', () => this.actions.align('bottom')),
+      button(
+        'distributeH',
+        'Distribute horizontally',
+        () => this.actions.distribute('horizontal'),
+        noInterior,
+      ),
+      button(
+        'distributeV',
+        'Distribute vertically',
+        () => this.actions.distribute('vertical'),
+        noInterior,
+      ),
     );
   }
 

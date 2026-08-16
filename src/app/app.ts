@@ -14,14 +14,20 @@ import { Renderer } from '../render/renderer.ts';
 import { ImageCache } from '../render/images.ts';
 import { drawOverlay } from '../render/overlay.ts';
 import { exportToPNG, exportToSVG } from '../render/export.ts';
+import { roughOutlineFor } from '../render/rough.ts';
 import { InteractionController } from '../input/controller.ts';
 import { installKeyboardShortcuts } from '../input/keyboard.ts';
 import { screenToScene } from '../model/geometry.ts';
 import { serializeDocument, type LoadResult } from '../model/document.ts';
 import { Actions } from './actions.ts';
-import { Toolbar } from '../ui/toolbar.ts';
+import { Toolbar, type ToolbarCallbacks } from '../ui/toolbar.ts';
+import { showCommandPalette } from '../ui/commandPalette.ts';
+import { showFindBar } from '../ui/findBar.ts';
+import { buildCommands } from './commands.ts';
 import { StylePanel } from '../ui/stylePanel.ts';
 import { TextEditor } from '../ui/textEditor.ts';
+import { showContextMenu } from '../ui/contextMenu.ts';
+import { closePopover } from '../ui/popover.ts';
 import {
   confirmDialog,
   showDriveConnectDialog,
@@ -66,6 +72,8 @@ export class MindflowApp {
   private readonly controller: InteractionController;
   private readonly actions: Actions;
   private readonly toolbar: Toolbar;
+  /** Shared by the toolbar and the command palette; see the constructor. */
+  private readonly appCallbacks: ToolbarCallbacks;
   private readonly stylePanel: StylePanel;
   private readonly textEditor: TextEditor;
   private readonly autosave: Autosave;
@@ -106,9 +114,14 @@ export class MindflowApp {
       onEditText: (element) => this.textEditor.open(element),
       onOverlayChange: () => this.renderer.invalidate(),
       onRequestImage: (point) => void this.insertImageAtPoint(point),
+      onContextMenu: ({ scene, screen, hit }) =>
+        showContextMenu({ store: this.store, actions: this.actions, scene, screen, hit }),
     });
 
-    this.toolbar = new Toolbar(this.store, this.actions, {
+    // Held as a field rather than passed inline: the command palette renders the
+    // same actions, and a second copy of these callbacks is a second place for
+    // them to drift.
+    this.appCallbacks = {
       onNew: () => void this.newBoard(),
       onOpen: () => void this.openBoardFile(),
       onSave: () => void this.save(),
@@ -118,7 +131,9 @@ export class MindflowApp {
       onSettings: () => this.openSettings(),
       onToggleGrid: () => this.toggleGrid(),
       onRename: (name) => this.store.execute(renameBoard(this.store.document, name)),
-    });
+    };
+
+    this.toolbar = new Toolbar(this.store, this.actions, this.appCallbacks);
 
     this.stylePanel = new StylePanel(this.store, this.actions);
     this.autosave = new Autosave((error) => {
@@ -191,6 +206,8 @@ export class MindflowApp {
         onNew: () => void this.newBoard(),
         onExport: () => void this.exportBoard(),
         onSpaceChange: (held) => this.controller.setSpaceHeld(held),
+        onCommandPalette: () => this.openCommandPalette(),
+        onFind: () => showFindBar(this.store, this.actions),
       }),
     );
 
@@ -295,10 +312,28 @@ export class MindflowApp {
     // browsers traditionally do not focus buttons on click. Left open, the
     // editor floats over the incoming board still showing the old one's text.
     this.textEditor.commit();
+    // Same argument for a popover: a context menu still listing "Ungroup" for
+    // elements that no longer exist would act on a stale selection.
+    closePopover();
     this.images.clear();
     this.store.load(result, origin);
     this.images.sync(result.document);
     showLoadWarnings(result.warnings);
+  }
+
+  /**
+   * Opens the command palette.
+   *
+   * Commands are rebuilt per invocation rather than cached, because each one's
+   * `enabled()` closes over live state — whether anything is selected, whether
+   * there is history to undo. A cached list would grey out the wrong entries.
+   */
+  private openCommandPalette(): void {
+    showCommandPalette(
+      buildCommands(this.store, this.actions, this.appCallbacks, {
+        onFind: () => showFindBar(this.store, this.actions),
+      }),
+    );
   }
 
   private async confirmDiscard(): Promise<boolean> {
@@ -316,6 +351,7 @@ export class MindflowApp {
     // being left, so it has to land before the user is asked whether losing the
     // board's changes is acceptable. See applyLoad for why blur is not enough.
     this.textEditor.commit();
+    closePopover();
     if (!(await this.confirmDiscard())) return;
     this.images.clear();
     this.store.reset();
@@ -576,8 +612,24 @@ export class MindflowApp {
   }
 
   /** Exposed for end-to-end tests to drive the app without synthesising input. */
-  get testHooks(): { store: Store; actions: Actions; supportsFileSystemAccess: boolean } {
-    return { store: this.store, actions: this.actions, supportsFileSystemAccess: supportsFileSystemAccess() };
+  get testHooks(): {
+    store: Store;
+    actions: Actions;
+    supportsFileSystemAccess: boolean;
+    exportToSVG: typeof exportToSVG;
+    roughOutlineFor: typeof roughOutlineFor;
+  } {
+    return {
+      store: this.store,
+      actions: this.actions,
+      supportsFileSystemAccess: supportsFileSystemAccess(),
+      // Exposed so the e2e suite can assert that the SVG exporter and the canvas
+      // renderer consume the SAME generated outline for a rough shape. They are
+      // two independent renderers, and that shared call is the only thing making
+      // them agree — worth a test that would notice if it stopped being true.
+      exportToSVG,
+      roughOutlineFor,
+    };
   }
 }
 

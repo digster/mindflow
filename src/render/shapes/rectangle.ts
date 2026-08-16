@@ -13,7 +13,8 @@ import type { BaseElement, Point, RectangleElement } from '../../model/types.ts'
 import { DEFAULT_STYLE } from '../../model/defaults.ts';
 import { newElementId } from '../../model/defaults.ts';
 import { clamp } from '../../model/geometry.ts';
-import { drawLabel, hasFill, numberOr, paintPath, roundedRectPath } from './shared.ts';
+import { drawLabel, hasFill, numberOr, paintPath, roundedRectPath, tracePoints } from './shared.ts';
+import { roughOutlineFor, roundedRectPoints } from '../rough.ts';
 
 const DEFAULT_CORNER_RADIUS = 8;
 
@@ -44,6 +45,7 @@ export const rectangleDefinition: ElementDefinition<RectangleElement> = {
       locked: false,
       visible: true,
       groupId: null,
+      frameId: null,
       style: { ...DEFAULT_STYLE, ...(init.style as object | undefined) },
       label: null,
       meta: {},
@@ -59,8 +61,14 @@ export const rectangleDefinition: ElementDefinition<RectangleElement> = {
     };
   },
 
+  roughOutline(el: RectangleElement) {
+    return roundedRectPoints(el.width, el.height, el.cornerRadius);
+  },
+
   draw(el: RectangleElement, { ctx }: RenderContext): void {
-    roundedRectPath(ctx, el.width, el.height, el.cornerRadius);
+    const rough = roughOutlineFor(el);
+    if (rough) tracePoints(ctx, rough, true);
+    else roundedRectPath(ctx, el.width, el.height, el.cornerRadius);
     paintPath(ctx, el.style);
     drawLabel(ctx, el);
   },

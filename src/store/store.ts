@@ -45,6 +45,8 @@ export type ToolId =
   | 'text'
   | 'sticky'
   | 'image'
+  | 'diamond'
+  | 'frame'
   | 'eraser';
 
 /** Where the current board came from, so "Save" can mean "save back to there". */

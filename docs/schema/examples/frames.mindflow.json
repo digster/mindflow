@@ -1,0 +1,165 @@
+{
+  "$schema": "https://digster.github.io/mindflow/docs/schema/mindflow-1.2.0.schema.json",
+  "type": "mindflow.board",
+  "schemaVersion": "1.2.0",
+  "id": "brd_FramesExam",
+  "meta": {
+    "name": "Frames",
+    "createdAt": "2026-08-16T10:00:00.000Z",
+    "updatedAt": "2026-08-16T10:00:00.000Z",
+    "app": {
+      "name": "MindFlow",
+      "version": "0.1.0"
+    }
+  },
+  "canvas": {
+    "background": "#ffffff",
+    "grid": {
+      "visible": true,
+      "size": 20,
+      "snap": true
+    }
+  },
+  "viewport": {
+    "x": -40,
+    "y": -60,
+    "zoom": 1
+  },
+  "elements": [
+    {
+      "id": "el_SprintFrame",
+      "type": "frame",
+      "x": 40,
+      "y": 40,
+      "width": 420,
+      "height": 300,
+      "angle": 0,
+      "zIndex": 1000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#adb5bd",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#f8f9fa",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {},
+      "name": "Sprint 12"
+    },
+    {
+      "id": "el_InFrameRect",
+      "type": "rectangle",
+      "x": 80,
+      "y": 100,
+      "width": 160,
+      "height": 80,
+      "angle": 0,
+      "zIndex": 2000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": "el_SprintFrame",
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#a5d8ff",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": {
+        "text": "Inside",
+        "fontFamily": "sans",
+        "fontSize": 16,
+        "fontWeight": 500,
+        "lineHeight": 1.25,
+        "color": "#1a1d23",
+        "textAlign": "center",
+        "verticalAlign": "middle",
+        "padding": 8
+      },
+      "meta": {},
+      "cornerRadius": 8
+    },
+    {
+      "id": "el_ClippedRect",
+      "type": "rectangle",
+      "x": 360,
+      "y": 220,
+      "width": 160,
+      "height": 80,
+      "angle": 0,
+      "zIndex": 3000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": "el_SprintFrame",
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#ffc9c9",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": {
+        "text": "Clipped",
+        "fontFamily": "sans",
+        "fontSize": 16,
+        "fontWeight": 500,
+        "lineHeight": 1.25,
+        "color": "#1a1d23",
+        "textAlign": "center",
+        "verticalAlign": "middle",
+        "padding": 8
+      },
+      "meta": {},
+      "cornerRadius": 8
+    },
+    {
+      "id": "el_OutsideRect",
+      "type": "rectangle",
+      "x": 520,
+      "y": 120,
+      "width": 160,
+      "height": 80,
+      "angle": 0,
+      "zIndex": 4000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#b2f2bb",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": {
+        "text": "Outside",
+        "fontFamily": "sans",
+        "fontSize": 16,
+        "fontWeight": 500,
+        "lineHeight": 1.25,
+        "color": "#1a1d23",
+        "textAlign": "center",
+        "verticalAlign": "middle",
+        "padding": 8
+      },
+      "meta": {},
+      "cornerRadius": 8
+    }
+  ],
+  "files": {}
+}

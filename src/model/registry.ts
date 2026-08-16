@@ -107,6 +107,41 @@ export interface ElementDefinition<T extends MindflowElement = MindflowElement> 
    */
   hitTest(el: T, local: Point, tolerance: number): boolean;
 
+  /**
+   * Where a ray from the element's centre towards `localDirection` crosses its
+   * outline, in the LOCAL frame. Optional; omitting it means "my outline is my
+   * bounding rectangle", which is right for most shapes.
+   *
+   * This exists so auto-anchored connectors can attach to a shape's real edge
+   * rather than its bounding box. It was previously a `type === 'ellipse'`
+   * branch inside `geometry.ts` — the one place outside `render/shapes/` that
+   * broke the no-branching-on-type rule, and the reason adding a diamond would
+   * otherwise have had to break it a second time.
+   *
+   * `localDirection` is a vector from the centre, not a point. Implementations
+   * return the crossing point in local coordinates; the caller handles rotation
+   * and the connector gap.
+   *
+   * Published in `docs/07-rendering.md`: an external renderer needs this to
+   * reproduce a bound connector, so a new implementation is a format change.
+   */
+  outlineIntersect?(el: T, localDirection: Point): Point;
+
+  /**
+   * The element's outline as a closed polygon in the LOCAL frame, used as the
+   * input to hand-drawn rendering (`style.roughness`). Curves must already be
+   * sampled — the jitter rule is defined on polylines only.
+   *
+   * Omitting it means this type has no hand-drawn form and renders cleanly
+   * whatever `roughness` says, which is the right answer for content containers
+   * like `image`, `text` and `sticky`.
+   *
+   * It exists on the registry rather than inside each renderer because the
+   * canvas and the SVG exporter are two independent renderers: having both
+   * consume the same generated points is the only way they can agree.
+   */
+  roughOutline?(el: T): Point[];
+
   capabilities: ElementCapabilities;
 }
 

@@ -417,3 +417,81 @@ hot path. It belongs to the caller, which knows whether the user did anything.
 it is false. Any other UI that writes an element back wholesale on close needs
 the same guard — comparing values at commit time does **not** work, because the
 transient live-update has already written them into the document.
+
+## `Cmd+C` matched before `Cmd+Alt+C`, because it never checked `altKey`
+
+`keyboard.ts` dispatches through a flat if-chain on `primary && key === 'c'`.
+That branch tested the platform modifier and the key, and nothing else — so
+`Cmd+Alt+C` matched it and copied the *elements* instead of their style, before
+the style-clipboard branch was ever reached.
+
+The fix is two-sided and both halves are needed: put the more specific chord
+first, **and** make the general one explicitly reject the modifier
+(`primary && !event.altKey && key === 'c'`). Ordering alone is fragile — the next
+person to add a branch will not know the order is load-bearing.
+
+Generalises: in a flat if-chain matcher, a branch that ignores a modifier claims
+every chord containing it.
+
+## A menu opened on `contextmenu` inherits a live pointer capture
+
+`onPointerDown` calls `setPointerCapture` *before* it bails out on
+`event.button === 2`. `contextmenu` then fires between down and up, so a menu
+opened there is competing with a capture the canvas still holds — and because the
+menu swallows the `pointerup`, the capture is never released. The symptom is
+delayed and looks unrelated: the *next* left-drag on the canvas silently does
+nothing.
+
+The controller now remembers the captured pointer id (a `contextmenu` event is a
+`MouseEvent` and carries none of its own) and releases it before opening the
+menu. There is an e2e test that right-clicks, dismisses, then drags — it fails
+without the release.
+
+## Frame membership has to be assigned on *creation*, not only on move
+
+Containment is recomputed when a drag ends, which covers everything that moves.
+It does not cover an element drawn straight inside a frame — creation is a
+`createBox` gesture, not a move — so a shape drawn into a frame was never clipped
+by it. `finishCreate` needs its own call.
+
+The general shape: any rule phrased as "recompute when X moves" needs a second
+look at every path that introduces an element already in position.
+
+## A version bump with no migration entry warns on every existing file
+
+`needsMigration` returns true for *any* version inequality, not just an older
+major. So bumping `CURRENT_SCHEMA_VERSION` while leaving `MIGRATIONS` empty makes
+every previously saved board — and every shipped example — load with "No
+migration is available from schema X to Y". It is only a `warning`, so the
+contract test still passed, but users read it as data loss.
+
+Additive versions need an **identity migration**. `docs/09-extending.md` said to
+skip it, which was wrong; the contract test now requires one per published
+version.
+
+## Deriving `SCHEMA_URL` beats remembering to update it
+
+The `$schema` URL stamped into every saved board was a hand-written literal
+sitting three files away from the version constant, with no test relating them.
+Nothing would have caught a bump that missed it, and the damage — every file
+written by that build pointing at the wrong schema document — is permanent and
+silent.
+
+It is now a template literal over `CURRENT_SCHEMA_VERSION`, and the contract test
+asserts the file it names is actually published. Cheaper than a checklist item.
+
+## Two renderers agree only if they consume the same generated geometry
+
+`style.roughness` displaces an outline randomly. The canvas renderer and the SVG
+exporter are independent implementations (see above), so "both apply the same
+jitter algorithm" would have meant two chances to diverge on sampling, ordering,
+or how many random values each edge draws.
+
+Instead the jitter is a pure function returning **points**, and both renderers
+call it. Divergence stops being something to keep an eye on and becomes
+structurally impossible. The same reasoning applies to any computed geometry the
+exporter has to reproduce.
+
+The corollary, for the format: the seed must be derivable from what is in the
+file. Seeding from the element `id` means no new field, and it survives a round
+trip for free.
