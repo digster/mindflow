@@ -56,6 +56,29 @@ let internalClipboard: MindflowElement[] = [];
 /** MIME-ish marker written into the system clipboard so we can recognise our own payload. */
 const CLIPBOARD_MARKER = 'application/x-mindflow-elements';
 
+/**
+ * Typography fields carried by the style clipboard.
+ *
+ * `color` is included but `text` is not: pasting a style must never overwrite
+ * what an element says.
+ */
+const TYPOGRAPHY_KEYS = [
+  'fontFamily',
+  'fontSize',
+  'fontWeight',
+  'lineHeight',
+  'color',
+  'textAlign',
+  'verticalAlign',
+] as const;
+
+interface StyleClipboard {
+  style: MindflowElement['style'];
+  opacity: number;
+  /** Null when the source element carried no text of its own. */
+  typography: Record<string, unknown> | null;
+}
+
 export interface ActionsOptions {
   store: Store;
   /** Canvas size in CSS pixels, for zoom-to-fit and centring. */
@@ -64,6 +87,17 @@ export interface ActionsOptions {
 }
 
 export class Actions {
+  /**
+   * Session-only style clipboard; see `copyStyle`.
+   *
+   * Instance state rather than module state, unlike `internalClipboard` above.
+   * The element clipboard is deliberately shared so a copy survives a board
+   * being replaced, but a style clipboard has no such requirement, and instance
+   * scope means two `Actions` cannot silently share one — which is exactly the
+   * cross-contamination a test suite would hit first.
+   */
+  private styleClipboard: StyleClipboard | null = null;
+
   constructor(private readonly options: ActionsOptions) {}
 
   private get store(): Store {
@@ -454,6 +488,88 @@ export class Actions {
   // -------------------------------------------------------------------------
   // Styling
   // -------------------------------------------------------------------------
+
+  /**
+   * Copies the appearance of the first selected element.
+   *
+   * Session-only and deliberately not part of the document: a style clipboard is
+   * a working convenience, not board content, and persisting it would be one
+   * more thing to migrate for no gain.
+   *
+   * Typography is captured separately from `style` because it lives in two
+   * different places depending on the element — directly on a `text` or `sticky`,
+   * inside `label` on everything else. Reading it here and re-routing it in
+   * `pasteStyle` is what lets a sticky's font be pasted onto a rectangle's label.
+   */
+  copyStyle(): void {
+    const source = this.store.selectedElements()[0];
+    if (!source) return;
+
+    const capabilities = getDefinition(source.type).capabilities;
+    const typographySource = capabilities.text
+      ? (source as unknown as Record<string, unknown>)
+      : capabilities.label && source.label
+        ? (source.label as unknown as Record<string, unknown>)
+        : null;
+
+    this.styleClipboard = {
+      style: { ...source.style },
+      opacity: source.opacity,
+      typography: typographySource
+        ? Object.fromEntries(
+            TYPOGRAPHY_KEYS.filter((key) => key in typographySource).map((key) => [
+              key,
+              typographySource[key],
+            ]),
+          )
+        : null,
+    };
+
+    this.notify('Style copied.');
+  }
+
+  /** Whether there is a copied style available to paste. */
+  get hasCopiedStyle(): boolean {
+    return this.styleClipboard !== null;
+  }
+
+  /**
+   * Applies the copied appearance to the selection.
+   *
+   * One command, so a paste onto twenty elements is one undo step. The label is
+   * its own — reusing `'Change style'` would let it coalesce into a preceding
+   * restyle and stop being separately undoable.
+   */
+  pasteStyle(): void {
+    const clipboard = this.styleClipboard;
+    if (!clipboard) return;
+    const ids = this.editableSelection().map((element) => element.id);
+    if (ids.length === 0) return;
+
+    this.store.execute(
+      updateElements(
+        this.store.document,
+        ids,
+        (element) => {
+          const next = {
+            ...element,
+            style: { ...element.style, ...clipboard.style },
+            opacity: clipboard.opacity,
+          } as MindflowElement;
+
+          if (!clipboard.typography) return next;
+
+          const capabilities = getDefinition(element.type).capabilities;
+          if (capabilities.text) return { ...next, ...clipboard.typography } as MindflowElement;
+          if (capabilities.label && next.label) {
+            return { ...next, label: { ...next.label, ...clipboard.typography } } as MindflowElement;
+          }
+          return next;
+        },
+        'Paste style',
+      ),
+    );
+  }
 
   /** Applies a style patch to every selected element. */
   restyle(patch: Partial<MindflowElement['style']>, label = 'Change style'): void {

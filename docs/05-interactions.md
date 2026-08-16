@@ -334,6 +334,36 @@ Pasted elements get **fresh IDs**, and:
 
 Pasting an image from the system clipboard imports it directly.
 
+### The style clipboard
+
+`Cmd`/`Ctrl` + `Alt` + `C` and `V` copy and paste **appearance** rather than
+elements: the full `style` object plus `opacity`, and the typography of whichever
+field the source element keeps its text in.
+
+That last part is the reason it is not simply a `style` spread. A `text` or
+`sticky` element holds its typography directly; every other shape holds it inside
+`label`. The clipboard reads from whichever the source uses and writes to
+whichever the target uses, so a sticky's font can be pasted onto a rectangle's
+label. What an element *says* never travels — `text` is content, not appearance.
+
+The style clipboard lives for the session only and is never written to the
+document. Pasting onto many elements is one undo step, and locked elements are
+skipped.
+
+## The context menu
+
+Right-click opens a menu of actions for the current selection, or for the board
+when the click lands on empty canvas. Every entry delegates to the same action
+layer the toolbar and keyboard use, so behaviour cannot drift between routes.
+
+- Right-clicking an unselected element selects it first; right-clicking inside an
+  existing multi-selection leaves that selection intact.
+- Entries that do not apply are **disabled rather than hidden**, so the menu keeps
+  a stable shape and can be used from muscle memory.
+- On a **locked** element the menu collapses to a single **Unlock**, matching the
+  style panel. This is the other half of the escape hatch described above.
+- `Escape` dismisses the menu without clearing the selection.
+
 ## Drag and drop
 
 - Dropping an **image file** onto the canvas imports it at the drop point.

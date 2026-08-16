@@ -117,6 +117,12 @@ export interface ControllerOptions {
   onOverlayChange: () => void;
   /** Prompts for an image file, used by the image tool. */
   onRequestImage: (scenePoint: Point) => void;
+  /**
+   * Opens the context menu. `screen` is in viewport coordinates for placement,
+   * `scene` in board coordinates for position-dependent actions like "Paste
+   * here". `hit` is whatever was under the pointer, locked elements included.
+   */
+  onContextMenu?: (context: { scene: Point; screen: Point; hit: MindflowElement | null }) => void;
 }
 
 export class InteractionController {
@@ -124,6 +130,8 @@ export class InteractionController {
   private pointerDownScreen: Point | null = null;
   private movedPastThreshold = false;
   private spaceHeld = false;
+  /** The pointer the canvas most recently captured; see `onContextMenu`. */
+  private capturedPointerId: number | null = null;
 
   /** Live overlay state, read by the renderer each frame. */
   marquee: ReturnType<typeof boxFromPoints> | null = null;
@@ -189,6 +197,9 @@ export class InteractionController {
     }
 
     this.options.canvas.setPointerCapture(event.pointerId);
+    // Remembered so `onContextMenu` can release it. A `contextmenu` event is a
+    // MouseEvent and carries no pointerId of its own.
+    this.capturedPointerId = event.pointerId;
     this.pointerDownScreen = this.screenPoint(event);
     this.movedPastThreshold = false;
 
@@ -817,6 +828,19 @@ export class InteractionController {
       elementAt(store.document, scene, zoom) ??
       elementAt(store.document, scene, zoom, { includeLocked: true });
     if (hit && !store.isSelected(hit.id)) store.setSelection([hit.id]);
+
+    // A menu opened mid-gesture would act on a selection that is still moving,
+    // and its dismissal would race the pointerup that ends the drag.
+    if (this.gesture.kind !== 'none') return;
+
+    // `contextmenu` fires between pointerdown and pointerup, and pointerdown has
+    // already captured the pointer (before the right-button bail). Releasing it
+    // here stops the canvas swallowing the pointer events the menu needs.
+    if (this.capturedPointerId !== null && this.options.canvas.hasPointerCapture(this.capturedPointerId)) {
+      this.options.canvas.releasePointerCapture(this.capturedPointerId);
+    }
+
+    this.options.onContextMenu?.({ scene, screen: { x: event.clientX, y: event.clientY }, hit });
   };
 
   /**

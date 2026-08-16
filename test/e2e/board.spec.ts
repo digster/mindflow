@@ -855,6 +855,140 @@ test.describe('align and distribute', () => {
   });
 });
 
+test.describe('context menu', () => {
+  /** Right-clicks at a canvas-relative point. */
+  async function rightClick(page: Page, at: [number, number]) {
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + at[0], box.y + at[1], { button: 'right' });
+  }
+
+  test('opens on empty canvas with board-level actions', async ({ page }) => {
+    await rightClick(page, [400, 300]);
+
+    await expect(page.locator('.mf-menu')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Select all' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Paste here' })).toBeVisible();
+  });
+
+  test('selects the element under the pointer and offers element actions', async ({ page }) => {
+    // A sticky, not a rectangle: the default rectangle is unfilled and therefore
+    // hollow to clicks by design, so its interior would never be hit.
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+
+    await rightClick(page, [170, 150]);
+
+    expect(await selectedCount(page)).toBe(1);
+    await expect(page.locator('.mf-menu').getByRole('button', { name: 'Duplicate' })).toBeVisible();
+  });
+
+  test('runs the chosen action', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+
+    await rightClick(page, [170, 150]);
+    await page.locator('.mf-menu').getByRole('button', { name: 'Duplicate' }).click();
+
+    expect((await getDocument(page)).elements).toHaveLength(2);
+    await expect(page.locator('.mf-menu')).toHaveCount(0);
+  });
+
+  test('closes on Escape without clearing the selection', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+
+    await rightClick(page, [170, 150]);
+    await page.keyboard.press('Escape');
+
+    await expect(page.locator('.mf-menu')).toHaveCount(0);
+    // Escape dismisses the menu and stops there — the app's own Escape handler
+    // would otherwise also deselect, losing what the menu was about to act on.
+    expect(await selectedCount(page)).toBe(1);
+  });
+
+  test('closes when clicking away', async ({ page }) => {
+    await rightClick(page, [400, 300]);
+    await expect(page.locator('.mf-menu')).toBeVisible();
+
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 600, box.y + 500);
+
+    await expect(page.locator('.mf-menu')).toHaveCount(0);
+  });
+
+  test('offers only Unlock for a locked element', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+    await page.evaluate(
+      () => (window as unknown as { mindflow: { actions: { toggleLock(): void } } }).mindflow.actions.toggleLock(),
+    );
+
+    await rightClick(page, [170, 150]);
+
+    // Scoped to the menu: the style panel offers its own Unlock button, which is
+    // the other half of the same escape hatch.
+    await expect(page.locator('.mf-menu').getByRole('button', { name: 'Unlock' })).toBeVisible();
+    await expect(page.locator('.mf-menu').getByRole('button', { name: 'Duplicate' })).toHaveCount(0);
+  });
+
+  test('does not leave the canvas holding pointer capture', async ({ page }) => {
+    // contextmenu fires between pointerdown and pointerup, and pointerdown has
+    // already captured the pointer. If it is not released, the next left-drag
+    // silently does nothing.
+    await rightClick(page, [400, 300]);
+    await page.keyboard.press('Escape');
+
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [500, 400], [620, 480]);
+
+    expect((await getDocument(page)).elements).toHaveLength(1);
+  });
+});
+
+test.describe('style clipboard', () => {
+  test('copies appearance from one element onto another', async ({ page }) => {
+    // Stickies, so clicking the interior actually selects them.
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [400, 100], [550, 200]);
+
+    await page.locator('[data-tool="select"]').click();
+    // Restyle the second, copy it, then paste onto the first.
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 470, box.y + 150);
+    await page.locator('.mf-swatch[aria-label="Stroke #e03131"]').click();
+    await page.keyboard.press('ControlOrMeta+Alt+c');
+
+    await page.mouse.click(box.x + 170, box.y + 150);
+    await page.keyboard.press('ControlOrMeta+Alt+v');
+
+    const strokes = (await getDocument(page)).elements.map(
+      (element) => (element.style as { stroke: string }).stroke,
+    );
+    expect(new Set(strokes)).toEqual(new Set(['#e03131']));
+  });
+
+  test('Cmd+Alt+C does not copy the elements themselves', async ({ page }) => {
+    // The plain Cmd+C branch had no altKey guard, so it would have matched first
+    // and put elements on the clipboard instead of a style.
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('ControlOrMeta+a');
+
+    await page.keyboard.press('ControlOrMeta+Alt+c');
+    await page.keyboard.press('ControlOrMeta+v');
+
+    expect((await getDocument(page)).elements).toHaveLength(1);
+  });
+});
+
 test.describe('performance', () => {
   test('stays responsive with 2,000 elements', async ({ page }) => {
     // Viewport culling is the one optimisation implemented, and this is the

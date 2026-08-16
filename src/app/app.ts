@@ -22,6 +22,8 @@ import { Actions } from './actions.ts';
 import { Toolbar } from '../ui/toolbar.ts';
 import { StylePanel } from '../ui/stylePanel.ts';
 import { TextEditor } from '../ui/textEditor.ts';
+import { showContextMenu } from '../ui/contextMenu.ts';
+import { closePopover } from '../ui/popover.ts';
 import {
   confirmDialog,
   showDriveConnectDialog,
@@ -106,6 +108,8 @@ export class MindflowApp {
       onEditText: (element) => this.textEditor.open(element),
       onOverlayChange: () => this.renderer.invalidate(),
       onRequestImage: (point) => void this.insertImageAtPoint(point),
+      onContextMenu: ({ scene, screen, hit }) =>
+        showContextMenu({ store: this.store, actions: this.actions, scene, screen, hit }),
     });
 
     this.toolbar = new Toolbar(this.store, this.actions, {
@@ -295,6 +299,9 @@ export class MindflowApp {
     // browsers traditionally do not focus buttons on click. Left open, the
     // editor floats over the incoming board still showing the old one's text.
     this.textEditor.commit();
+    // Same argument for a popover: a context menu still listing "Ungroup" for
+    // elements that no longer exist would act on a stale selection.
+    closePopover();
     this.images.clear();
     this.store.load(result, origin);
     this.images.sync(result.document);
@@ -316,6 +323,7 @@ export class MindflowApp {
     // being left, so it has to land before the user is asked whether losing the
     // board's changes is acceptable. See applyLoad for why blur is not enough.
     this.textEditor.commit();
+    closePopover();
     if (!(await this.confirmDiscard())) return;
     this.images.clear();
     this.store.reset();

@@ -118,19 +118,34 @@ export function installKeyboardShortcuts(options: KeyboardOptions): () => void {
       return;
     }
 
+    // ---- Style clipboard --------------------------------------------------
+    // Checked BEFORE the element clipboard below, and the element clipboard now
+    // tests `!event.altKey` — otherwise Cmd+Alt+C would match the plain Cmd+C
+    // branch first and copy the elements instead of their appearance.
+    if (primary && event.altKey && key === 'c') {
+      event.preventDefault();
+      actions.copyStyle();
+      return;
+    }
+    if (primary && event.altKey && key === 'v') {
+      event.preventDefault();
+      actions.pasteStyle();
+      return;
+    }
+
     // ---- Clipboard --------------------------------------------------------
     // Note: copy/cut/paste are ALSO wired to the native clipboard events in
     // `main.ts`. These handlers cover browsers that do not deliver those events
     // to a canvas, and are harmless duplicates where they do.
-    if (primary && key === 'c') {
+    if (primary && !event.altKey && key === 'c') {
       void actions.copy();
       return;
     }
-    if (primary && key === 'x') {
+    if (primary && !event.altKey && key === 'x') {
       void actions.cut();
       return;
     }
-    if (primary && key === 'v') {
+    if (primary && !event.altKey && key === 'v') {
       void actions.paste();
       return;
     }
@@ -274,6 +289,7 @@ export const SHORTCUT_REFERENCE: { group: string; items: [string, string][] }[] 
       ['Cmd/Ctrl + Z', 'Undo'],
       ['Cmd/Ctrl + Shift + Z', 'Redo'],
       ['Cmd/Ctrl + C / X / V', 'Copy / Cut / Paste'],
+      ['Cmd/Ctrl + Alt + C / V', 'Copy / paste style'],
       ['Cmd/Ctrl + D', 'Duplicate'],
       ['Cmd/Ctrl + A', 'Select all'],
       ['Delete', 'Delete selection'],

@@ -786,6 +786,134 @@ kbd {
 }
 
 /* --------------------------------------------------------------------------
+   Popovers — context menu, command palette, find bar
+
+   Positioned from TypeScript in viewport coordinates, so `fixed` rather than
+   `absolute`: a popover anchored at the pointer must not move with any scrolled
+   ancestor. Sits above the tool palette and style panel (z-index 10) and below
+   toasts (1000), which should stay readable over anything.
+   -------------------------------------------------------------------------- */
+
+.mf-popover {
+  position: fixed;
+  z-index: 500;
+  color: var(--mf-text);
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: var(--mf-radius);
+  box-shadow: var(--mf-shadow-lg);
+}
+
+/* Context menu */
+
+.mf-menu {
+  min-width: 200px;
+  padding: 5px;
+}
+
+.mf-menu-item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 9px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--mf-text);
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--mf-radius-sm);
+}
+
+.mf-menu-item:hover:not(:disabled),
+.mf-menu-item.is-active:not(:disabled) {
+  background: var(--mf-surface-hover);
+}
+
+.mf-menu-item:disabled {
+  color: var(--mf-text-faint);
+  cursor: default;
+}
+
+.mf-menu-item--danger:hover:not(:disabled) {
+  color: var(--mf-danger);
+  background: var(--mf-danger-soft);
+}
+
+.mf-menu-shortcut {
+  font-size: 11px;
+  color: var(--mf-text-faint);
+  white-space: nowrap;
+}
+
+.mf-menu-separator {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--mf-border);
+}
+
+/* Command palette and find bar share the input + result list shape. */
+
+.mf-palette {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, calc(100vw - 32px));
+}
+
+.mf-palette-input {
+  width: 100%;
+  padding: 13px 15px;
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--mf-text);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--mf-border);
+  outline: none;
+}
+
+.mf-palette-input::placeholder {
+  color: var(--mf-text-faint);
+}
+
+.mf-palette-list {
+  max-height: 320px;
+  padding: 5px;
+  margin: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.mf-palette-empty {
+  padding: 16px;
+  font-size: 13px;
+  color: var(--mf-text-muted);
+  text-align: center;
+}
+
+.mf-palette-group {
+  padding: 8px 9px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--mf-text-faint);
+  text-transform: uppercase;
+}
+
+.mf-find {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.mf-find-status {
+  padding: 0 15px 11px;
+  font-size: 12px;
+  color: var(--mf-text-muted);
+}
+
+/* --------------------------------------------------------------------------
    Toasts
    -------------------------------------------------------------------------- */
 

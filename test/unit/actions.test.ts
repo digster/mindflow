@@ -166,6 +166,109 @@ describe('align', () => {
   });
 });
 
+describe('style clipboard', () => {
+  function makeSticky(x: number, zIndex: number, overrides: Partial<MindflowElement> = {}) {
+    return {
+      ...getDefinition('sticky').create({ x, y: 0, width: 120, height: 120, zIndex }),
+      ...overrides,
+    } as MindflowElement;
+  }
+
+  it('copies style and opacity onto another element', () => {
+    const source = makeRect(0, 0, 1000, {
+      style: { stroke: '#e03131', strokeWidth: 4, strokeStyle: 'dashed', fill: '#ffc9c9', fillStyle: 'solid', roughness: 0 },
+      opacity: 0.5,
+    });
+    const target = makeRect(200, 0, 2000);
+    const { store, actions } = setup(source, target);
+
+    store.setSelection([source.id]);
+    actions.copyStyle();
+    store.setSelection([target.id]);
+    actions.pasteStyle();
+
+    const pasted = byId(store, target.id);
+    expect(pasted.style.stroke).toBe('#e03131');
+    expect(pasted.style.strokeWidth).toBe(4);
+    expect(pasted.opacity).toBe(0.5);
+    // Geometry is appearance-adjacent but not appearance: it must not travel.
+    expect(pasted.x).toBe(200);
+  });
+
+  it('does nothing before anything has been copied', () => {
+    const target = makeRect(200, 0, 2000);
+    const { store, actions } = setup(target);
+    store.setSelection([target.id]);
+
+    expect(actions.hasCopiedStyle).toBe(false);
+    actions.pasteStyle();
+    expect(store.history.canUndo()).toBe(false);
+  });
+
+  /**
+   * Typography lives in two different places — directly on a sticky, inside
+   * `label` on a shape — and routing between them is the whole reason the style
+   * clipboard cannot just be a `style` spread.
+   */
+  it('carries typography from a sticky into a shape label', () => {
+    const sticky = makeSticky(0, 1000, { fontSize: 40, fontFamily: 'serif' } as Partial<MindflowElement>);
+    const shape = makeRect(300, 0, 2000, {
+      label: {
+        text: 'hello',
+        fontFamily: 'sans',
+        fontSize: 20,
+        fontWeight: 400,
+        lineHeight: 1.25,
+        color: '#1a1d23',
+        textAlign: 'center',
+        verticalAlign: 'middle',
+        padding: 8,
+      },
+    });
+    const { store, actions } = setup(sticky, shape);
+
+    store.setSelection([sticky.id]);
+    actions.copyStyle();
+    store.setSelection([shape.id]);
+    actions.pasteStyle();
+
+    const pasted = byId(store, shape.id);
+    expect(pasted.label?.fontSize).toBe(40);
+    expect(pasted.label?.fontFamily).toBe('serif');
+    // The label's words are not part of its appearance.
+    expect(pasted.label?.text).toBe('hello');
+  });
+
+  it('skips locked elements', () => {
+    const source = makeRect(0, 0, 1000, { style: { ...makeRect(0, 0, 1).style, stroke: '#e03131' } });
+    const locked = makeRect(200, 0, 2000, { locked: true });
+    const { store, actions } = setup(source, locked);
+
+    store.setSelection([source.id]);
+    actions.copyStyle();
+    store.setSelection([locked.id]);
+    actions.pasteStyle();
+
+    expect(byId(store, locked.id).style.stroke).not.toBe('#e03131');
+  });
+
+  it('is one undo step across many elements', () => {
+    const source = makeRect(0, 0, 1000, { style: { ...makeRect(0, 0, 1).style, stroke: '#e03131' } });
+    const a = makeRect(200, 0, 2000);
+    const b = makeRect(400, 0, 3000);
+    const { store, actions } = setup(source, a, b);
+
+    store.setSelection([source.id]);
+    actions.copyStyle();
+    store.setSelection([a.id, b.id]);
+    actions.pasteStyle();
+    store.undo();
+
+    expect(byId(store, a.id).style.stroke).not.toBe('#e03131');
+    expect(byId(store, b.id).style.stroke).not.toBe('#e03131');
+  });
+});
+
 describe('distribute', () => {
   it('equalises the gaps between three elements', () => {
     const a = makeRect(0, 0, 1000);
