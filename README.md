@@ -29,8 +29,12 @@ drift apart.
 note, image, eraser.
 
 **Editing** — move, resize and rotate (including correct rotated resizing),
-multi-select, marquee, grouping, z-order, in-place text editing, full undo/redo,
-clipboard with cross-tab support.
+multi-select, marquee, grouping, align and distribute, z-order, in-place text
+editing, full undo/redo, clipboard with cross-tab support, and a style clipboard
+that copies appearance without content.
+
+**Getting around** — a command palette (`Cmd K`), text search across the board
+(`Cmd F`), and a right-click context menu.
 
 **Connectors** — arrows that bind to shapes and re-route automatically when those
 shapes move. Straight, curved or elbow routing; five arrowhead styles.
@@ -159,7 +163,9 @@ list.
 |---|---|
 | `V` `H` `R` `O` `L` `A` `P` `T` `N` `E` | Select, pan, rectangle, ellipse, line, arrow, draw, text, note, eraser |
 | `Space` + drag · `Cmd` + scroll | Pan · Zoom |
+| `Cmd` `K` / `Cmd` `F` | Command palette / Find on board |
 | `Cmd` `Z` / `Cmd` `Shift` `Z` | Undo / Redo |
+| `Cmd` `Alt` `C` / `Cmd` `Alt` `V` | Copy / paste style |
 | `Cmd` `G` / `Cmd` `Shift` `G` | Group / Ungroup |
 | `Cmd` `[` / `Cmd` `]` | Send backward / Bring forward |
 | `Cmd` `0` / `Cmd` `1` | Reset zoom / Zoom to fit |
@@ -225,7 +231,6 @@ Considered, in rough order — see
 - Hand-drawn rendering (`style.roughness` is already reserved in the format)
 - Google Picker, to lift the `drive.file` limitation
 - Laser pointer and presentation mode
-- Command palette
 
 ## License
 

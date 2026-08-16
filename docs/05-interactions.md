@@ -266,6 +266,7 @@ not switch tools.
 | `Cmd` + `Z` | Undo |
 | `Cmd` + `Shift` + `Z`, `Cmd` + `Y` | Redo |
 | `Cmd` + `C` / `X` / `V` | Copy / Cut / Paste |
+| `Cmd` + `Alt` + `C` / `V` | Copy / paste style |
 | `Cmd` + `D` | Duplicate |
 | `Cmd` + `A` | Select all |
 | `Delete` / `Backspace` | Delete selection |
@@ -283,6 +284,14 @@ not switch tools.
 | `Cmd` + `Shift` + `]` | Bring to front |
 | `Cmd` + `[` | Send backward |
 | `Cmd` + `Shift` + `[` | Send to back |
+
+### Find and run
+
+| Shortcut | Action |
+|---|---|
+| `Cmd` + `K` | Command palette |
+| `Cmd` + `F` | Find on board |
+| Right-click | Context menu |
 
 ### View
 
@@ -363,6 +372,43 @@ layer the toolbar and keyboard use, so behaviour cannot drift between routes.
 - On a **locked** element the menu collapses to a single **Unlock**, matching the
   style panel. This is the other half of the escape hatch described above.
 - `Escape` dismisses the menu without clearing the selection.
+
+## The command palette
+
+`Cmd`/`Ctrl` + `K` opens a searchable list of every command, generated from one
+registry (`src/app/commands.ts`) rather than a hand-maintained copy of what the
+toolbar and keyboard already do.
+
+- Matching is a **subsequence**, so `zf` finds "Zoom to fit". A literal hit ranks
+  above a scattered one, and a hit at a word boundary above one buried mid-word.
+- Commands that cannot currently run are **greyed out rather than hidden**, which
+  is what keeps them discoverable.
+- Entries are rebuilt each time the palette opens, because whether a command
+  applies depends on live state.
+
+The palette is also the keyboard route to the **file** actions. `Cmd`/`Ctrl` + `N`
+is claimed by every major browser for "new window" and never reaches the page, so
+before the palette existed the toolbar button was the only way to start a blank
+board.
+
+## Find on board
+
+`Cmd`/`Ctrl` + `F` searches the text of `text` and `sticky` elements and the
+`label` of every other shape, case-insensitively.
+
+Taking `Cmd`+`F` from the browser is deliberate, and is the one exception to the
+rule above about not overriding browser shortcuts. Canvas text is painted pixels,
+not DOM, so the browser's own find can never match anything on a board — its
+dialog would be strictly useless here.
+
+- `Enter` and `Shift`+`Enter` step forward and back through matches, wrapping at
+  the ends.
+- Each match is selected and the viewport centred on it, at the current zoom.
+- **Hidden elements are skipped** — centring on something invisible is not a
+  useful answer. **Locked elements are still found**, since locked means scenery,
+  not unreadable.
+- `meta` is never searched. It is the namespace reserved for third-party tools,
+  which MindFlow does not interpret.
 
 ## Drag and drop
 

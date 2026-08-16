@@ -40,6 +40,8 @@ export interface KeyboardOptions {
   onNew: () => void;
   onExport: () => void;
   onSpaceChange: (held: boolean) => void;
+  onCommandPalette: () => void;
+  onFind: () => void;
 }
 
 /**
@@ -115,6 +117,21 @@ export function installKeyboardShortcuts(options: KeyboardOptions): () => void {
     if (primary && key === 'y') {
       event.preventDefault();
       store.redo();
+      return;
+    }
+
+    // ---- Overlays ---------------------------------------------------------
+    // Cmd+K is unclaimed by browsers. Cmd+F is not, and taking it is deliberate:
+    // the browser's find searches the DOM, and canvas text is painted pixels, so
+    // its dialog could never match anything on the board.
+    if (primary && key === 'k') {
+      event.preventDefault();
+      options.onCommandPalette();
+      return;
+    }
+    if (primary && key === 'f') {
+      event.preventDefault();
+      options.onFind();
       return;
     }
 
@@ -303,6 +320,14 @@ export const SHORTCUT_REFERENCE: { group: string; items: [string, string][] }[] 
       ['Cmd/Ctrl + Shift + G', 'Ungroup'],
       ['Cmd/Ctrl + ]', 'Bring forward (Shift: to front)'],
       ['Cmd/Ctrl + [', 'Send backward (Shift: to back)'],
+    ],
+  },
+  {
+    group: 'Find and run',
+    items: [
+      ['Cmd/Ctrl + K', 'Command palette'],
+      ['Cmd/Ctrl + F', 'Find on board'],
+      ['Right-click', 'Context menu'],
     ],
   },
   {

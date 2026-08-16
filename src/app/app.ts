@@ -19,7 +19,10 @@ import { installKeyboardShortcuts } from '../input/keyboard.ts';
 import { screenToScene } from '../model/geometry.ts';
 import { serializeDocument, type LoadResult } from '../model/document.ts';
 import { Actions } from './actions.ts';
-import { Toolbar } from '../ui/toolbar.ts';
+import { Toolbar, type ToolbarCallbacks } from '../ui/toolbar.ts';
+import { showCommandPalette } from '../ui/commandPalette.ts';
+import { showFindBar } from '../ui/findBar.ts';
+import { buildCommands } from './commands.ts';
 import { StylePanel } from '../ui/stylePanel.ts';
 import { TextEditor } from '../ui/textEditor.ts';
 import { showContextMenu } from '../ui/contextMenu.ts';
@@ -68,6 +71,8 @@ export class MindflowApp {
   private readonly controller: InteractionController;
   private readonly actions: Actions;
   private readonly toolbar: Toolbar;
+  /** Shared by the toolbar and the command palette; see the constructor. */
+  private readonly appCallbacks: ToolbarCallbacks;
   private readonly stylePanel: StylePanel;
   private readonly textEditor: TextEditor;
   private readonly autosave: Autosave;
@@ -112,7 +117,10 @@ export class MindflowApp {
         showContextMenu({ store: this.store, actions: this.actions, scene, screen, hit }),
     });
 
-    this.toolbar = new Toolbar(this.store, this.actions, {
+    // Held as a field rather than passed inline: the command palette renders the
+    // same actions, and a second copy of these callbacks is a second place for
+    // them to drift.
+    this.appCallbacks = {
       onNew: () => void this.newBoard(),
       onOpen: () => void this.openBoardFile(),
       onSave: () => void this.save(),
@@ -122,7 +130,9 @@ export class MindflowApp {
       onSettings: () => this.openSettings(),
       onToggleGrid: () => this.toggleGrid(),
       onRename: (name) => this.store.execute(renameBoard(this.store.document, name)),
-    });
+    };
+
+    this.toolbar = new Toolbar(this.store, this.actions, this.appCallbacks);
 
     this.stylePanel = new StylePanel(this.store, this.actions);
     this.autosave = new Autosave((error) => {
@@ -195,6 +205,8 @@ export class MindflowApp {
         onNew: () => void this.newBoard(),
         onExport: () => void this.exportBoard(),
         onSpaceChange: (held) => this.controller.setSpaceHeld(held),
+        onCommandPalette: () => this.openCommandPalette(),
+        onFind: () => showFindBar(this.store, this.actions),
       }),
     );
 
@@ -306,6 +318,21 @@ export class MindflowApp {
     this.store.load(result, origin);
     this.images.sync(result.document);
     showLoadWarnings(result.warnings);
+  }
+
+  /**
+   * Opens the command palette.
+   *
+   * Commands are rebuilt per invocation rather than cached, because each one's
+   * `enabled()` closes over live state — whether anything is selected, whether
+   * there is history to undo. A cached list would grey out the wrong entries.
+   */
+  private openCommandPalette(): void {
+    showCommandPalette(
+      buildCommands(this.store, this.actions, this.appCallbacks, {
+        onFind: () => showFindBar(this.store, this.actions),
+      }),
+    );
   }
 
   private async confirmDiscard(): Promise<boolean> {

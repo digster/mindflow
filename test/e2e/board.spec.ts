@@ -989,6 +989,147 @@ test.describe('style clipboard', () => {
   });
 });
 
+test.describe('command palette', () => {
+  test('opens on Cmd+K and runs a command', async ({ page }) => {
+    await page.keyboard.press('ControlOrMeta+k');
+    await expect(page.locator('.mf-palette')).toBeVisible();
+
+    await page.keyboard.type('sticky');
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator('.mf-palette')).toHaveCount(0);
+    await expect(page.locator('[data-tool="sticky"]')).toHaveClass(/is-active/);
+  });
+
+  test('gives New board a keyboard route again', async ({ page }) => {
+    // Cmd+N never reaches the page in an ordinary browser tab, which left the
+    // toolbar button as the only way in. The palette is the second route.
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [250, 200]);
+
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.type('new board');
+    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: 'Discard' }).click();
+
+    expect((await getDocument(page)).elements).toHaveLength(0);
+  });
+
+  test('filters as you type and reports when nothing matches', async ({ page }) => {
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.type('zzzznope');
+
+    await expect(page.locator('.mf-palette-empty')).toBeVisible();
+  });
+
+  test('greys out commands that do not apply', async ({ page }) => {
+    // Nothing is selected, so Duplicate cannot run — but it stays listed, which
+    // is what makes it discoverable in the first place.
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.type('duplicate');
+
+    await expect(page.locator('.mf-palette').getByRole('option', { name: /Duplicate/ })).toBeDisabled();
+  });
+
+  test('closes on Escape', async ({ page }) => {
+    await page.keyboard.press('ControlOrMeta+k');
+    await expect(page.locator('.mf-palette')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.mf-palette')).toHaveCount(0);
+  });
+
+  test('typing in the palette does not also drive the canvas', async ({ page }) => {
+    // Tool shortcuts are bare letters. Without the typing-target guard, typing
+    // "rectangle" into the palette would switch tools nine times.
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.type('rectangle');
+
+    await expect(page.locator('[data-tool="select"]')).toHaveClass(/is-active/);
+  });
+});
+
+test.describe('find on board', () => {
+  /**
+   * Creates a sticky carrying `text`.
+   *
+   * Waits for the editor to be FOCUSED, not merely attached: `TextEditor.open`
+   * focuses inside a requestAnimationFrame, so typing a frame early loses the
+   * leading keystrokes to the canvas, where letters are tool shortcuts.
+   */
+  async function stickyWithText(page: Page, at: [number, number], text: string) {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, at, [at[0] + 140, at[1] + 120]);
+    await page.keyboard.press('Escape');
+
+    // Creating a sticky does not open the editor; double-clicking does.
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + at[0] + 70, box.y + at[1] + 60);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type(text);
+    await page.keyboard.press('Escape');
+  }
+
+  test('finds a sticky by its text and selects it', async ({ page }) => {
+    await stickyWithText(page, [100, 120], 'deploy on friday');
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+
+    await page.keyboard.press('ControlOrMeta+f');
+    await page.keyboard.type('friday');
+
+    await expect(page.locator('.mf-find-status')).toHaveText('1 of 1');
+    expect(await selectedCount(page)).toBe(1);
+  });
+
+  test('reports when there are no matches', async ({ page }) => {
+    await stickyWithText(page, [100, 120], 'deploy on friday');
+
+    await page.keyboard.press('ControlOrMeta+f');
+    await page.keyboard.type('saturday');
+
+    await expect(page.locator('.mf-find-status')).toHaveText('No matches');
+  });
+
+  test('cycles through matches with Enter', async ({ page }) => {
+    await stickyWithText(page, [100, 120], 'release one');
+    await stickyWithText(page, [400, 120], 'release two');
+    await page.locator('[data-tool="select"]').click();
+
+    await page.keyboard.press('ControlOrMeta+f');
+    await page.keyboard.type('release');
+    await expect(page.locator('.mf-find-status')).toHaveText('1 of 2');
+
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.mf-find-status')).toHaveText('2 of 2');
+
+    // Wraps around rather than stopping at the end.
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.mf-find-status')).toHaveText('1 of 2');
+  });
+
+  test('centres the viewport on an off-screen match', async ({ page }) => {
+    await stickyWithText(page, [100, 120], 'far away note');
+    await page.locator('[data-tool="select"]').click();
+    // Push the note well outside the viewport.
+    await page.evaluate(() =>
+      (window as unknown as { mindflow: { store: { setViewport(v: unknown): void } } }).mindflow.store.setViewport({
+        x: 8000,
+        y: 8000,
+        zoom: 1,
+      }),
+    );
+
+    await page.keyboard.press('ControlOrMeta+f');
+    await page.keyboard.type('far away');
+
+    const viewport = await page.evaluate(
+      () =>
+        (window as unknown as { mindflow: { store: { viewport: { x: number; y: number } } } }).mindflow.store.viewport,
+    );
+    expect(viewport.x).toBeLessThan(1000);
+  });
+});
+
 test.describe('performance', () => {
   test('stays responsive with 2,000 elements', async ({ page }) => {
     // Viewport culling is the one optimisation implemented, and this is the
