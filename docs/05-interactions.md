@@ -103,6 +103,40 @@ A locked element that has been selected this way:
 
 Unlocking is the one edit a locked element accepts.
 
+### Align and distribute
+
+The style panel gains an **Align** row whenever the selection covers two or more
+*units*, and enables the two distribute buttons at three or more.
+
+A **unit** is a group, or an ungrouped element. Three rules follow from that, and
+they are what make the result predictable:
+
+- **A group moves as one box.** Selecting any member expands the selection to the
+  whole group, so aligning members individually would stack them on top of one
+  another. The group's combined bounding box is aligned, and every member is
+  shifted by the same delta, preserving the internal layout.
+- **Locked elements are excluded**, and do not contribute to the bounds. They can
+  be in the selection — right-clicking one is how it is reached — so, as with
+  delete and nudge, they are filtered rather than assumed editable.
+- **Alignment uses the rotated world box.** `x`, `y`, `width` and `height` describe
+  the *unrotated* box (see [04-coordinates.md](04-coordinates.md)), so a rotated
+  element's visible left edge is not `x`. Each unit's axis-aligned world bounds
+  are computed first, then the difference is applied as a translation.
+
+Distribution equalises the **gaps between boxes**, not the spacing of centres, and
+holds the two extreme units in place:
+
+```
+gap = (span − Σ box widths) / (unit count − 1)
+```
+
+where `span` runs from the leading edge of the first unit to the trailing edge of
+the last. Equal centre spacing looks wrong as soon as one element is wider than
+its neighbours; equal gaps is what reads as evenly distributed. A negative `gap`
+(overlapping elements) is left as-is — the spacing is still even.
+
+Each operation is a single undo step, and bound connectors re-route afterwards.
+
 ## Modifiers during a drag
 
 | Modifier | Effect |

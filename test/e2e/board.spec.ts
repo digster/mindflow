@@ -787,6 +787,74 @@ test.describe('new board', () => {
   });
 });
 
+test.describe('align and distribute', () => {
+  /** Draws `count` rectangles at staggered positions and selects them all. */
+  async function drawAndSelectAll(page: Page, boxes: [number, number][][]) {
+    for (const [from, to] of boxes) {
+      await page.locator('[data-tool="rectangle"]').click();
+      await drag(page, from as [number, number], to as [number, number]);
+    }
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('ControlOrMeta+a');
+  }
+
+  test('the panel offers align controls once two things are selected', async ({ page }) => {
+    // The whole point of this feature: Actions.align existed but nothing called
+    // it. If the button disappears, the action is unreachable again.
+    await drawAndSelectAll(page, [
+      [[100, 100], [200, 180]],
+      [[300, 260], [420, 340]],
+    ]);
+
+    await expect(page.getByRole('button', { name: 'Align left' })).toBeVisible();
+    // Two units have no interior to distribute.
+    await expect(page.getByRole('button', { name: 'Distribute horizontally' })).toBeDisabled();
+  });
+
+  test('offers no align controls for a single element', async ({ page }) => {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [200, 180]);
+
+    await expect(page.getByRole('button', { name: 'Align left' })).toHaveCount(0);
+  });
+
+  test('aligning from the panel moves the elements and is one undo step', async ({ page }) => {
+    await drawAndSelectAll(page, [
+      [[100, 100], [200, 180]],
+      [[300, 260], [420, 340]],
+    ]);
+
+    await page.getByRole('button', { name: 'Align left' }).click();
+
+    const xs = (await getDocument(page)).elements.map((element) => element.x as number);
+    expect(new Set(xs).size).toBe(1);
+
+    await page.keyboard.press('ControlOrMeta+z');
+    const after = (await getDocument(page)).elements.map((element) => element.x as number);
+    expect(new Set(after).size).toBe(2);
+  });
+
+  test('distribute becomes available at three units and evens the gaps', async ({ page }) => {
+    await drawAndSelectAll(page, [
+      [[80, 100], [180, 180]],
+      [[220, 100], [320, 180]],
+      [[600, 100], [700, 180]],
+    ]);
+
+    const button = page.getByRole('button', { name: 'Distribute horizontally' });
+    await expect(button).toBeEnabled();
+    await button.click();
+
+    const boxes = (await getDocument(page)).elements
+      .map((element) => ({ minX: element.x as number, maxX: (element.x as number) + (element.width as number) }))
+      .sort((a, b) => a.minX - b.minX);
+
+    const firstGap = (boxes[1]?.minX ?? 0) - (boxes[0]?.maxX ?? 0);
+    const secondGap = (boxes[2]?.minX ?? 0) - (boxes[1]?.maxX ?? 0);
+    expect(firstGap).toBeCloseTo(secondGap, 3);
+  });
+});
+
 test.describe('performance', () => {
   test('stays responsive with 2,000 elements', async ({ page }) => {
     // Viewport culling is the one optimisation implemented, and this is the

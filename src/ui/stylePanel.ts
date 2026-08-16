@@ -177,7 +177,9 @@ export class StylePanel {
           })),
         ),
         this.buttonRow(
-          'Align',
+          // "Text align" rather than "Align": the row below aligns the elements
+          // themselves, and two rows both labelled "Align" would be a coin toss.
+          'Text align',
           (['left', 'center', 'right'] as const).map((align) => ({
             label: align[0]?.toUpperCase() + align.slice(1),
             active: false,
@@ -188,6 +190,8 @@ export class StylePanel {
     }
 
     this.element.append(this.opacityRow(first.opacity));
+    const alignRow = this.alignRow(selected);
+    if (alignRow) this.element.append(alignRow);
     this.element.append(this.arrangeRow(selected));
   }
 
@@ -296,6 +300,59 @@ export class StylePanel {
         oninput: (event: Event) =>
           this.actions.setOpacity(Number((event.target as HTMLInputElement).value) / 100),
       }),
+    );
+  }
+
+  /**
+   * Align and distribute, or `null` when the selection is too small to have a
+   * meaningful arrangement.
+   *
+   * The unit count — not the element count — is what gates these, matching
+   * `Actions.alignmentUnits`: a group moves as one box, so selecting a pair of
+   * grouped shapes offers nothing to align them against.
+   */
+  private alignRow(selected: readonly MindflowElement[]): HTMLElement | null {
+    const units = new Set(selected.map((element) => element.groupId ?? element.id));
+    if (units.size < 2) return null;
+
+    const button = (name: keyof typeof ICONS, title: string, onClick: () => void, disabled = false) =>
+      el(
+        'button',
+        {
+          class: 'mf-icon-button mf-icon-button--small',
+          type: 'button',
+          title,
+          'aria-label': title,
+          disabled,
+          onclick: onClick,
+        },
+        icon(ICONS[name], 16),
+      );
+
+    // Distribution needs an interior to space out; with two units the extremes
+    // are the whole selection and there is nothing between them to move.
+    const noInterior = units.size < 3;
+
+    return this.section(
+      'Align',
+      button('alignLeft', 'Align left', () => this.actions.align('left')),
+      button('alignCenterX', 'Align horizontal centres', () => this.actions.align('centerX')),
+      button('alignRight', 'Align right', () => this.actions.align('right')),
+      button('alignTop', 'Align top', () => this.actions.align('top')),
+      button('alignCenterY', 'Align vertical centres', () => this.actions.align('centerY')),
+      button('alignBottom', 'Align bottom', () => this.actions.align('bottom')),
+      button(
+        'distributeH',
+        'Distribute horizontally',
+        () => this.actions.distribute('horizontal'),
+        noInterior,
+      ),
+      button(
+        'distributeV',
+        'Distribute vertically',
+        () => this.actions.distribute('vertical'),
+        noInterior,
+      ),
     );
   }
 

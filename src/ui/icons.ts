@@ -36,6 +36,16 @@ export const ICONS = {
   front: 'M4 8l8-4 8 4-8 4z M4 12l8 4 8-4 M4 16l8 4 8-4',
   back: 'M4 16l8 4 8-4 M4 12l8-4 8 4 M12 4v8',
   group: 'M4 4h6v6H4z M14 14h6v6h-6z M4 14h6v6H4z M14 4h6v6h-6z',
+  // Align and distribute: a rule showing the edge everything lands on, plus two
+  // bars of different lengths so the direction of travel reads at 16px.
+  alignLeft: 'M4 4v16 M7 8h11 M7 14h7',
+  alignCenterX: 'M12 4v16 M6.5 8h11 M8.5 14h7',
+  alignRight: 'M20 4v16 M6 8h11 M10 14h7',
+  alignTop: 'M4 4h16 M8 7v11 M14 7v7',
+  alignCenterY: 'M4 12h16 M8 6.5v11 M14 8.5v7',
+  alignBottom: 'M4 20h16 M8 6v11 M14 10v7',
+  distributeH: 'M4 4v16 M20 4v16 M10 7h4v10h-4z',
+  distributeV: 'M4 4h16 M4 20h16 M7 10h10v4H7z',
   lock: 'M6 11h12v9H6z M9 11V7a3 3 0 016 0v4',
   grid: 'M4 4h16v16H4z M4 10h16M4 15h16M10 4v16M15 4v16',
   settings: 'M12 9a3 3 0 100 6 3 3 0 000-6z M19.4 14a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V20a2 2 0 11-4 0v-.1A1.6 1.6 0 008 18.4a1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H2a2 2 0 110-4h.1A1.6 1.6 0 003.6 8a1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H8a1.6 1.6 0 001-1.5V2a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V8a1.6 1.6 0 001.5 1H22a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z',
