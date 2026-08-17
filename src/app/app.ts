@@ -33,6 +33,7 @@ import {
   showDriveConnectDialog,
   showDriveDialog,
   showExportDialog,
+  isModalDialogOpen,
   showLoadWarnings,
   showRecoveryDialog,
   showSettingsDialog,
@@ -238,30 +239,62 @@ export class MindflowApp {
     this.disposers.push(() => window.removeEventListener('paste', onPaste));
 
     // ---- Drag and drop ---------------------------------------------------
+    // On `window` rather than the canvas, and that is the entire point: the
+    // browser's default action for a file dropped on a page is to *navigate to
+    // that file*, taking the app and any unsaved board with it. Listening on the
+    // canvas alone leaves the top bar, the tool rail, the style panel and every
+    // dialog as live minefields, where a drop a few pixels wide of the board is
+    // indistinguishable from a crash.
+    //
+    // A drag carrying no files is left completely alone. Dragging selected text
+    // into the board-name field is the browser's business, and claiming every
+    // drag in order to catch the file ones would break it for nothing — the same
+    // rule the paste handler and the keyboard shortcuts follow.
+    const isFileDrag = (event: DragEvent): boolean =>
+      event.dataTransfer?.types.includes('Files') ?? false;
+
     const onDragOver = (event: DragEvent) => {
+      if (!isFileDrag(event)) return;
+      // Not optional: without a prevented `dragover` there is no `drop` event to
+      // handle, and the navigation happens regardless.
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
     };
+
     const onDrop = (event: DragEvent) => {
+      if (!isFileDrag(event)) return;
       event.preventDefault();
-      const files = event.dataTransfer?.files;
-      const file = files?.[0];
+
+      // Claimed above, then deliberately discarded: replacing the board out from
+      // under an open Settings or Drive dialog is worse than ignoring the drop.
+      // The `preventDefault` still had to run — swallowing is the point.
+      if (isModalDialogOpen()) return;
+
+      const file = event.dataTransfer?.files?.[0];
       if (!file) return;
 
+      // Dropped on the chrome rather than the board, there is no meaningful
+      // scene point under the cursor, so an image lands at the viewport centre —
+      // the same fallback pasting an image already uses. A board file replaces
+      // the document wholesale and ignores the point entirely.
       const rect = this.canvas.getBoundingClientRect();
-      const point = screenToScene(
-        { x: event.clientX - rect.left, y: event.clientY - rect.top },
-        this.store.viewport,
-      );
+      const point =
+        event.target === this.canvas
+          ? screenToScene(
+              { x: event.clientX - rect.left, y: event.clientY - rect.top },
+              this.store.viewport,
+            )
+          : this.viewportCenter();
 
       if (file.type.startsWith('image/')) void this.insertImageFile(file, point);
       else void this.openDroppedBoard(file);
     };
-    this.canvas.addEventListener('dragover', onDragOver);
-    this.canvas.addEventListener('drop', onDrop);
+
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('drop', onDrop);
     this.disposers.push(() => {
-      this.canvas.removeEventListener('dragover', onDragOver);
-      this.canvas.removeEventListener('drop', onDrop);
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('drop', onDrop);
     });
 
     // ---- Unsaved-work guard ----------------------------------------------

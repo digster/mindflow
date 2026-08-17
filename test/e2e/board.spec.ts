@@ -1420,6 +1420,204 @@ test.describe('pasting into chrome inputs', () => {
   });
 });
 
+test.describe('dropping files', () => {
+  /**
+   * Dispatches a `dragover` then a `drop` carrying `file` at `selector`, and
+   * reports whether the app claimed each one.
+   *
+   * `defaultPrevented` is the assertion that matters and the only one available:
+   * a synthetic event has no default action, so the navigation this guards
+   * against cannot be provoked from a test. What *can* be pinned down is the
+   * decision — that the handler saw the drop and took it off the browser's hands.
+   */
+  async function dropFile(
+    page: Page,
+    selector: string,
+    file: { name: string; type: string; content: string },
+  ) {
+    return page.evaluate(
+      ({ selector, file }) => {
+        const target = document.querySelector(selector);
+        if (!target) throw new Error(`no element matches ${selector}`);
+
+        const event = (type: string) => {
+          const data = new DataTransfer();
+          data.items.add(new File([file.content], file.name, { type: file.type }));
+          return new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: data });
+        };
+
+        const over = event('dragover');
+        target.dispatchEvent(over);
+        const drop = event('drop');
+        target.dispatchEvent(drop);
+        return { dragover: over.defaultPrevented, drop: drop.defaultPrevented };
+      },
+      { selector, file },
+    );
+  }
+
+  /** A serialised board carrying one rectangle, leaving the page empty and clean. */
+  async function boardFileContent(page: Page) {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [250, 200]);
+
+    const content = await page.evaluate(() => {
+      const mf = (window as unknown as { mindflow: { store: { documentForSave(): unknown } } }).mindflow;
+      const doc = mf.store.documentForSave() as { meta: { name: string } };
+      doc.meta.name = 'Dropped board';
+      return JSON.stringify(doc);
+    });
+
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('Delete');
+    await markClean(page);
+    expect((await getDocument(page)).elements).toHaveLength(0);
+
+    return { name: 'dropped.mindflow.json', type: 'application/json', content };
+  }
+
+  test('claims a file dropped on the chrome rather than letting the browser have it', async ({ page }) => {
+    // The default action for a file dropped on a page is to navigate to that
+    // file, throwing away the app and any unsaved board with it. A listener
+    // bound to the canvas alone leaves the top bar, the tool rail and the style
+    // panel as live minefields: a drop a few pixels wide of the board is
+    // indistinguishable from a crash.
+    const file = await boardFileContent(page);
+    const claimed = await dropFile(page, '.mf-board-name', file);
+
+    expect(claimed.dragover).toBe(true);
+    expect(claimed.drop).toBe(true);
+  });
+
+  test('opens a board file dropped anywhere on the window', async ({ page }) => {
+    const file = await boardFileContent(page);
+    await dropFile(page, '.mf-board-name', file);
+
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(1);
+    expect((await getDocument(page)).meta.name).toBe('Dropped board');
+  });
+
+  test('swallows a drop while a modal dialog is open', async ({ page }) => {
+    // Replacing the board out from under an open dialog is worse than doing
+    // nothing, so this drop is claimed — the browser still must not navigate —
+    // and then deliberately dropped on the floor.
+    const file = await boardFileContent(page);
+
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await expect(page.locator('dialog.mf-dialog')).toBeVisible();
+
+    const claimed = await dropFile(page, 'dialog.mf-dialog', file);
+
+    expect(claimed.drop).toBe(true);
+    await expect(page.locator('dialog.mf-dialog')).toBeVisible();
+    expect((await getDocument(page)).elements).toHaveLength(0);
+  });
+
+  /** Drops a 1×1 PNG at the given viewport coordinates. */
+  async function dropImage(page: Page, selector: string, at: { x: number; y: number }) {
+    await page.evaluate(
+      ({ selector, at, base64 }) => {
+        const target = document.querySelector(selector);
+        if (!target) throw new Error(`no element matches ${selector}`);
+
+        const binary = atob(base64);
+        const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+        const file = new File([bytes], 'dot.png', { type: 'image/png' });
+
+        const event = (type: string) => {
+          const data = new DataTransfer();
+          data.items.add(file);
+          return new DragEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer: data,
+            clientX: at.x,
+            clientY: at.y,
+          });
+        };
+
+        target.dispatchEvent(event('dragover'));
+        target.dispatchEvent(event('drop'));
+      },
+      {
+        selector,
+        at,
+        base64:
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      },
+    );
+  }
+
+  /** Centre of the single element on the board. */
+  async function onlyElementCentre(page: Page) {
+    const doc = await getDocument(page);
+    expect(doc.elements).toHaveLength(1);
+    const element = doc.elements[0] as { x: number; y: number; width: number; height: number };
+    return { x: element.x + element.width / 2, y: element.y + element.height / 2 };
+  }
+
+  test('an image dropped on the board lands under the cursor', async ({ page }) => {
+    // The path that already worked, now that the listener has moved to `window`
+    // and has to identify the canvas itself rather than being bound to it.
+    const box = await canvasBox(page);
+    await dropImage(page, '.mf-canvas', { x: box.x + 150, y: box.y + 120 });
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(1);
+
+    const expected = await page.evaluate(() => {
+      const mf = (window as unknown as { mindflow: { store: { viewport: { x: number; y: number; zoom: number } } } })
+        .mindflow;
+      const { x, y, zoom } = mf.store.viewport;
+      return { x: 150 / zoom + x, y: 120 / zoom + y };
+    });
+
+    const centre = await onlyElementCentre(page);
+    expect(centre.x).toBeCloseTo(expected.x, 0);
+    expect(centre.y).toBeCloseTo(expected.y, 0);
+  });
+
+  test('an image dropped on the chrome lands at the viewport centre', async ({ page }) => {
+    // No meaningful scene point under the cursor, so it falls back to the centre
+    // rather than landing off-screen above the board — the same choice pasting
+    // an image makes.
+    const box = await canvasBox(page);
+    await dropImage(page, '.mf-board-name', { x: box.x + 20, y: 8 });
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(1);
+
+    const expected = await page.evaluate(
+      (size: { width: number; height: number }) => {
+        const mf = (
+          window as unknown as { mindflow: { store: { viewport: { x: number; y: number; zoom: number } } } }
+        ).mindflow;
+        const { x, y, zoom } = mf.store.viewport;
+        return { x: size.width / 2 / zoom + x, y: size.height / 2 / zoom + y };
+      },
+      { width: box.width, height: box.height },
+    );
+
+    const centre = await onlyElementCentre(page);
+    expect(centre.x).toBeCloseTo(expected.x, 0);
+    expect(centre.y).toBeCloseTo(expected.y, 0);
+  });
+
+  test('leaves a drag carrying no files to the browser', async ({ page }) => {
+    // Dragging selected text into the board-name field is the browser's
+    // business. Claiming every drag to catch the file ones would break it.
+    const prevented = await page.evaluate(() => {
+      const target = document.querySelector('.mf-board-name');
+      if (!target) throw new Error('no board name input');
+
+      const data = new DataTransfer();
+      data.setData('text/plain', 'Sprint planning');
+      const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data });
+      target.dispatchEvent(over);
+      return over.defaultPrevented;
+    });
+
+    expect(prevented).toBe(false);
+  });
+});
+
 test.describe('performance', () => {
   test('stays responsive with 2,000 elements', async ({ page }) => {
     // Viewport culling is the one optimisation implemented, and this is the

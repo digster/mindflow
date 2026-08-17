@@ -515,3 +515,26 @@ keystrokes with its `isTypingTarget` guard; the clipboard listener was written
 later, in a different file, and never got it. The guard is now exported and
 shared. **Any listener installed on `window` for an event that bubbles needs to
 ask whether the user is typing** — `paste`, `copy`, `cut`, `keydown`, `drop`.
+
+## …and the same listener bound too *narrowly* loses the whole board
+
+The mirror image, found while fixing the above, and the more expensive of the
+two. `dragover`/`drop` were bound to the **canvas**, which sounds conservative
+and is in fact the dangerous choice: a file dropped on any other part of the page
+reaches no handler, so the browser's default runs — and the default is to
+*navigate to the dropped file*, discarding the app and every unsaved change. A
+drop that missed the board by a few pixels looked exactly like a crash.
+
+The rule for HTML5 file drops is that suppression and handling have different
+scopes. **Suppress the default across the whole window; handle wherever makes
+sense.** Binding only where you intend to handle leaves the rest of the page
+live.
+
+Two details that are easy to miss:
+
+- Without a `preventDefault` on **`dragover`**, no `drop` event fires at all and
+  the navigation happens regardless. Guarding `drop` alone does nothing.
+- During `dragover` the `files` list is empty for security reasons. Test for a
+  file drag with `dataTransfer.types.includes('Files')`, which is populated in
+  both phases — and use it to leave text drags alone, or dragging text into a
+  field breaks.

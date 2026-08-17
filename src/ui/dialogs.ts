@@ -58,6 +58,22 @@ function show(dialog: HTMLDialogElement): void {
   dialog.showModal();
 }
 
+/**
+ * Whether a modal dialog is currently on screen.
+ *
+ * Queried rather than tracked in a counter because a dialog removes itself on
+ * `close`, and `close` fires however it was dismissed — the button, the
+ * backdrop, or Escape. A counter would have to be decremented on all three, and
+ * the DOM already holds the answer.
+ *
+ * Exists for the drop handler, which needs to know it is being asked to replace
+ * the board while the user is midway through something else. Anything else that
+ * must not act over a modal should use this rather than inventing its own check.
+ */
+export function isModalDialogOpen(): boolean {
+  return document.querySelector('dialog.mf-dialog[open]') !== null;
+}
+
 // ---------------------------------------------------------------------------
 // Notifications
 // ---------------------------------------------------------------------------

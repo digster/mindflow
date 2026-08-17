@@ -110,3 +110,13 @@ Traced it to the window-level native `paste` listener calling `preventDefault`
 on pastes that had bubbled out of a focused field. Fixed by sharing the
 keyboard handler's `isTypingTarget` guard. Affected all five chrome inputs, not
 just Settings.
+
+> ok, work on the drop listener edge case.
+
+Correction first: the drop listener was on the canvas, not `window` as reported
+in the previous turn, so the failure was the opposite of the one described —
+files dropped anywhere outside the canvas reached no handler and the browser
+navigated to them, discarding the board. Moved both listeners to `window`,
+suppressing the default page-wide and handling images at the viewport centre
+when the drop lands on the chrome. Drops over a modal are swallowed; non-file
+drags are untouched.

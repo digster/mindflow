@@ -453,6 +453,22 @@ dialog would be strictly useless here.
 - Dropping a **`.mindflow.json` file** opens it as a board, after confirming any
   unsaved changes.
 
+A file dropped **anywhere on the window** is accepted, not only over the canvas.
+This is a safety requirement before it is a convenience: the browser's default
+action for a file dropped on a page is to *navigate to that file*, so a drop that
+lands on the top bar or the style panel instead of the board would otherwise
+discard the app and any unsaved work with it. Both listeners therefore sit on
+`window`, and:
+
+- An image dropped over the chrome has no meaningful scene point under the
+  cursor, so it lands at the **viewport centre** — the same fallback pasting an
+  image uses. A board file ignores the point entirely.
+- A drop while a **modal dialog is open** is swallowed: the default is still
+  suppressed, but nothing is imported. Replacing the board out from under an open
+  dialog is worse than ignoring the gesture.
+- A drag carrying **no files** is left untouched, so text can still be dragged
+  into the board-name field. Same rule as the keyboard and clipboard handlers.
+
 ## Undo
 
 Undo is command-based rather than snapshot-based. Each command records `before`
