@@ -371,6 +371,15 @@ Pasted elements get **fresh IDs**, and:
 
 Pasting an image from the system clipboard imports it directly.
 
+Rule 1 above applies to the clipboard as much as to the keyboard. Pasting an
+image has to be caught as a **native `paste` event**, and since a canvas has
+nothing focusable to bind to, that listener lives on `window` — where it also
+receives pastes that bubbled up out of a focused field in the chrome (the board
+name, the find bar, the command palette, the Settings client ID). Those are left
+entirely to the browser. Claiming them would call `preventDefault` on the
+browser's own text insertion, producing a field that can be typed into but not
+pasted into.
+
 ### The style clipboard
 
 `Cmd`/`Ctrl` + `Alt` + `C` and `V` copy and paste **appearance** rather than

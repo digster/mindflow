@@ -102,3 +102,11 @@ Implemented both batches. Tier 1: fixed and exposed align (plus distribute), a
 context menu, a command palette, find on board, and a style clipboard. Tier 2:
 schema 1.1.0 (`diamond` and hand-drawn rendering) and 1.2.0 (`frame`), plus the
 registry extension points both needed and two contract-test gaps they exposed.
+
+> [screenshot of the Settings dialog] i am able to type in this field but not
+> paste anything, look into it.
+
+Traced it to the window-level native `paste` listener calling `preventDefault`
+on pastes that had bubbled out of a focused field. Fixed by sharing the
+keyboard handler's `isTypingTarget` guard. Affected all five chrome inputs, not
+just Settings.

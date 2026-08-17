@@ -16,7 +16,7 @@ import { drawOverlay } from '../render/overlay.ts';
 import { exportToPNG, exportToSVG } from '../render/export.ts';
 import { roughOutlineFor } from '../render/rough.ts';
 import { InteractionController } from '../input/controller.ts';
-import { installKeyboardShortcuts } from '../input/keyboard.ts';
+import { installKeyboardShortcuts, isTypingTarget } from '../input/keyboard.ts';
 import { screenToScene } from '../model/geometry.ts';
 import { serializeDocument, type LoadResult } from '../model/document.ts';
 import { Actions } from './actions.ts';
@@ -214,8 +214,17 @@ export class MindflowApp {
     // ---- Clipboard -------------------------------------------------------
     // Native clipboard events carry image data that the keyboard handler cannot
     // reach, which is what makes pasting a screenshot work.
+    //
+    // The listener is on `window` because a canvas has nothing focusable to
+    // attach to, which means it also sees pastes that bubbled up out of a
+    // focused field in the chrome — the board name, the find bar, the command
+    // palette, the Settings client ID. Those must fall through untouched: the
+    // `preventDefault` below cancels the browser's own text insertion, so
+    // claiming them would leave a field that can be typed into but not pasted
+    // into, and would drop a stray copy of the board clipboard on the canvas
+    // besides.
     const onPaste = (event: ClipboardEvent) => {
-      if (this.textEditor.isEditing) return;
+      if (isTypingTarget(event.target) || this.textEditor.isEditing) return;
       const image = findImageFile(event.clipboardData?.items ?? null);
       if (image) {
         event.preventDefault();

@@ -52,8 +52,13 @@ export interface KeyboardOptions {
  * `isContentEditable` matters as much as the tag check — the text editor overlay
  * is a contenteditable div, and without this every keystroke in it would also
  * fire a canvas shortcut.
+ *
+ * Exported because rule 1 above is not only a keyboard concern: the native
+ * `paste` listener in `app.ts` sits on `window` and therefore sees events that
+ * bubbled up out of a focused field, and must let those alone for the same
+ * reason.
  */
-function isTypingTarget(target: EventTarget | null): boolean {
+export function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   const tag = target.tagName;

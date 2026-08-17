@@ -1363,6 +1363,63 @@ test.describe('frames', () => {
   });
 });
 
+test.describe('pasting into chrome inputs', () => {
+  /**
+   * Copies `value` to the real system clipboard by typing it into an input and
+   * pressing the platform copy chord.
+   *
+   * Deliberately a *native* copy rather than `navigator.clipboard.writeText`:
+   * the built page is loaded over `file://`, whose opaque origin cannot be
+   * granted the clipboard permission, and an untrusted synthetic event would
+   * not exercise the browser's default paste behaviour — which is exactly what
+   * this suite is here to protect.
+   */
+  async function copyViaInput(page: Page, selector: string, value: string) {
+    await page.locator(selector).fill(value);
+    await page.locator(selector).press('ControlOrMeta+a');
+    await page.locator(selector).press('ControlOrMeta+c');
+    await page.locator(selector).fill('');
+  }
+
+  test('pastes into the Settings client ID field', async ({ page }) => {
+    // Regression: the window-level `paste` listener that catches pasted images
+    // for the canvas called preventDefault() on every paste, including those
+    // aimed at an <input> in the chrome. Typing worked; pasting silently did
+    // nothing.
+    const id = '000000000000-abcdefgh.apps.googleusercontent.com';
+
+    await page.getByRole('button', { name: 'Settings' }).click();
+    const field = 'dialog.mf-dialog input.mf-input';
+    await expect(page.locator(field)).toBeVisible();
+
+    await copyViaInput(page, field, id);
+    await page.locator(field).press('ControlOrMeta+v');
+
+    await expect(page.locator(field)).toHaveValue(id);
+  });
+
+  test('pastes into the find bar without pasting onto the board', async ({ page }) => {
+    // The second half of the same bug: the suppressed default fell through to
+    // `actions.paste()`, so a paste meant for a text field also dropped a copy
+    // of the clipboard's elements onto the canvas.
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('ControlOrMeta+c');
+
+    await page.keyboard.press('ControlOrMeta+f');
+    const field = '.mf-palette-input';
+    await expect(page.locator(field)).toBeFocused();
+
+    await copyViaInput(page, field, 'hello');
+    await page.locator(field).press('ControlOrMeta+v');
+
+    await expect(page.locator(field)).toHaveValue('hello');
+    expect((await getDocument(page)).elements).toHaveLength(1);
+  });
+});
+
 test.describe('performance', () => {
   test('stays responsive with 2,000 elements', async ({ page }) => {
     // Viewport culling is the one optimisation implemented, and this is the

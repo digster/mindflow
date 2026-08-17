@@ -495,3 +495,23 @@ exporter has to reproduce.
 The corollary, for the format: the seed must be derivable from what is in the
 file. Seeding from the element `id` means no new field, and it survives a round
 trip for free.
+
+## A `window` clipboard listener silently breaks every input on the page
+
+Pasting an image can only be caught as a native `paste` event, and a canvas has
+nothing focusable to attach the listener to — so it goes on `window`. But
+clipboard events **bubble**, so that listener also sees every paste aimed at an
+`<input>` in the chrome, and its unconditional `event.preventDefault()` cancels
+the browser's own text insertion.
+
+The failure mode is nasty because it is asymmetric and looks like anything but a
+clipboard bug: the field accepts typing perfectly, and pasting does *nothing at
+all* — no error, no console warning. It shipped affecting all five text fields in
+the app (board name, find bar, command palette, Settings client ID, custom
+colour) and was only noticed in one of them.
+
+`installKeyboardShortcuts` had already solved the identical problem for
+keystrokes with its `isTypingTarget` guard; the clipboard listener was written
+later, in a different file, and never got it. The guard is now exported and
+shared. **Any listener installed on `window` for an event that bubbles needs to
+ask whether the user is typing** — `paste`, `copy`, `cut`, `keydown`, `drop`.
