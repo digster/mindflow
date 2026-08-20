@@ -19,6 +19,9 @@ export const ICONS = {
   draw: 'M3 21s.5-3.5 2-5 9-9 9-9l3 3s-7.5 7.5-9 9-5 2-5 2zM14 7l3 3M16 5l3 3',
   text: 'M5 6V4h14v2M12 4v16M9 20h6',
   sticky: 'M5 4h14v10l-5 6H5z M19 14h-5v6',
+  // A header rule across the full width and one column split below it, so the
+  // table reads as a table at 16px rather than as the grid-toggle icon.
+  table: 'M4 5h16v14H4z M4 9.5h16 M4 14.5h16 M11 9.5v9.5',
   image: 'M4 5h16v14H4z M4 15l4-4 3 3 4-5 5 6',
   eraser: 'M8 20H5l-2-2 11-11 6 6-7 7zm2-13l6 6',
   undo: 'M9 14L4 9l5-5 M4 9h11a5 5 0 010 10h-4',

@@ -112,7 +112,7 @@ export class MindflowApp {
     this.controller = new InteractionController({
       canvas: this.canvas,
       store: this.store,
-      onEditText: (element) => this.textEditor.open(element),
+      onEditText: (element, regionKey) => this.textEditor.open(element, regionKey),
       onOverlayChange: () => this.renderer.invalidate(),
       onRequestImage: (point) => void this.insertImageAtPoint(point),
       onContextMenu: ({ scene, screen, hit }) =>

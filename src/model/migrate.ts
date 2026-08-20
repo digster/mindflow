@@ -6,9 +6,10 @@
  * the format ships with a transform from the previous version, and loading walks
  * the chain from a document's declared version up to {@link CURRENT_SCHEMA_VERSION}.
  *
- * There are no migrations yet — 1.0.0 is the first published version. The
- * machinery exists now anyway, complete with tests, because retrofitting a
- * migration system *after* files exist in the wild is how formats get stuck.
+ * Every published version so far has been purely additive, so each entry below
+ * is an identity transform. They are not omitted: `needsMigration` triggers on
+ * any version inequality, so a missing step would make every older board load
+ * with a "no migration is available" warning, which reads as data loss.
  *
  * ---------------------------------------------------------------------------
  * Adding a migration
@@ -76,6 +77,16 @@ const MIGRATIONS: Record<string, Migration> = {
   '1.1.0': {
     to: '1.2.0',
     description: 'Additive: the `frame` element type and `frameId` containment.',
+    migrate: (document) => document,
+  },
+
+  /**
+   * Also identity. 1.3.0 adds the `table` type and nothing else — no existing
+   * field changes shape, and a 1.2.0 file simply contains no tables.
+   */
+  '1.2.0': {
+    to: '1.3.0',
+    description: 'Additive: the `table` element type.',
     migrate: (document) => document,
   },
 };

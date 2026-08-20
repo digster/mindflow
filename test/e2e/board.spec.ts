@@ -121,8 +121,8 @@ test.describe('boot', () => {
     await expect(page.locator('.mf-tools')).toBeVisible();
   });
 
-  test('shows all thirteen tools', async ({ page }) => {
-    await expect(page.locator('.mf-tool')).toHaveCount(13);
+  test('shows all fourteen tools', async ({ page }) => {
+    await expect(page.locator('.mf-tool')).toHaveCount(14);
   });
 
   test('starts with an empty board', async ({ page }) => {
@@ -550,6 +550,51 @@ test.describe('text editing', () => {
     expect(text.text).toBe('Baseline');
     expect(text.width).toBeGreaterThan(0);
     expect(text.height).toBeGreaterThan(0);
+  });
+});
+
+test.describe('undoing a text edit', () => {
+  /**
+   * Regression: `TextEditor.commit` used to rewind to the element it read back
+   * out of the document — which `onInput` had already overwritten with every
+   * keystroke. The rewind therefore restored the typed state to itself, the
+   * resulting command's `before` and `after` carried identical content, and undo
+   * silently did nothing while still consuming a step off the stack.
+   */
+  test('reverts the typed text in one step', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 220]);
+    await page.keyboard.press('Escape');
+
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 170, box.y + 160);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('hello');
+    await page.keyboard.press('Escape');
+
+    expect((await getDocument(page)).elements[0]).toMatchObject({ text: 'hello' });
+
+    await page.keyboard.press('ControlOrMeta+z');
+    const doc = await getDocument(page);
+    // The text is gone; the note itself is not — that is the next step back.
+    expect(doc.elements).toHaveLength(1);
+    expect(doc.elements[0]).toMatchObject({ text: '' });
+  });
+
+  test('redo puts it back', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 220]);
+    await page.keyboard.press('Escape');
+
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 170, box.y + 160);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('hello');
+    await page.keyboard.press('Escape');
+
+    await page.keyboard.press('ControlOrMeta+z');
+    await page.keyboard.press('ControlOrMeta+Shift+z');
+    expect((await getDocument(page)).elements[0]).toMatchObject({ text: 'hello' });
   });
 });
 
@@ -1178,6 +1223,213 @@ test.describe('diamond', () => {
     });
 
     expect(restored.elements[0]?.type).toBe('diamond');
+  });
+});
+
+test.describe('tables', () => {
+  /**
+   * A 300 x 120 table at (100, 100), so with the default viewport its cell
+   * boundaries land on round canvas coordinates: columns at x = 200 and 300,
+   * rows at y = 140 and 180.
+   */
+  async function drawTable(page: Page) {
+    await page.locator('[data-tool="table"]').click();
+    await drag(page, [100, 100], [400, 220]);
+  }
+
+  /** The table in the live document. */
+  async function getTable(page: Page) {
+    const doc = await getDocument(page);
+    return doc.elements.find((element) => element.type === 'table') as unknown as {
+      id: string;
+      width: number;
+      height: number;
+      columns: number[];
+      rows: number[];
+      cells: string[][];
+      headerRow: boolean;
+    };
+  }
+
+  test('has a tool that draws one', async ({ page }) => {
+    await drawTable(page);
+
+    const table = await getTable(page);
+    expect(table).toMatchObject({ width: 300, height: 120 });
+    // Equal weights written as 1s, not as scene units — the numbers stay
+    // meaningful after any resize.
+    expect(table.columns).toEqual([1, 1, 1]);
+    expect(table.rows).toEqual([1, 1, 1]);
+    expect(table.cells).toEqual([
+      ['', '', ''],
+      ['', '', ''],
+      ['', '', ''],
+    ]);
+  });
+
+  test('a click without a drag makes a default 3 x 3', async ({ page }) => {
+    await page.locator('[data-tool="table"]').click();
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 300, box.y + 300);
+
+    expect(await getTable(page)).toMatchObject({ width: 360, height: 120 });
+  });
+
+  test('double-clicking a cell edits that cell, not the first one', async ({ page }) => {
+    await drawTable(page);
+    const box = await canvasBox(page);
+    // Middle column, middle row.
+    await page.mouse.dblclick(box.x + 250, box.y + 160);
+
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('centre');
+    await page.keyboard.press('Escape');
+
+    const table = await getTable(page);
+    expect(table.cells[1]?.[1]).toBe('centre');
+    // Nothing else moved.
+    expect(table.cells[0]).toEqual(['', '', '']);
+  });
+
+  test('the editor covers the clicked cell, not the whole table', async ({ page }) => {
+    await drawTable(page);
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 250, box.y + 160);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+
+    const editor = await page.locator('.mf-text-editor').boundingBox();
+    expect(editor).not.toBeNull();
+    expect(editor!.width).toBeCloseTo(100, 0);
+    expect(editor!.height).toBeCloseTo(40, 0);
+    expect(editor!.x - box.x).toBeCloseTo(200, 0);
+    expect(editor!.y - box.y).toBeCloseTo(140, 0);
+  });
+
+  test('Tab moves to the next cell and Shift+Tab back', async ({ page }) => {
+    await drawTable(page);
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 150, box.y + 120);
+
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('one');
+    await page.keyboard.press('Tab');
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('two');
+    await page.keyboard.press('Shift+Tab');
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.press('Escape');
+
+    const table = await getTable(page);
+    expect(table.cells[0]?.[0]).toBe('one');
+    expect(table.cells[0]?.[1]).toBe('two');
+  });
+
+  test('each tabbed cell is its own undo step', async ({ page }) => {
+    await drawTable(page);
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 150, box.y + 120);
+
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('one');
+    await page.keyboard.press('Tab');
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('two');
+    await page.keyboard.press('Escape');
+
+    await page.keyboard.press('Control+z');
+    const table = await getTable(page);
+    // The second cell is rolled back; the first survives.
+    expect(table.cells[0]?.[0]).toBe('one');
+    expect(table.cells[0]?.[1]).toBe('');
+  });
+
+  test('dragging a column divider re-proportions the columns', async ({ page }) => {
+    await drawTable(page);
+    // The table is selected after creation, which is what offers its dividers.
+    await drag(page, [200, 160], [250, 160]);
+
+    const table = await getTable(page);
+    const total = table.columns.reduce((sum, track) => sum + track, 0);
+    const widths = table.columns.map((track) => (track / total) * table.width);
+    expect(widths[0]).toBeCloseTo(150, 1);
+    expect(widths[1]).toBeCloseTo(100, 1);
+    // The table grew rather than the neighbour shrinking.
+    expect(table.width).toBeCloseTo(350, 1);
+  });
+
+  test('does not offer dividers on an unselected table', async ({ page }) => {
+    await drawTable(page);
+    await page.keyboard.press('Escape');
+    // With nothing selected the same drag selects and moves the table instead.
+    await drag(page, [200, 160], [250, 160]);
+
+    const table = await getTable(page);
+    expect(table.width).toBeCloseTo(300, 1);
+  });
+
+  test('the context menu inserts a row at the clicked cell', async ({ page }) => {
+    await drawTable(page);
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 150, box.y + 120);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('first');
+    await page.keyboard.press('Escape');
+
+    await page.mouse.click(box.x + 150, box.y + 120, { button: 'right' });
+    await page.locator('.mf-menu').getByRole('button', { name: 'Insert row below' }).click();
+
+    const table = await getTable(page);
+    expect(table.rows).toHaveLength(4);
+    expect(table.cells).toHaveLength(4);
+    expect(table.cells[0]?.[0]).toBe('first');
+    expect(table.cells[1]).toEqual(['', '', '']);
+    // Adding a row made the table taller rather than squeezing the existing ones.
+    expect(table.height).toBeCloseTo(160, 1);
+  });
+
+  test('the style panel toggles the header row', async ({ page }) => {
+    await drawTable(page);
+    expect((await getTable(page)).headerRow).toBe(true);
+
+    await page.locator('.mf-style-panel').getByRole('button', { name: 'Header row' }).click();
+    expect((await getTable(page)).headerRow).toBe(false);
+  });
+
+  test('cell text is findable', async ({ page }) => {
+    await drawTable(page);
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 250, box.y + 160);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('needle');
+    await page.keyboard.press('Escape');
+
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('ControlOrMeta+f');
+    await page.keyboard.type('needle');
+
+    await expect(page.locator('.mf-find-status')).toHaveText('1 of 1');
+  });
+
+  test('exports its rules and cell text to SVG', async ({ page }) => {
+    await drawTable(page);
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 150, box.y + 120);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('Milestone');
+    await page.keyboard.press('Escape');
+
+    const svg = await page.evaluate(() => {
+      const mf = (
+        window as unknown as { mindflow: { store: { document: unknown }; exportToSVG(d: unknown): string } }
+      ).mindflow;
+      return mf.exportToSVG(mf.store.document);
+    });
+
+    expect(svg).toContain('Milestone');
+    // The interior rules: two verticals at 100 and 200 in the local frame.
+    expect(svg).toContain('M100 0V120');
+    expect(svg).toContain('M200 0V120');
   });
 });
 

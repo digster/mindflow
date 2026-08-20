@@ -121,7 +121,9 @@ maxWidth = max(element.width − padding × 2, 1)
 ```
 
 For a `text` element, `padding` is 0. For `sticky`, it is the element's `padding`.
-For a `label`, it is the label's `padding`.
+For a `label`, it is the label's `padding`. For a `table` cell, it is the table's
+`padding` and the host box is the **cell**, not the element — see
+[Tables](#tables).
 
 ### Vertical placement
 
@@ -167,6 +169,83 @@ written here.
 | `left` | `padding` | `left` / `start` |
 | `center` | `width / 2` | `center` / `middle` |
 | `right` | `width − padding` | `right` / `end` |
+
+---
+
+## Tables
+
+**Specified algorithm.** A `table` stores relative track sizes and a flat grid of
+strings; everything about where a cell sits and where its text lands is computed.
+Reproduce this and a table renders identically outside MindFlow.
+
+### 1. Track sizes
+
+Given the element's `columns` (or `rows`) and the box dimension they run along —
+`width` for columns, `height` for rows:
+
+```
+weight   = Σ tracks
+size[i]  = tracks[i] / weight × total
+```
+
+`tracks` values are **proportions, not lengths**. A table resized to twice its
+width has the same `columns` array; only `width` changed. A degenerate array
+whose entries sum to zero (which MindFlow's loader repairs, but a hand-written
+file may contain) divides the space evenly instead: `size[i] = total / count`.
+
+### 2. Track edges
+
+Accumulate the sizes into `tracks.length + 1` boundaries in local coordinates:
+
+```
+edge[0] = 0
+edge[i] = edge[i−1] + size[i−1]
+edge[n] = total          ← pinned, not accumulated
+```
+
+Pinning the last edge matters: accumulating `n` floating-point sizes can land a
+fraction short of `total`, and a renderer that draws the right-hand border at the
+accumulated value leaves a visible hairline gap against the outer box.
+
+### 3. Cell boxes
+
+Cell `(row, column)` occupies, in the element's local frame:
+
+```
+x      = columnEdge[column]
+y      = rowEdge[row]
+width  = columnEdge[column + 1] − columnEdge[column]
+height = rowEdge[row + 1]       − rowEdge[row]
+```
+
+The cell grid tiles the element's box exactly. There are no gaps, no spans and no
+cell outside the box.
+
+### 4. Paint order
+
+1. **Body fill** — the element's `style.fill`, across the whole box, when
+   [there is a fill](#when-is-there-a-fill).
+2. **Header band** — when `headerRow` is true, `headerFill` across
+   `(0, 0)`–`(width, rowEdge[1])`. Painted **over** the body fill rather than
+   instead of it, so a translucent header colour composites predictably.
+3. **Cell text** — for each non-empty cell, laid out by
+   [Text wrapping](#text-wrapping) with `maxWidth = max(cellWidth − padding × 2, 1)`
+   inside the cell's box inset by `padding`, using the table's `textAlign`,
+   `verticalAlign`, `color`, `fontFamily`, `fontSize` and `lineHeight`. The font
+   weight is `max(fontWeight, 600)` for row 0 when `headerRow` is true, and
+   `fontWeight` everywhere else. Text is **clipped to its own cell**, so an
+   overfull cell looks full rather than spilling into its neighbour.
+4. **Rules and border** — when [there is a stroke](#when-is-there-a-stroke), every
+   interior edge (`edge[1]` … `edge[n−1]` on both axes) as a full-length line,
+   plus the outer rectangle. One path, so a dashed table's dashes run
+   continuously rather than restarting at each rule.
+
+### 5. What is not drawn
+
+Nothing distinguishes a header *column*, and `label` is ignored — a table's text
+lives in `cells`. A table has no hand-drawn form: `style.roughness` is preserved
+but does not affect its rendering, for the same reason `image` and `sticky` have
+none (see [Which shapes are roughened](#which-shapes-are-roughened)).
 
 ---
 
@@ -378,7 +457,7 @@ identically.
 | `rectangle` | Its rounded outline. Straight sides are single edges; each corner arc is sampled at **4 segments per quarter turn**, with the radius clamped to half the shorter side as usual. A radius of `0` gives the four corners only. |
 | `ellipse` | A closed polygon of `clamp(ceil(perimeter / 24), 8, 64)` evenly spaced points, where `perimeter` is Ramanujan's first approximation `π(3(a+b) − √((3a+b)(a+3b)))` with `a = w/2`, `b = h/2`. |
 | `diamond` | Its four vertices. |
-| everything else | **Not roughened.** `line`, `arrow`, `draw`, `text`, `sticky` and `image` render cleanly whatever `roughness` says. |
+| everything else | **Not roughened.** `line`, `arrow`, `draw`, `text`, `sticky`, `image`, `frame` and `table` render cleanly whatever `roughness` says. |
 
 Curves are sampled to polylines *before* displacement so that exactly one jitter
 rule exists.
@@ -500,3 +579,11 @@ output *syntax* differs.
 
 Exported SVG is self-contained: images are inlined as data URIs, so the file opens
 anywhere without accompanying assets.
+
+**One known difference from the canvas: text is not clipped.** The canvas clips a
+sticky note's text to the note and a table cell's text to its cell; the SVG
+exporter emits the text without a clip path, so an overfull note or cell shows
+the overflow instead of hiding it. Wrapping means this only ever arises
+vertically — text that is too *wide* has already been broken across lines — and
+the alternative is a `<clipPath>` per note and per cell, which would bloat the
+document for a case the author can see and fix on the board.

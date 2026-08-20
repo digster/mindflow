@@ -6,6 +6,11 @@
  * element being edited is hidden from the canvas render for the duration, so the
  * user sees one piece of text, not two slightly-offset copies.
  *
+ * What is being edited is an element *and optionally a region within it* — a
+ * table cell. Everything below works from a local-frame box rather than the
+ * element's own box, and an element with no regions simply supplies its whole
+ * box, so the two cases are one code path rather than two.
+ *
  * ---------------------------------------------------------------------------
  * Keeping the DOM and the canvas in agreement
  * ---------------------------------------------------------------------------
@@ -40,12 +45,13 @@
 
 import type { MindflowElement, StickyElement, TextElement } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
+import type { TextRegion } from '../model/registry.ts';
 import { getDefinition } from '../model/registry.ts';
 import { BASELINE_RATIO, FONT_STACKS, layoutText } from '../render/shapes/shared.ts';
 import { measureTextElement } from '../render/shapes/text.ts';
 import { defaultLabel } from '../model/defaults.ts';
-import { sceneToScreen } from '../model/geometry.ts';
-import { replaceElements, updateElements } from '../store/commands.ts';
+import { localToWorld, sceneToScreen } from '../model/geometry.ts';
+import { replaceElements } from '../store/commands.ts';
 import { el } from './dom.ts';
 
 /** Typography for the element being edited, whether it lives in `text` or `label`. */
@@ -61,21 +67,44 @@ interface EditingStyle {
   padding: number;
 }
 
-function editingStyleOf(element: MindflowElement): EditingStyle | null {
+/**
+ * The element's own text inset, or 0 for types that have none.
+ *
+ * Read structurally rather than by type: a sticky note and a table both carry
+ * `padding`, a text element does not, and `ui/` may not branch on `type`.
+ */
+function paddingOf(element: MindflowElement): number {
+  const value = (element as unknown as { padding?: unknown }).padding;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/** The region being edited, when the element has addressable regions. */
+function regionOf(element: MindflowElement, regionKey: string | null): TextRegion | null {
+  const definition = getDefinition(element.type);
+  if (!regionKey || !definition.textRegions) return null;
+  return definition.textRegions(element as never).find((region) => region.key === regionKey) ?? null;
+}
+
+function editingStyleOf(element: MindflowElement, regionKey: string | null): EditingStyle | null {
   const capabilities = getDefinition(element.type).capabilities;
 
   if (capabilities.text) {
     const textual = element as TextElement | StickyElement;
+    const region = regionOf(element, regionKey);
     return {
-      text: textual.text,
+      // A region's text wins when there is one; `?? ''` covers a type whose text
+      // lives ONLY in regions, so it has no `text` field to fall back to.
+      text: region ? region.text : (textual.text ?? ''),
       fontFamily: textual.fontFamily,
       fontSize: textual.fontSize,
-      fontWeight: textual.fontWeight,
+      // A table's header cells are drawn heavier than the rest of the table, and
+      // the overlay has to match or the text visibly thins as editing starts.
+      fontWeight: region?.fontWeight ?? textual.fontWeight,
       lineHeight: textual.lineHeight,
       color: textual.color,
       textAlign: textual.textAlign,
       verticalAlign: textual.verticalAlign,
-      padding: element.type === 'sticky' ? (element as StickyElement).padding : 0,
+      padding: paddingOf(element),
     };
   }
 
@@ -85,6 +114,16 @@ function editingStyleOf(element: MindflowElement): EditingStyle | null {
   }
 
   return null;
+}
+
+/** The local-frame box the editor covers: a region's, or the whole element's. */
+function editBox(
+  element: MindflowElement,
+  regionKey: string | null,
+): { x: number; y: number; width: number; height: number } {
+  const region = regionOf(element, regionKey);
+  if (region) return region.box;
+  return { x: 0, y: 0, width: element.width, height: element.height };
 }
 
 /**
@@ -136,6 +175,18 @@ function cssBaselineOffset(style: EditingStyle): number {
 export class TextEditor {
   readonly element: HTMLTextAreaElement;
   private editingId: string | null = null;
+  /** Which text region of that element is open, for types that have regions. */
+  private regionKey: string | null = null;
+  /**
+   * The element exactly as it was when the editor opened.
+   *
+   * Held because `commit` has to rewind the transient per-keystroke edits before
+   * writing the session as one command, and by then the document no longer holds
+   * the pre-edit state to rewind *to*. Reading it back at commit time — which is
+   * what this used to do — yields the already-typed element, making both the
+   * rewind and the resulting undo step no-ops. See LEARNINGS.md.
+   */
+  private original: MindflowElement | null = null;
   private committed = false;
   /**
    * Whether any keystroke actually reached the document this session.
@@ -167,12 +218,26 @@ export class TextEditor {
     return this.editingId !== null;
   }
 
-  /** Opens the editor on an element. */
-  open(element: MindflowElement): void {
-    const style = editingStyleOf(element);
+  /**
+   * Opens the editor on an element, optionally on one region within it.
+   *
+   * An element with regions always ends up on one: an unknown or absent key
+   * falls back to the first, so a caller that knows nothing about cells can
+   * still open a table and land somewhere sensible.
+   */
+  open(element: MindflowElement, regionKey?: string | null): void {
+    const definition = getDefinition(element.type);
+    const regions = definition.textRegions?.(element as never) ?? [];
+    this.regionKey =
+      regions.length === 0
+        ? null
+        : (regions.find((region) => region.key === regionKey)?.key ?? regions[0]?.key ?? null);
+
+    const style = editingStyleOf(element, this.regionKey);
     if (!style) return;
 
     this.editingId = element.id;
+    this.original = element;
     this.committed = false;
     this.touched = false;
     this.store.setEditing(element.id);
@@ -228,20 +293,27 @@ export class TextEditor {
   private position(element: MindflowElement): void {
     const viewport = this.store.viewport;
     const css = this.element.style;
+    const box = editBox(element, this.regionKey);
 
-    const centerScene = { x: element.x + element.width / 2, y: element.y + element.height / 2 };
-    const centerScreen = sceneToScreen(centerScene, viewport);
+    // The box's centre, taken through the element's transform rather than by
+    // adding x/y. For a whole-element box the two agree; for a table cell they
+    // do not, because rotation is about the ELEMENT's centre and not the cell's.
+    const centerWorld = localToWorld(element, {
+      x: box.x + box.width / 2,
+      y: box.y + box.height / 2,
+    });
+    const centerScreen = sceneToScreen(centerWorld, viewport);
 
-    css.width = `${element.width}px`;
-    css.height = `${element.height}px`;
-    css.transformOrigin = `${element.width / 2}px ${element.height / 2}px`;
+    css.width = `${box.width}px`;
+    css.height = `${box.height}px`;
+    css.transformOrigin = `${box.width / 2}px ${box.height / 2}px`;
 
     // Whatever part of the vertical offset padding cannot express is applied as
     // a translation, appended AFTER the scale so that it is read in the
     // element's own unscaled, unrotated axes — i.e. in scene units.
-    const residual = this.applyTextOffset(element);
+    const residual = this.applyTextOffset(element, box);
     css.transform =
-      `translate(${centerScreen.x - element.width / 2}px, ${centerScreen.y - element.height / 2}px) ` +
+      `translate(${centerScreen.x - box.width / 2}px, ${centerScreen.y - box.height / 2}px) ` +
       `rotate(${element.angle}deg) scale(${viewport.zoom})` +
       (residual === 0 ? '' : ` translateY(${residual}px)`);
   }
@@ -268,8 +340,11 @@ export class TextEditor {
    * its focus outline by the same fifth of an em — invisible on the tight box
    * around a text element, and the padded cases never reach this path.
    */
-  private applyTextOffset(element: MindflowElement): number {
-    const style = editingStyleOf(element);
+  private applyTextOffset(
+    element: MindflowElement,
+    box: { width: number; height: number },
+  ): number {
+    const style = editingStyleOf(element, this.regionKey);
     if (!style) return 0;
 
     // Mirror the canvas: an autoWidth text element never wraps, so it must be
@@ -277,14 +352,14 @@ export class TextEditor {
     // height this offset is derived from — comes out different.
     const noWrap = element.type === 'text' && (element as TextElement).autoWidth;
     const metrics = layoutText(this.element.value, {
-      maxWidth: noWrap ? 0 : Math.max(element.width - style.padding * 2, 1),
+      maxWidth: noWrap ? 0 : Math.max(box.width - style.padding * 2, 1),
       fontFamily: style.fontFamily,
       fontSize: style.fontSize,
       fontWeight: style.fontWeight,
       lineHeight: style.lineHeight,
     });
 
-    const available = element.height - style.padding * 2;
+    const available = box.height - style.padding * 2;
     const free = Math.max(available - metrics.height, 0);
     const align =
       style.verticalAlign === 'middle' ? free / 2 : style.verticalAlign === 'bottom' ? free : 0;
@@ -306,15 +381,26 @@ export class TextEditor {
     const element = this.store.document.elements.find((candidate) => candidate.id === this.editingId);
     if (!element) return;
 
-    const next = this.withText(element, this.element.value);
+    const next = this.withText(element, this.element.value, this.regionKey);
     this.store.execute(replaceElements(this.store.document, [next], 'Edit text', true), true);
     this.touched = true;
     this.position(next);
   }
 
   /** Returns a copy of `element` carrying `text`, resized if it grows. */
-  private withText(element: MindflowElement, text: string): MindflowElement {
-    const capabilities = getDefinition(element.type).capabilities;
+  private withText(
+    element: MindflowElement,
+    text: string,
+    regionKey: string | null,
+  ): MindflowElement {
+    const definition = getDefinition(element.type);
+    const capabilities = definition.capabilities;
+
+    // A region write never changes the element's geometry: a table cell wraps to
+    // the column it is in rather than growing to fit, the way a text element does.
+    if (regionKey !== null && definition.withRegionText) {
+      return definition.withRegionText(element as never, regionKey, text) as MindflowElement;
+    }
 
     if (capabilities.text) {
       const next = { ...element, text } as TextElement | StickyElement;
@@ -348,9 +434,47 @@ export class TextEditor {
       return;
     }
 
+    // Tab walks the element's regions — cell to cell across a table row, then on
+    // to the next row. It stops at the ends rather than wrapping: wrapping from
+    // the last cell back to the first silently discards the "I am done here"
+    // reading of a final Tab, and there is no visual cue that it happened.
+    if (event.key === 'Tab' && this.regionKey !== null) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.moveRegion(event.shiftKey ? -1 : 1);
+      return;
+    }
+
     // Keep every other keystroke inside the editor so canvas shortcuts do not
     // fire while typing.
     event.stopPropagation();
+  }
+
+  /**
+   * Commits the current region and opens the one `delta` places away.
+   *
+   * Committing first is deliberate: each cell becomes its own undo step, which
+   * is what a person tabbing through a table expects — undo should walk back
+   * cell by cell, not erase the whole pass in one go.
+   */
+  private moveRegion(delta: number): void {
+    const id = this.editingId;
+    const key = this.regionKey;
+    if (!id || !key) return;
+
+    const element = this.store.document.elements.find((candidate) => candidate.id === id);
+    if (!element) return;
+
+    const regions = getDefinition(element.type).textRegions?.(element as never) ?? [];
+    const index = regions.findIndex((region) => region.key === key);
+    const target = index === -1 ? undefined : regions[index + delta];
+    if (!target) return;
+
+    this.commit();
+
+    // Re-read: the commit above replaced the element with a new object.
+    const committed = this.store.document.elements.find((candidate) => candidate.id === id);
+    if (committed) this.open(committed, target.key);
   }
 
   /** Closes the editor and writes one undoable command. */
@@ -360,7 +484,11 @@ export class TextEditor {
 
     const id = this.editingId;
     const text = this.element.value;
+    const regionKey = this.regionKey;
+    const original = this.original;
     this.editingId = null;
+    this.regionKey = null;
+    this.original = null;
     this.element.hidden = true;
     this.element.value = '';
 
@@ -375,14 +503,19 @@ export class TextEditor {
     // "Discard unsaved changes?" prompt after merely double-clicking a shape.
     if (!this.touched) return;
 
-    const next = this.withText(element, text);
+    const next = this.withText(element, text, regionKey);
 
     // Rewind the transient typing edits, then apply the final text as a single
     // command — one undo step for the whole session.
-    this.store.execute(
-      updateElements(this.store.document, [id], () => element, 'Edit text'),
-      true,
-    );
+    //
+    // The rewind MUST target the element captured at `open`. `onInput` has
+    // already written every keystroke into the live document, so rewinding to
+    // whatever the document currently holds restores the typed state to itself:
+    // the command's `before` and `after` then carry identical content and undo
+    // silently does nothing.
+    if (original) {
+      this.store.execute(replaceElements(this.store.document, [original], 'Edit text'), true);
+    }
     this.store.execute(replaceElements(this.store.document, [next], 'Edit text'));
   }
 

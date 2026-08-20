@@ -120,3 +120,17 @@ navigated to them, discarding the board. Moved both listeners to `window`,
 suppressing the default page-wide and handling images at the viewport centre
 when the drop lands on the chrome. Drops over a modal are swallowed; non-file
 drags are untouched.
+
+> add a table object that can be used.
+
+Added a `table` element type end to end: schema 1.3.0, the shape module, per-cell
+text editing with `Tab` navigation, draggable column and row dividers,
+insert/delete from the context menu, SVG export, docs and tests. Two new
+registry extension points fell out of it — `textRegions` (an element owning many
+independent blocks of text) and `interiorHandles` (draggable dividers inside an
+element's box) — both optional, so no existing type changed.
+
+Building the per-cell undo test uncovered a pre-existing bug: undoing a text edit
+had never worked, for any element type. `TextEditor.commit` rewound to the
+element it read back out of the document, which `onInput` had already
+overwritten. Fixed, with two regression tests on a sticky note.

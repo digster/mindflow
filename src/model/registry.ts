@@ -142,7 +142,76 @@ export interface ElementDefinition<T extends MindflowElement = MindflowElement> 
    */
   roughOutline?(el: T): Point[];
 
+  /**
+   * The element's editable text sub-regions, in tab order.
+   *
+   * Most types own either one block of text (`capabilities.text`) or a `label`,
+   * and the editor addresses the element as a whole. A grid-like type owns many
+   * independent blocks, and "which one am I editing?" has to be expressible
+   * without any caller knowing what a cell is — hence an opaque `key` plus a box
+   * in the element's LOCAL frame, which is all the text editor needs to place
+   * itself and all the search index needs to read the words.
+   *
+   * Implementing this makes `capabilities.text` mean "owns its text directly,
+   * addressed by region" rather than "has a `text` field".
+   */
+  textRegions?(el: T): TextRegion[];
+
+  /**
+   * The region containing `local`, or `null`. Separate from {@link textRegions}
+   * so hit-testing a click does not have to materialise every region's text.
+   */
+  textRegionAt?(el: T, local: Point): string | null;
+
+  /** A copy of `el` with the named region's text replaced. */
+  withRegionText?(el: T, key: string, text: string): T;
+
+  /**
+   * Draggable dividers *inside* the element, for types whose box is subdivided.
+   *
+   * Deliberately not modelled as extra selection handles: those describe the
+   * element's outer frame and are shared by every type, whereas these are
+   * interior structure that only the type itself can enumerate. Keeping them on
+   * the definition means the controller can offer the gesture without knowing
+   * that the thing it is dragging is a column boundary.
+   */
+  interiorHandles?(el: T): InteriorHandle[];
+
+  /**
+   * Applies a drag of the named interior handle to `local`, a point in the
+   * element's LOCAL frame. Returns a complete replacement element; the caller
+   * always passes the element as it was at pointerdown, so the result is
+   * recomputed from the gesture origin rather than accumulated frame to frame.
+   */
+  dragInteriorHandle?(el: T, id: string, local: Point): T;
+
   capabilities: ElementCapabilities;
+}
+
+/** One independently editable block of text inside an element. */
+export interface TextRegion {
+  /** Opaque within the element; stable for as long as the region exists. */
+  key: string;
+  /** Where the text sits, in the element's LOCAL frame. */
+  box: { x: number; y: number; width: number; height: number };
+  text: string;
+  /**
+   * Font weight for this region alone, when it differs from the element's own
+   * `fontWeight` — a table draws its header row heavier than its body. Present
+   * so the DOM text editor can match the canvas exactly; omitted otherwise, so
+   * the editor's baseline cache is not keyed on a redundant value.
+   */
+  fontWeight?: number;
+}
+
+/** A draggable divider inside an element. See {@link ElementDefinition.interiorHandles}. */
+export interface InteriorHandle {
+  /** Opaque; passed back to `dragInteriorHandle`. */
+  id: string;
+  /** The axis the divider moves along: `x` for a vertical line, `y` for a horizontal one. */
+  axis: 'x' | 'y';
+  /** Position along that axis, in the element's LOCAL frame. */
+  position: number;
 }
 
 // ---------------------------------------------------------------------------

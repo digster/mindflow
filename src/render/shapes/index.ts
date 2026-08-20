@@ -19,6 +19,7 @@ import './sticky.ts';
 import './image.ts';
 import './diamond.ts';
 import './frame.ts';
+import './table.ts';
 
 export { rectangleDefinition } from './rectangle.ts';
 export { ellipseDefinition } from './ellipse.ts';
@@ -29,3 +30,19 @@ export { stickyDefinition, STICKY_DEFAULT_SIZE } from './sticky.ts';
 export { imageDefinition } from './image.ts';
 export { diamondDefinition } from './diamond.ts';
 export { frameDefinition, FRAME_NAME_GAP, FRAME_NAME_SIZE } from './frame.ts';
+export {
+  tableDefinition,
+  cellAt,
+  cellBox,
+  cellFontWeight,
+  cellKey,
+  columnEdges,
+  insertColumn,
+  insertRow,
+  parseCellKey,
+  removeColumn,
+  removeRow,
+  rowEdges,
+  trackSizes,
+  TABLE_HEADER_FONT_WEIGHT,
+} from './table.ts';

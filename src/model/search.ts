@@ -4,10 +4,11 @@
  * Pure and DOM-free, so it can be unit-tested in the node environment the rest
  * of the model uses. The UI in `src/ui/findBar.ts` is a thin shell over this.
  *
- * Text lives in two places depending on the element — directly on a `text` or
- * `sticky`, inside `label` on every other shape — and this module resolves that
- * through the registry's capability flags rather than switching on
- * `element.type`, which no code outside `render/shapes/` may do.
+ * Text lives in three places depending on the element — directly on a `text` or
+ * `sticky`, spread across addressable regions on a `table`, inside `label` on
+ * every other shape — and this module resolves that through the registry rather
+ * than switching on `element.type`, which no code outside `render/shapes/` may
+ * do.
  */
 
 import { getDefinition } from './registry.ts';
@@ -21,7 +22,17 @@ import type { MindflowDocument, MindflowElement } from './types.ts';
  * be interpreting it.
  */
 export function searchableText(element: MindflowElement): string {
-  const capabilities = getDefinition(element.type).capabilities;
+  const definition = getDefinition(element.type);
+  const capabilities = definition.capabilities;
+
+  // A type whose text is split across regions (a table's cells) is joined with
+  // newlines. That makes each cell independently findable while keeping the
+  // result one string, so callers need no second code path — and it means a
+  // query never matches across a cell boundary, which would be a false hit.
+  if (definition.textRegions) {
+    return definition.textRegions(element as never).map((region) => region.text).join('\n');
+  }
+
   if (capabilities.text) return (element as unknown as { text?: string }).text ?? '';
   if (capabilities.label) return element.label?.text ?? '';
   return '';

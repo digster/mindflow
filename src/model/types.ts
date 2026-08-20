@@ -187,6 +187,7 @@ export const ELEMENT_TYPES = [
   'image',
   'diamond',
   'frame',
+  'table',
 ] as const;
 export type ElementType = (typeof ELEMENT_TYPES)[number];
 
@@ -318,6 +319,61 @@ export interface FrameElement extends BaseElement {
   name: string;
 }
 
+/**
+ * A grid of text cells.
+ *
+ * Three modelling decisions, each ruling out something that looks obvious:
+ *
+ * 1. **Cells are plain strings in a row-major array**, not objects. A table's
+ *    whole value in this format is that `[["Name","Qty"],["Apples","3"]]` is
+ *    legible at a glance and trivial to generate. Per-cell styling would force
+ *    every cell to become an object to carry fields most cells never use; a tool
+ *    that needs it can attach its own structure under `meta`.
+ *
+ * 2. **Typography is one set of fields on the element**, shared by every cell,
+ *    for the same reason the rest of the format has no inheritance: a value that
+ *    can vary per cell has to be stored per cell.
+ *
+ * 3. **`columns` and `rows` are PROPORTIONS, not absolute sizes.** Each track is
+ *    rendered at `track / Σ tracks × boxDimension`, so resizing the element is
+ *    exactly the base `width`/`height` change every other type gets — no
+ *    type-specific resize path, and no way for the tracks and the box to
+ *    disagree. MindFlow writes them in scene units, so a freshly created table's
+ *    numbers read as widths; after a resize they are the same proportions
+ *    against a different box. Readers MUST apply the scaling rule rather than
+ *    treat a track as a length. The algorithm is published in
+ *    `docs/07-rendering.md`.
+ *
+ * Merged cells (row/column spans) are deliberately not modelled. See
+ *`docs/03-elements.md`.
+ */
+export interface TableElement extends BaseElement {
+  type: 'table';
+  /** Relative column widths, left to right. At least one, every entry > 0. */
+  columns: number[];
+  /** Relative row heights, top to bottom. At least one, every entry > 0. */
+  rows: number[];
+  /**
+   * Cell text in row-major order: `cells[row][column]`. Always exactly
+   * `rows.length` arrays of exactly `columns.length` strings — the loader pads
+   * short rows and truncates long ones, so a reader never has to bounds-check.
+   */
+  cells: string[][];
+  /** When true, the first row is filled with `headerFill` and drawn semibold. */
+  headerRow: boolean;
+  /** Background of the header row. Ignored entirely when `headerRow` is false. */
+  headerFill: string;
+  fontFamily: FontFamily;
+  fontSize: number;
+  fontWeight: number;
+  lineHeight: number;
+  color: string;
+  textAlign: TextAlign;
+  verticalAlign: VerticalAlign;
+  /** Inset between a cell's box and its text, in scene units. */
+  padding: number;
+}
+
 export const ARROWHEADS = ['none', 'arrow', 'triangle', 'dot', 'bar'] as const;
 export type Arrowhead = (typeof ARROWHEADS)[number];
 
@@ -446,7 +502,8 @@ export type MindflowElement =
   | StickyElement
   | ImageElement
   | DiamondElement
-  | FrameElement;
+  | FrameElement
+  | TableElement;
 
 /** Elements whose geometry is a point list rather than a box. */
 export type PathElement = LinearElement | DrawElement;
@@ -537,7 +594,7 @@ export interface MindflowDocument {
 }
 
 /** The schema version this build reads and writes natively. */
-export const CURRENT_SCHEMA_VERSION = '1.2.0';
+export const CURRENT_SCHEMA_VERSION = '1.3.0';
 
 /** Canonical filename extension for a board. */
 export const FILE_EXTENSION = '.mindflow.json';
