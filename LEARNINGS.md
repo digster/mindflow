@@ -538,3 +538,52 @@ Two details that are easy to miss:
   file drag with `dataTransfer.types.includes('Files')`, which is populated in
   both phases — and use it to leave text drags alone, or dragging text into a
   field breaks.
+
+## "Rewind the transient edits" has to remember what it is rewinding *to*
+
+Found while adding tables, and pre-existing since text editing was written:
+**undo after a text edit did nothing.** Typing "hello" into a sticky, pressing
+Escape and hitting `Cmd+Z` left "hello" on the note and quietly ate an undo step.
+
+The shape of the bug is worth remembering because the code reads as correct:
+
+```ts
+// TextEditor.commit — the broken version
+const element = this.store.document.elements.find((c) => c.id === id);
+const next = this.withText(element, text);
+store.execute(updateElements(doc, [id], () => element, 'Edit text'), true); // "rewind"
+store.execute(replaceElements(doc, [next], 'Edit text'));                   // "the real edit"
+```
+
+`onInput` applies every keystroke to the live document as a **transient**
+command, so that a typing session is one undo step rather than forty. By the time
+`commit` runs, the document already holds the typed element — so `element` *is*
+the typed state, not the pre-edit state. Two things followed:
+
+1. The rewind was a literal no-op. `updateElements` skips a patch when the
+   updater returns the same object it was given (`next !== el` is the guard), and
+   `() => element` returns exactly that object.
+2. The "real" command's `before` and `after` therefore carried **identical
+   content** and differed only by object identity. `isNoopCommand` compares by
+   reference, so it was pushed onto the undo stack — and undoing it restored the
+   text to itself.
+
+Nothing caught it. The board went dirty, the element changed, the undo button
+enabled, and the stack had an entry. Only asserting on the *document after an
+undo* shows it, which no test did.
+
+The fix is to capture the element when the editor **opens** and rewind to that,
+with `replaceElements` (which reads `before` from the live document) rather than
+`updateElements`.
+
+The general rule: **a rewind is defined by a value captured before the thing it
+undoes, never by re-reading the state afterwards.** If a "restore the previous
+state" step reads its target out of live state, ask what has already been written
+to that state — and if the answer is "the edits I am about to rewind", the step
+does nothing.
+
+## Undo tests must assert on the document, not on the stack
+
+The corollary. `canUndo()`, an enabled button, a non-empty history and a dirty
+flag were all true and all meaningless above. A no-op command is still a command.
+Assert what the document contains after `undo()`.

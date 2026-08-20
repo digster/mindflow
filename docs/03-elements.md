@@ -29,11 +29,14 @@ a connector can attach.
 | `draw` | | ✓ | | ✓ | ✓ | |
 | `text` | | | ✓ | ✓ | ✓ | ✓ |
 | `sticky` | | | ✓ | ✓ | ✓ | ✓ |
+| `table` | | | ✓ | ✓ | ✓ | ✓ |
 | `image` | ✓ | | | ✓ | ✓ | ✓ |
 
 - **`label`** — can carry text inside it via the `label` object.
 - **`path`** — geometry is a `points` list rather than a plain box.
-- **`text`** — owns text directly (in a `text` field), editable in place.
+- **`text`** — owns its text directly rather than through `label`, and it is
+  editable in place. Usually that means one `text` field; a `table` instead owns
+  one block per cell, addressed individually (see [`table`](#table)).
 - **`bindable`** — a connector endpoint can attach to it.
 
 Connectors are deliberately **not** bindable. Binding arrows to arrows creates
@@ -322,6 +325,129 @@ make possible.
 **Rendering:** a soft drop shadow is drawn when the note has no stroke, which is
 what sells "piece of paper". Text is clipped to the note, so an overfull note
 looks full rather than spilling words across the canvas.
+
+---
+
+## table
+
+A grid of text cells.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `columns` | number[] , ≥1 entry, all > 0 | `[1, 1, 1]` | **Relative** column widths, left to right. |
+| `rows` | number[] , ≥1 entry, all > 0 | `[1, 1, 1]` | **Relative** row heights, top to bottom. |
+| `cells` | string[][] | all `""` | Row-major: `cells[row][column]`. |
+| `headerRow` | boolean | `true` on create, `false` when omitted from a file | First row is tinted and drawn heavier. |
+| `headerFill` | CSS colour | `"#f1f3f5"` | Header background. Ignored when `headerRow` is false. |
+| `fontFamily` | `sans` \| `serif` \| `mono` \| `hand` | `"sans"` | |
+| `fontSize` | number > 0 | `14` | |
+| `fontWeight` | integer 100–900 | `400` | |
+| `lineHeight` | number ≥ 0.5 | `1.25` | |
+| `color` | CSS colour | `"#1e1e1e"` | |
+| `textAlign` | `left` \| `center` \| `right` | `"left"` | |
+| `verticalAlign` | `top` \| `middle` \| `bottom` | `"middle"` | |
+| `padding` | number ≥ 0 | `8` | Inset between a cell's box and its text. |
+
+Default size when created by a click rather than a drag: 360 × 120 (three
+120-wide columns, three 40-high rows). Default style: `#adb5bd` hairline stroke
+at width 1 over a solid `#ffffff` fill — a table reads as a document rather than
+as a drawing, and 2px rules would overwhelm 14px text.
+
+### `columns` and `rows` are proportions, not lengths
+
+This is the one thing about a table that a reader must not guess. A track's
+rendered size is
+
+```
+size[i] = tracks[i] / Σ tracks × boxDimension
+```
+
+where `boxDimension` is the element's `width` for columns and `height` for rows.
+The full layout, including cell boxes and text placement, is specified in
+[07-rendering.md](07-rendering.md#tables).
+
+**Why proportions?** Because `width` and `height` are then the only description
+of how much room the table occupies, exactly as for every other type. Resizing a
+table is the ordinary base-geometry change, with no track rewriting, and there is
+no state in which the tracks and the box disagree. The cost is one multiplication
+in every reader; the alternative costs a type-specific resize rule in every
+*writer*.
+
+MindFlow writes equal tracks as `1`s, so `"columns": [2, 1, 1]` says *"the first
+column is twice as wide as the others"* directly. Absolute scene units are
+equally valid input — `[240, 120, 120]` renders identically — but they are not
+what MindFlow emits and a reader must not treat any track value as a length.
+
+### `cells`
+
+`cells` has exactly `rows.length` entries, each with exactly `columns.length`
+strings. A writer MUST emit that shape. A reader SHOULD repair rather than reject:
+pad short rows with `""` and truncate long ones, which is what MindFlow does, so
+that `cells[row][column]` never needs a bounds check.
+
+MindFlow's loader is lenient in one further way worth knowing about, because it
+makes tables practical to generate: a cell holding a **number or a boolean** is
+stringified rather than blanked, and a table with `cells` but no `columns`/`rows`
+gets its shape inferred from the grid (row count from `cells.length`, column count
+from the widest row).
+
+**Merged cells are deliberately not modelled.** Spans would put a second,
+overlapping geometry on top of the track grid, and every consumer — layout,
+hit-testing, export — would need to resolve it before it could read a single
+cell. A table whose cells are exactly the intersections of its tracks can be
+interpreted with one loop. A tool that needs spans can record them under `meta`.
+
+Per-cell styling is out of scope for the same reason: it would force every cell
+to become an object to carry fields that almost no cell uses, and
+`[["Name","Qty"],["Apples","3"]]` is the shape that makes a table worth having in
+this format.
+
+### Header row
+
+When `headerRow` is true the **first** row only is filled with `headerFill`,
+painted over the element's own fill, and its text is drawn at
+`max(fontWeight, 600)` — at least semibold, and heavier still if the table itself
+is already bold. There is no header *column*: one axis covers the overwhelming
+majority of tables, and the second would double the rendering rules for the rest.
+
+### Rendering summary
+
+Painted in this order, all clipped to the element's box:
+
+1. The element's fill, if any, across the whole box.
+2. The header band, if `headerRow`.
+3. Each cell's text, wrapped to `cellWidth − padding × 2` and clipped to its cell.
+4. Interior rules and the outer border, in the element's stroke style.
+
+**Hit-testing:** solid. A table is a content container like a sticky note or an
+image, and clicking an empty cell to type in it has to work whether or not the
+table has a fill.
+
+**Connector anchoring:** the default rectangular outline, since the table's
+outline *is* its box.
+
+```jsonc
+{
+  "id": "el_ReleasePlan", "type": "table",
+  "x": 80, "y": 80, "width": 480, "height": 160,
+  "angle": 0, "zIndex": 1000, "opacity": 1,
+  "locked": false, "visible": true, "groupId": null, "frameId": null,
+  "style": { "stroke": "#adb5bd", "strokeWidth": 1, "strokeStyle": "solid",
+             "fill": "#ffffff", "fillStyle": "solid", "roughness": 0 },
+  "label": null, "meta": {},
+  "columns": [2, 1, 1],
+  "rows": [1, 1, 1, 1],
+  "cells": [
+    ["Milestone", "Owner", "Due"],
+    ["Schema 1.3.0 published", "Ana", "12 Sep"],
+    ["Importer updated", "Bo", "19 Sep"],
+    ["Docs reviewed", "Cai", "26 Sep"]
+  ],
+  "headerRow": true, "headerFill": "#f1f3f5",
+  "fontFamily": "sans", "fontSize": 14, "fontWeight": 400, "lineHeight": 1.25,
+  "color": "#1e1e1e", "textAlign": "left", "verticalAlign": "middle", "padding": 8
+}
+```
 
 ---
 

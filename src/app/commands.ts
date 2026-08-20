@@ -41,6 +41,12 @@ const TOOL_COMMANDS: { tool: ToolId; title: string; shortcut: string }[] = [
   { tool: 'draw', title: 'Draw tool', shortcut: 'P' },
   { tool: 'text', title: 'Text tool', shortcut: 'T' },
   { tool: 'sticky', title: 'Sticky note tool', shortcut: 'N' },
+  { tool: 'table', title: 'Table tool', shortcut: 'B' },
+  // Diamond and frame were missing here while being present in the toolbar and
+  // the keyboard map — the palette is a hand-maintained third copy, and this is
+  // exactly the drift that costs.
+  { tool: 'diamond', title: 'Diamond tool', shortcut: 'D' },
+  { tool: 'frame', title: 'Frame tool', shortcut: 'F' },
   { tool: 'eraser', title: 'Eraser tool', shortcut: 'E' },
 ];
 

@@ -28,6 +28,7 @@ import type {
   MindflowElement,
   RectangleElement,
   StickyElement,
+  TableElement,
   TextElement,
 } from '../model/types.ts';
 import type { RenderContext } from '../model/registry.ts';
@@ -35,6 +36,7 @@ import { drawElement } from '../model/registry.ts';
 import { clamp, degToRad, unionAABB } from '../model/geometry.ts';
 import { roughOutlineFor } from './rough.ts';
 import { FRAME_NAME_GAP, FRAME_NAME_SIZE } from './shapes/frame.ts';
+import { cellBox, cellFontWeight, columnEdges, rowEdges } from './shapes/table.ts';
 import {
   BASELINE_RATIO,
   FONT_STACKS,
@@ -406,6 +408,68 @@ function elementToSvg(element: MindflowElement, document: MindflowDocument): str
           sticky,
         )
       );
+    }
+
+    case 'table': {
+      const table = element as TableElement;
+      const xs = columnEdges(table);
+      const ys = rowEdges(table);
+      const width = round(table.width);
+      const height = round(table.height);
+      const parts: string[] = [];
+
+      // Fills first, in the canvas renderer's order: body, then the header band
+      // over it, so a translucent header colour composites the same way.
+      if (hasFill(table.style)) {
+        parts.push(
+          `<rect width="${width}" height="${height}" fill="${escapeXml(table.style.fill)}" stroke="none"/>`,
+        );
+      }
+      if (table.headerRow && table.rows.length > 0) {
+        parts.push(
+          `<rect width="${width}" height="${round(ys[1] ?? 0)}" fill="${escapeXml(table.headerFill)}" stroke="none"/>`,
+        );
+      }
+
+      for (let row = 0; row < table.rows.length; row++) {
+        for (let column = 0; column < table.columns.length; column++) {
+          const text = table.cells[row]?.[column] ?? '';
+          if (text === '') continue;
+          const box = cellBox(table, row, column);
+          const inner = textToSvg(
+            text,
+            { width: box.width, height: box.height, padding: table.padding },
+            { ...table, fontWeight: cellFontWeight(table, row) },
+          );
+          // Translated rather than offset inside `textToSvg`, which lays out in a
+          // box rooted at the origin — the same helper every other type uses.
+          parts.push(`<g transform="translate(${round(box.x)} ${round(box.y)})">${inner}</g>`);
+        }
+      }
+
+      // Interior rules and the border as one path, matching the canvas.
+      if (hasStroke(table.style)) {
+        let d = '';
+        for (let index = 1; index + 1 < xs.length; index++) {
+          d += `M${round(xs[index] as number)} 0V${height}`;
+        }
+        for (let index = 1; index + 1 < ys.length; index++) {
+          d += `M0 ${round(ys[index] as number)}H${width}`;
+        }
+        d += `M0 0H${width}V${height}H0Z`;
+        const dashes = dashPattern(table.style);
+        parts.push(
+          `<path d="${d}" fill="none" stroke="${escapeXml(table.style.stroke)}" ` +
+            `stroke-width="${round(table.style.strokeWidth)}" stroke-linejoin="round"` +
+            `${dashes.length ? ` stroke-dasharray="${dashes.map(round).join(' ')}"` : ''}/>`,
+        );
+      }
+
+      const markup = parts.join('');
+      // Opacity wraps the lot rather than riding on each piece: a table is many
+      // shapes, and per-piece alpha would show the header band through the body
+      // fill and the gridlines through both.
+      return table.opacity < 1 ? `<g opacity="${round(table.opacity)}">${markup}</g>` : markup;
     }
 
     case 'image': {

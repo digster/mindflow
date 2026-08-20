@@ -26,12 +26,15 @@ drift apart.
 **Canvas** — infinite pan and zoom, grid with snapping, alignment guides.
 
 **Tools** — select, pan, rectangle, ellipse, diamond, line, arrow, freehand, text,
-sticky note, frame, image, eraser. Shapes can render clean or hand-drawn.
+table, sticky note, frame, image, eraser. Shapes can render clean or hand-drawn.
 
 **Editing** — move, resize and rotate (including correct rotated resizing),
 multi-select, marquee, grouping, frames that clip and move their contents, align
 and distribute, z-order, in-place text editing, full undo/redo, clipboard with
 cross-tab support, and a style clipboard that copies appearance without content.
+
+**Tables** — cell-by-cell editing with `Tab` to move on, draggable column and row
+dividers, and insert/delete for rows and columns from the right-click menu.
 
 **Getting around** — a command palette (`Cmd K`), text search across the board
 (`Cmd F`), and a right-click context menu.
@@ -84,7 +87,7 @@ default — so any single element is interpretable in isolation.
 ```json
 {
   "type": "mindflow.board",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "elements": [
     {
       "id": "el_q2WikW58Aw",
@@ -129,7 +132,7 @@ MindFlow itself, which would defeat the point.
 **Start here:** [`docs/README.md`](docs/README.md) ·
 [format](docs/02-document-format.md) · [elements](docs/03-elements.md) ·
 [geometry](docs/04-coordinates.md) · [rendering algorithms](docs/07-rendering.md) ·
-[JSON Schema](docs/schema/mindflow-1.2.0.schema.json)
+[JSON Schema](docs/schema/mindflow-1.3.0.schema.json)
 
 ## Google Drive
 
@@ -161,7 +164,7 @@ list.
 
 | | |
 |---|---|
-| `V` `H` `R` `O` `D` `L` `A` `P` `T` `N` `F` `E` | Select, pan, rectangle, ellipse, diamond, line, arrow, draw, text, note, frame, eraser |
+| `V` `H` `R` `O` `D` `L` `A` `P` `T` `B` `N` `F` `E` | Select, pan, rectangle, ellipse, diamond, line, arrow, draw, text, table, note, frame, eraser |
 | `Space` + drag · `Cmd` + scroll | Pan · Zoom |
 | `Cmd` `K` / `Cmd` `F` | Command palette / Find on board |
 | `Cmd` `Z` / `Cmd` `Shift` `Z` | Undo / Redo |

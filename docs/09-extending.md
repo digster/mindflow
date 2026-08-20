@@ -200,13 +200,18 @@ Declared per type, they drive the UI so it need not know about your type.
 |---|---|
 | `label` | Style panel offers typography; double-click edits the `label`. |
 | `path` | Geometry is a `points` list; resize scales the points. |
-| `text` | Owns text directly in a `text` field; double-click edits it. |
+| `text` | Owns its text directly rather than via `label`; double-click edits it. |
 | `resizable` | Selection shows the eight resize handles. |
 | `rotatable` | Selection shows the rotate handle. |
 | `bindable` | Connector endpoints can attach to it. |
 
 Set `bindable: false` for anything connector-like. Binding connectors to
 connectors creates dependency chains with no stable layout fixed point.
+
+`text: true` does **not** have to mean one `text` field. A type that owns many
+independent blocks — `table` and its cells — sets the same flag and implements the
+text-region members below; every capability-driven consumer (the style panel's
+typography row, double-click-to-edit, the search index) then works unchanged.
 
 ## Extension points beyond element types
 
@@ -222,6 +227,46 @@ Add to `CURVE_STYLES`, then handle it in `routedPoints` and `tracePath`
 (`shapes/linear.ts`). **Specify the routing algorithm in
 [07-rendering.md](07-rendering.md)** — a curve style whose geometry is not
 documented makes files containing it uninterpretable outside MindFlow.
+
+### Text regions
+
+For a type whose text is many independent blocks rather than one, implement three
+optional definition members and set `capabilities.text`:
+
+```ts
+textRegions(el)          // every block, in tab order: { key, box, text, fontWeight? }
+textRegionAt(el, local)  // the key at a local point, or null
+withRegionText(el, key, text)   // a copy with that block replaced
+```
+
+`key` is **opaque** — the text editor, the controller and `model/search.ts` pass
+it around without interpreting it, and `box` is in the element's local frame,
+which is all the editor needs to position itself over a cell of a rotated table.
+Keeping the key opaque is what stops knowledge of cells leaking back into the
+callers this API exists to keep ignorant of them.
+
+`fontWeight` is there for the case where one region is drawn differently from the
+rest (a table's header row): the DOM overlay has to match the canvas exactly, or
+the text visibly changes weight the moment editing starts.
+
+### Interior handles
+
+For a type whose box is subdivided, implement:
+
+```ts
+interiorHandles(el)              // { id, axis: 'x' | 'y', position } in the local frame
+dragInteriorHandle(el, id, local)  // a complete replacement element
+```
+
+The controller offers the drag whenever a single unlocked element declares
+handles, with the same hit slop and the same zoom division the outer resize
+handles use, and sets a `col-resize`/`row-resize` cursor. It never learns that the
+thing being dragged is a column boundary.
+
+`dragInteriorHandle` always receives the element **as it was at pointerdown**, in
+line with the rule that every gesture recomputes from its origin rather than
+accumulating deltas — so an implementation can be a pure function of the start
+state and the pointer.
 
 ### Fonts
 

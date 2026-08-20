@@ -12,9 +12,12 @@
  * and it also teaches what is possible.
  */
 
-import type { MindflowElement, Point } from '../model/types.ts';
+import type { MindflowElement, Point, TableElement } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
 import type { Actions } from '../app/actions.ts';
+import { worldToLocal } from '../model/geometry.ts';
+import { updateElements } from '../store/commands.ts';
+import { cellAt, insertColumn, insertRow, removeColumn, removeRow } from '../render/shapes/table.ts';
 import { el, MOD_KEY } from './dom.ts';
 import { Popover, installListNavigation } from './popover.ts';
 
@@ -53,6 +56,58 @@ export function showContextMenu(options: ContextMenuOptions): void {
       [{ label: 'Unlock', run: () => actions.unlock(), enabled: true }]
     : buildEntries();
 
+  /**
+   * Row and column commands for the cell that was right-clicked.
+   *
+   * This is the one place in the app that knows *which* cell the user meant —
+   * the style panel's equivalents can only append at the far edge, because a
+   * panel has no pointer position to work from.
+   */
+  function buildTableEntries(): MenuEntry[] {
+    if (!hit || hit.type !== 'table' || hit.locked) return [];
+    const table = hit as TableElement;
+    const cell = cellAt(table, worldToLocal(table, options.scene));
+    if (!cell) return [];
+
+    const edit = (label: string, transform: (el: TableElement) => TableElement) => () => {
+      store.execute(
+        updateElements(
+          store.document,
+          [table.id],
+          (element) => transform(element as TableElement) as MindflowElement,
+          label,
+        ),
+      );
+    };
+
+    return [
+      { label: 'Insert row above', run: edit('Insert row', (el) => insertRow(el, cell.row)), enabled: true },
+      { label: 'Insert row below', run: edit('Insert row', (el) => insertRow(el, cell.row + 1)), enabled: true },
+      {
+        label: 'Insert column left',
+        run: edit('Insert column', (el) => insertColumn(el, cell.column)),
+        enabled: true,
+      },
+      {
+        label: 'Insert column right',
+        run: edit('Insert column', (el) => insertColumn(el, cell.column + 1)),
+        enabled: true,
+      },
+      // A table with no rows has no cells and no way back, so the last one stays.
+      {
+        label: 'Delete row',
+        run: edit('Delete row', (el) => removeRow(el, cell.row)),
+        enabled: table.rows.length > 1,
+      },
+      {
+        label: 'Delete column',
+        run: edit('Delete column', (el) => removeColumn(el, cell.column)),
+        enabled: table.columns.length > 1,
+      },
+      'separator',
+    ];
+  }
+
   function buildEntries(): MenuEntry[] {
     if (!hasSelection) {
       return [
@@ -64,6 +119,7 @@ export function showContextMenu(options: ContextMenuOptions): void {
     }
 
     return [
+      ...buildTableEntries(),
       { label: 'Cut', shortcut: `${MOD_KEY}X`, run: () => void actions.cut(), enabled: true },
       { label: 'Copy', shortcut: `${MOD_KEY}C`, run: () => void actions.copy(), enabled: true },
       { label: 'Duplicate', shortcut: `${MOD_KEY}D`, run: () => actions.duplicate(), enabled: true },

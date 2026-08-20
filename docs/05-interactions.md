@@ -20,6 +20,7 @@ Reference implementation: [`src/input/controller.ts`](../src/input/controller.ts
 | Draw | `P` | Drag to draw freehand. |
 | Text | `T` | Click to place and start typing. |
 | Sticky note | `N` | Drag to size, or click for a default 160 × 160. |
+| Table | `B` | Drag to size, or click for a default 3 × 3 at 360 × 120. |
 | Frame | `F` | Drag to size, or click for a default 400 × 300. |
 | Image | — | Opens a file picker, then places the image. |
 | Eraser | `E` | Click or drag over elements to delete them. |
@@ -267,21 +268,56 @@ undo restores both the shape and its connections in one step.
 ## Text editing
 
 Double-clicking an element that can hold text opens an in-place editor. For `text`
-and `sticky` elements this edits their `text`; for every other type it edits the
-`label`, creating one if the element does not have it yet.
+and `sticky` elements this edits their `text`; for a `table` it edits **the cell
+that was double-clicked**; for every other type it edits the `label`, creating one
+if the element does not have it yet.
 
 | Key | Effect |
 |---|---|
 | `Enter` | Newline. |
 | `Cmd`/`Ctrl` + `Enter` | Finish editing. |
 | `Escape` | Finish editing, **keeping** what was typed. |
+| `Tab` / `Shift` + `Tab` | Next / previous cell, in a table. |
 | Click elsewhere | Finish editing. |
 
 `Escape` means "stop editing", not "undo" — matching every other canvas tool. The
 whole typing session collapses into one undo step.
 
+`Tab` stops at the last cell rather than wrapping round to the first. Wrapping
+would silently discard the "I am done here" reading of a final `Tab`, with no
+visual cue that anything had happened. Each cell commits as its own undo step, so
+undo walks a tabbed pass back cell by cell.
+
 While the editor is open, canvas shortcuts are suppressed so that typing `v` does
 not switch tools.
+
+## Tables
+
+Beyond text editing, a table has two structural gestures.
+
+**Dragging a divider** re-proportions a column or a row. Interior gridlines of the
+**selected** table become draggable within the usual handle slop, and the cursor
+turns to `col-resize` or `row-resize` over one. Dragging sets the size of the
+track *left of* (or *above*) the divider and moves everything after it along, so
+the table grows or shrinks rather than the neighbouring track absorbing the
+change — no fighting a neighbour's minimum size, which is 16 scene units.
+
+Dividers are offered only on a single selected, unlocked table. A divider is a
+fine adjustment to something you are already working on; making every gridline on
+the board draggable would make ordinary clicks near one unpredictable. The cursor
+is the whole affordance — drawing chrome on every gridline would clutter the very
+thing it sits on.
+
+**Rows and columns** are added and removed from the right-click menu, which knows
+which cell was clicked: *Insert row above/below*, *Insert column left/right*,
+*Delete row*, *Delete column*. The style panel carries the same operations without
+a cell to work from, so its versions append and remove at the far edge, alongside
+the header-row toggle. The last row and the last column cannot be deleted — a
+table with no cells has no way back.
+
+Inserting and deleting adjust the element's box so that every track the user did
+not touch keeps its rendered size: adding a row makes the table taller rather than
+squeezing the existing rows.
 
 ## Keyboard shortcuts
 
@@ -409,6 +445,10 @@ layer the toolbar and keyboard use, so behaviour cannot drift between routes.
 - On a **locked** element the menu collapses to a single **Unlock**, matching the
   style panel. This is the other half of the escape hatch described above.
 - `Escape` dismisses the menu without clearing the selection.
+- On a **table** the menu gains row and column entries for the cell that was
+  right-clicked. These are the only commands in the app that depend on *where*
+  the click landed rather than on what is selected, which is why they live here
+  and not in the style panel.
 
 ## The command palette
 
@@ -430,8 +470,10 @@ board.
 
 ## Find on board
 
-`Cmd`/`Ctrl` + `F` searches the text of `text` and `sticky` elements and the
-`label` of every other shape, case-insensitively.
+`Cmd`/`Ctrl` + `F` searches the text of `text` and `sticky` elements, every cell
+of a `table`, and the `label` of every other shape, case-insensitively. A query
+never matches across a cell boundary — cells are joined with newlines, so each is
+independently findable and no false hit spans two of them.
 
 Taking `Cmd`+`F` from the browser is deliberate, and is the one exception to the
 rule above about not overriding browser shortcuts. Canvas text is painted pixels,

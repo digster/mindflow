@@ -8,13 +8,14 @@
  * element type gets a correct panel for free.
  */
 
-import type { MindflowElement } from '../model/types.ts';
+import type { MindflowElement, TableElement } from '../model/types.ts';
 import { ARROWHEADS, CURVE_STYLES, FILL_STYLES, FONT_FAMILIES, STROKE_STYLES } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
 import type { Actions } from '../app/actions.ts';
 import { capabilitiesOf, getDefinition } from '../model/registry.ts';
 import { PALETTE } from '../model/defaults.ts';
 import { updateElements } from '../store/commands.ts';
+import { insertColumn, insertRow, removeColumn, removeRow } from '../render/shapes/table.ts';
 import { clear, el, icon } from './dom.ts';
 import { ICONS } from './icons.ts';
 
@@ -92,6 +93,14 @@ export class StylePanel {
     const frames = selected.filter((element) => element.type === 'frame');
     if (frames.length === 1 && selected.length === 1) {
       this.element.append(this.nameRow(frames[0] as MindflowElement & { name: string }));
+    }
+
+    // Structure controls for a single table, alongside the frame name row above
+    // and for the same reason: these are edits with nowhere else to live. The
+    // per-cell versions (insert *here*, delete *this* row) are on the context
+    // menu, where the click itself says which cell is meant.
+    if (selected.length === 1 && first.type === 'table') {
+      for (const row of this.tableRows(first as TableElement)) this.element.append(row);
     }
 
     this.element.append(
@@ -223,6 +232,56 @@ export class StylePanel {
     const alignRow = this.alignRow(selected);
     if (alignRow) this.element.append(alignRow);
     this.element.append(this.arrangeRow(selected));
+  }
+
+  /**
+   * Table structure: the header toggle, and append/remove at the far edge.
+   *
+   * Deliberately the *last* row and column rather than a selected one — the
+   * style panel has no notion of which cell you are looking at, and guessing
+   * would be worse than being predictable.
+   */
+  private tableRows(table: TableElement): HTMLElement[] {
+    const edit = (label: string, transform: (el: TableElement) => TableElement) => () => {
+      this.store.execute(
+        updateElements(
+          this.store.document,
+          [table.id],
+          (element) => transform(element as TableElement) as MindflowElement,
+          label,
+        ),
+      );
+    };
+
+    return [
+      this.buttonRow('Table', [
+        {
+          label: 'Header row',
+          active: table.headerRow,
+          onSelect: edit('Toggle header row', (el) => ({ ...el, headerRow: !el.headerRow })),
+        },
+      ]),
+      this.buttonRow('Rows', [
+        { label: 'Add', active: false, onSelect: edit('Add row', (el) => insertRow(el, el.rows.length)) },
+        {
+          label: 'Remove',
+          active: false,
+          onSelect: edit('Remove row', (el) => removeRow(el, el.rows.length - 1)),
+        },
+      ]),
+      this.buttonRow('Columns', [
+        {
+          label: 'Add',
+          active: false,
+          onSelect: edit('Add column', (el) => insertColumn(el, el.columns.length)),
+        },
+        {
+          label: 'Remove',
+          active: false,
+          onSelect: edit('Remove column', (el) => removeColumn(el, el.columns.length - 1)),
+        },
+      ]),
+    ];
   }
 
   /** Text field for a frame's name. */

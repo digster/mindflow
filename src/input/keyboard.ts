@@ -30,6 +30,7 @@ const TOOL_KEYS: Record<string, ToolId> = {
   n: 'sticky',
   d: 'diamond',
   f: 'frame',
+  b: 'table',
   e: 'eraser',
 };
 
@@ -304,6 +305,9 @@ export const SHORTCUT_REFERENCE: { group: string; items: [string, string][] }[] 
       ['P', 'Draw'],
       ['T', 'Text'],
       ['N', 'Sticky note'],
+      ['B', 'Table'],
+      ['F', 'Frame'],
+      ['D', 'Diamond'],
       ['E', 'Eraser'],
     ],
   },

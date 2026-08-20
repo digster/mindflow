@@ -1,0 +1,200 @@
+{
+  "$schema": "https://digster.github.io/mindflow/docs/schema/mindflow-1.3.0.schema.json",
+  "type": "mindflow.board",
+  "schemaVersion": "1.3.0",
+  "id": "brd_TableDemo1",
+  "meta": {
+    "name": "Tables",
+    "createdAt": "2026-08-20T09:00:00.000Z",
+    "updatedAt": "2026-08-20T09:42:00.000Z",
+    "app": {
+      "name": "mindflow",
+      "version": "0.1.0"
+    }
+  },
+  "canvas": {
+    "background": "#ffffff",
+    "grid": {
+      "visible": false,
+      "size": 20,
+      "snap": false
+    }
+  },
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "elements": [
+    {
+      "id": "el_ReleasePlan",
+      "type": "table",
+      "x": 80,
+      "y": 80,
+      "width": 480,
+      "height": 160,
+      "angle": 0,
+      "zIndex": 1000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#adb5bd",
+        "strokeWidth": 1,
+        "strokeStyle": "solid",
+        "fill": "#ffffff",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {},
+      "columns": [2, 1, 1],
+      "rows": [1, 1, 1, 1],
+      "cells": [
+        ["Milestone", "Owner", "Due"],
+        ["Schema 1.3.0 published", "Ana", "12 Sep"],
+        ["Importer updated", "Bo", "19 Sep"],
+        ["Docs reviewed", "Cai", "26 Sep"]
+      ],
+      "headerRow": true,
+      "headerFill": "#f1f3f5",
+      "fontFamily": "sans",
+      "fontSize": 14,
+      "fontWeight": 400,
+      "lineHeight": 1.25,
+      "color": "#1e1e1e",
+      "textAlign": "left",
+      "verticalAlign": "middle",
+      "padding": 8
+    },
+    {
+      "id": "el_TallyRotate",
+      "type": "table",
+      "x": 660,
+      "y": 300,
+      "width": 200,
+      "height": 90,
+      "angle": 8,
+      "zIndex": 2000,
+      "opacity": 0.9,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1971c2",
+        "strokeWidth": 1,
+        "strokeStyle": "dashed",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {
+        "importer": {
+          "source": "tally.csv"
+        }
+      },
+      "columns": [1, 1],
+      "rows": [1, 1, 1],
+      "cells": [
+        ["Yes", "14"],
+        ["No", "3"],
+        ["Abstain", "1"]
+      ],
+      "headerRow": false,
+      "headerFill": "#f1f3f5",
+      "fontFamily": "mono",
+      "fontSize": 13,
+      "fontWeight": 400,
+      "lineHeight": 1.4,
+      "color": "#1971c2",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "padding": 6
+    },
+    {
+      "id": "el_TableNote11",
+      "type": "sticky",
+      "x": 80,
+      "y": 300,
+      "width": 200,
+      "height": 120,
+      "angle": 0,
+      "zIndex": 3000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "transparent",
+        "strokeWidth": 0,
+        "strokeStyle": "solid",
+        "fill": "#ffec99",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {},
+      "text": "columns and rows are proportions, not pixels.",
+      "fontFamily": "sans",
+      "fontSize": 16,
+      "fontWeight": 400,
+      "lineHeight": 1.25,
+      "color": "#1e1e1e",
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "padding": 12
+    },
+    {
+      "id": "el_NoteToTable",
+      "type": "arrow",
+      "x": 290,
+      "y": 260,
+      "width": 60,
+      "height": 60,
+      "angle": 0,
+      "zIndex": 4000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {},
+      "points": [
+        [0, 60],
+        [60, 0]
+      ],
+      "startArrowhead": "none",
+      "endArrowhead": "arrow",
+      "curve": "straight",
+      "startBinding": {
+        "elementId": "el_TableNote11",
+        "anchor": {
+          "mode": "auto"
+        },
+        "gap": 6
+      },
+      "endBinding": {
+        "elementId": "el_ReleasePlan",
+        "anchor": {
+          "mode": "auto"
+        },
+        "gap": 6
+      }
+    }
+  ],
+  "files": {}
+}

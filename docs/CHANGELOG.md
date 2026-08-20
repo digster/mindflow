@@ -161,6 +161,60 @@ they will apply to the next type too:
 
 ---
 
+## 1.3.0 — 2026-08-20
+
+Additive. A 1.2.0 file is a valid 1.3.0 file with no tables.
+
+### Added
+
+**`table` element type** — a grid of text cells. Full reference in
+[03-elements.md](03-elements.md#table); the layout algorithm is specified in
+[07-rendering.md](07-rendering.md#tables).
+
+The design decisions, since each rules out something that looks more obvious:
+
+**`columns` and `rows` hold proportions, not lengths.** A track's rendered size is
+`track / Σ tracks × boxDimension`. Absolute lengths were the obvious choice and
+are wrong for this format: they create a second description of how big the table
+is, which then has to be kept in step with `width`/`height` on every resize —
+meaning a type-specific resize rule in every writer, and a file format with an
+invariant that can silently break. Proportions make resizing a table the same
+base-geometry change every other element gets, and there is no state in which the
+tracks and the box disagree. The cost is one multiplication in every reader.
+
+**Cells are plain strings in a row-major array.** `[["Name","Qty"],["Apples","3"]]`
+is the shape that makes a table worth having in a format meant to be read and
+generated outside its application. Making a cell an object so it could carry
+per-cell styling would tax every cell for a field almost none of them use, and
+`meta` already exists for a tool that needs one.
+
+**Typography is one set of fields on the element**, shared by every cell, for the
+same reason nothing else in this format inherits: a value that varies per cell has
+to be stored per cell, and none of these do.
+
+**Merged cells are not modelled.** A span puts a second geometry on top of the
+track grid, and every consumer — layout, hit-testing, export, a script reading the
+board — would have to resolve it before reading a single cell. A table whose cells
+are exactly the intersections of its tracks is interpretable with one loop.
+
+**One header axis, not two.** `headerRow` tints the first row and draws it at
+`max(fontWeight, 600)`. A header *column* would double the rendering rules for the
+minority of tables that want one.
+
+### Notes for implementers
+
+`cells` is declared as exactly `rows.length × columns.length`, and writers MUST
+emit that shape — but readers SHOULD pad and truncate rather than reject, so that
+`cells[row][column]` needs no bounds check. MindFlow also stringifies a numeric or
+boolean cell and infers a missing `columns`/`rows` from the shape of `cells`,
+which makes a table practical to emit from a script with three lines of code.
+
+A 1.2.0 reader meeting a `table` will not recognise the type and should preserve
+it verbatim (see
+[06-persistence.md](06-persistence.md#unknown-element-types)) rather than drop it.
+
+---
+
 ## 1.2.0 — 2026-08-16
 
 Additive. A 1.1.0 file is a valid 1.2.0 file with no frames.

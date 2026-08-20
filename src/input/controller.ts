@@ -38,6 +38,7 @@ import type { Store, ToolId } from '../store/store.ts';
 import type { HandleId, SelectionFrame, SnapGuide } from '../render/overlay.ts';
 import { getDefinition } from '../model/registry.ts';
 import {
+  HANDLE_HIT_SLOP,
   handleAt,
   handleCursor,
   canRotate,
@@ -55,6 +56,7 @@ import {
   normalizePathBounds,
   screenToScene,
   simplifyPoints,
+  worldToLocal,
 } from '../model/geometry.ts';
 import {
   addElements,
@@ -104,6 +106,7 @@ type Gesture =
       originals: MindflowElement[];
       startAngle: number;
     }
+  | { kind: 'interiorHandle'; id: string; original: MindflowElement }
   | { kind: 'createBox'; origin: Point; element: MindflowElement }
   | { kind: 'createLinear'; origin: Point; element: LinearElement }
   | { kind: 'freehand'; element: DrawElement; points: PointTuple[] }
@@ -112,8 +115,11 @@ type Gesture =
 export interface ControllerOptions {
   canvas: HTMLCanvasElement;
   store: Store;
-  /** Opens the DOM text editor for an element. */
-  onEditText: (element: MindflowElement) => void;
+  /**
+   * Opens the DOM text editor for an element, on one of its text regions when
+   * the type has them (a table cell). `null` means "the element as a whole".
+   */
+  onEditText: (element: MindflowElement, regionKey: string | null) => void;
   /** Called when the overlay needs redrawing (hover, marquee, guides). */
   onOverlayChange: () => void;
   /** Prompts for an image file, used by the image tool. */
@@ -230,6 +236,7 @@ export class InteractionController {
       case 'sticky':
       case 'diamond':
       case 'frame':
+      case 'table':
         this.beginBoxCreate(tool, scene);
         break;
       case 'line':
@@ -294,6 +301,16 @@ export class InteractionController {
       }
     }
 
+    // Interior dividers (a table's column and row boundaries) sit between the
+    // outer handles and the element itself: they belong to something already
+    // selected, so they cannot steal a click that was meant to select, and they
+    // must win over the element beneath them or a divider would be ungrabbable.
+    const interior = this.interiorHandleAt(selected, scene);
+    if (interior) {
+      this.gesture = { kind: 'interiorHandle', id: interior.id, original: { ...interior.element } };
+      return;
+    }
+
     const hit = elementAt(store.document, scene, zoom);
     const additive = event.shiftKey;
 
@@ -336,7 +353,76 @@ export class InteractionController {
     store.execute(replaceElements(store.document, changed, 'Reframe'));
   }
 
-  private beginBoxCreate(tool: 'rectangle' | 'ellipse' | 'sticky' | 'diamond' | 'frame', scene: Point): void {
+  /**
+   * The interior divider under `scene`, if the selection offers one.
+   *
+   * Restricted to a single selected, unlocked element on purpose: a divider is a
+   * fine adjustment to something you are already working on, and offering it on
+   * every table under the pointer would make ordinary clicks near a gridline
+   * unpredictable.
+   */
+  private interiorHandleAt(
+    selected: readonly MindflowElement[],
+    scene: Point,
+  ): { element: MindflowElement; id: string; axis: 'x' | 'y' } | null {
+    if (selected.length !== 1) return null;
+    const element = selected[0] as MindflowElement;
+    if (element.locked) return null;
+
+    const definition = getDefinition(element.type);
+    if (!definition.interiorHandles || !definition.dragInteriorHandle) return null;
+
+    // The same slop the outer handles use, in screen pixels and divided by zoom
+    // so a divider is equally grabbable at any magnification.
+    const tolerance = HANDLE_HIT_SLOP / this.options.store.viewport.zoom;
+    const local = worldToLocal(element, scene);
+    if (
+      local.x < -tolerance ||
+      local.y < -tolerance ||
+      local.x > element.width + tolerance ||
+      local.y > element.height + tolerance
+    ) {
+      return null;
+    }
+
+    for (const handle of definition.interiorHandles(element as never)) {
+      const distance =
+        handle.axis === 'x'
+          ? Math.abs(local.x - handle.position)
+          : Math.abs(local.y - handle.position);
+      if (distance <= tolerance) return { element, id: handle.id, axis: handle.axis };
+    }
+    return null;
+  }
+
+  /**
+   * Applies a divider drag.
+   *
+   * Recomputed from the element as it was at pointerdown, like every other
+   * gesture — which also means the local frame the pointer is projected into
+   * stays fixed for the duration, rather than shifting as the element's own
+   * width changes underneath it.
+   */
+  private updateInteriorHandle(scene: Point): void {
+    if (this.gesture.kind !== 'interiorHandle') return;
+    const { store } = this.options;
+    const { original, id } = this.gesture;
+
+    const definition = getDefinition(original.type);
+    const next = definition.dragInteriorHandle?.(
+      original as never,
+      id,
+      worldToLocal(original, scene),
+    ) as MindflowElement | undefined;
+    if (!next) return;
+
+    this.commitLive([next], new Set([next.id]), `Resize ${definition.title.toLowerCase()}`);
+  }
+
+  private beginBoxCreate(
+    tool: 'rectangle' | 'ellipse' | 'sticky' | 'diamond' | 'frame' | 'table',
+    scene: Point,
+  ): void {
     const { store } = this.options;
     const definition = getDefinition(tool);
     const element = definition.create({
@@ -391,7 +477,7 @@ export class InteractionController {
     store.execute(addElements([element], 'Add text'));
     store.setSelection([element.id]);
     store.setTool('select');
-    this.options.onEditText(element);
+    this.options.onEditText(element, null);
   }
 
   // -------------------------------------------------------------------------
@@ -449,6 +535,10 @@ export class InteractionController {
 
       case 'rotate':
         this.updateRotate(scene, event);
+        break;
+
+      case 'interiorHandle':
+        this.updateInteriorHandle(scene);
         break;
 
       case 'createBox':
@@ -681,6 +771,17 @@ export class InteractionController {
         break;
       }
 
+      case 'interiorHandle': {
+        if (this.movedPastThreshold) this.updateInteriorHandle(scene);
+        const final = elementsByIds(store.document, new Set([this.gesture.original.id]));
+        this.commitGesture(
+          [this.gesture.original],
+          final,
+          `Resize ${getDefinition(this.gesture.original.type).title.toLowerCase()}`,
+        );
+        break;
+      }
+
       case 'createBox': {
         // Apply the release position before committing. `pointerup` carries a
         // position of its own, and it is frequently a few pixels beyond the last
@@ -835,10 +936,15 @@ export class InteractionController {
     const hit = elementAt(store.document, scene, store.viewport.zoom);
     if (!hit) return;
 
-    const capabilities = getDefinition(hit.type).capabilities;
+    const definition = getDefinition(hit.type);
+    const capabilities = definition.capabilities;
     if (capabilities.text || capabilities.label) {
       store.setSelection([hit.id]);
-      this.options.onEditText(hit);
+      // For a type with regions, edit the one that was actually double-clicked —
+      // opening a table always at its first cell would make every cell but one
+      // reachable only by tabbing.
+      const region = definition.textRegionAt?.(hit as never, worldToLocal(hit, scene)) ?? null;
+      this.options.onEditText(hit, region);
     }
   };
 
@@ -931,6 +1037,10 @@ export class InteractionController {
       canvas.style.cursor = 'grabbing';
       return;
     }
+    if (this.gesture.kind === 'interiorHandle') {
+      canvas.style.cursor = this.gesture.id.startsWith('c') ? 'col-resize' : 'row-resize';
+      return;
+    }
     if (this.spaceHeld || tool === 'pan') {
       canvas.style.cursor = 'grab';
       return;
@@ -953,6 +1063,14 @@ export class InteractionController {
           canvas.style.cursor = handleCursor(handle, frame.angle);
           return;
         }
+      }
+      // The cursor is the only affordance a divider gets. Drawing chrome for
+      // every gridline would clutter the very thing it sits on, and the
+      // col-resize/row-resize cursors are the convention people already know.
+      const interior = this.interiorHandleAt(selected, scene);
+      if (interior) {
+        canvas.style.cursor = interior.axis === 'x' ? 'col-resize' : 'row-resize';
+        return;
       }
       if (this.hovered) {
         canvas.style.cursor = 'move';

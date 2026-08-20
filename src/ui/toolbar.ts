@@ -27,6 +27,9 @@ const TOOLS: ToolSpec[] = [
   { id: 'arrow', icon: 'arrow', label: 'Arrow', shortcut: 'A' },
   { id: 'draw', icon: 'draw', label: 'Draw', shortcut: 'P' },
   { id: 'text', icon: 'text', label: 'Text', shortcut: 'T' },
+  // B, not T: `text` already owns T, and B is the next letter in "table" that
+  // no other tool has claimed.
+  { id: 'table', icon: 'table', label: 'Table', shortcut: 'B' },
   { id: 'sticky', icon: 'sticky', label: 'Sticky note', shortcut: 'N' },
   { id: 'frame', icon: 'frame', label: 'Frame', shortcut: 'F' },
   { id: 'image', icon: 'image', label: 'Image', shortcut: '' },
