@@ -149,3 +149,10 @@ palette, a recent-colours strip and a hex field. Types can now declare their own
 palette on their registry definition, so a sticky note offers paper tones without
 anything branching on `element.type`.
 
+**Commit 2 — icons.** Replaced the 46 hand-written path strings with Lucide
+(ISC), extracted at build time by `scripts/build-icons.mjs` from a devDependency
+so the page still makes zero external requests. `icon()` now takes inner markup
+rather than a single path's `d`, because real icons need several elements.
+Building the extractor's whitelist test caught a silent bug in the extractor
+itself: attribute names containing digits (`x1`, `y1`) matched nothing and were
+dropped, so the frame icon had been generated as four empty `<line />` elements.

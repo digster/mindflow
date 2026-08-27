@@ -237,6 +237,13 @@ Considered, in rough order — see
 - Google Picker, to lift the `drive.file` limitation
 - Laser pointer and presentation mode
 
+## Credits
+
+Icons are from [Lucide](https://lucide.dev) ([ISC](https://github.com/lucide-icons/lucide/blob/main/LICENSE)),
+extracted at build time by `scripts/build-icons.mjs` and inlined into
+`src/ui/icons.ts`. Nothing is fetched at runtime — the built page still makes
+zero external requests.
+
 ## License
 
 [MIT](LICENSE) © digster

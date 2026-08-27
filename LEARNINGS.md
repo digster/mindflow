@@ -629,3 +629,37 @@ which is why every access in `ui/colorPicker.ts` has one. Worth stating because
 the failure mode is disproportionate: without the guard, a browser that declines
 to remember a shade of blue takes the whole application down at startup.
 
+## A whitelist that *drops* what it does not recognise is worse than none
+
+`scripts/build-icons.mjs` extracts Lucide icons through an element and attribute
+whitelist, which is the entire justification for `icon()` using `innerHTML`. The
+first version skipped anything its regex did not match instead of throwing, and
+that turned a safety check into a data-loss bug: the attribute-name pattern was
+`[a-z-]+`, which cannot match `x1`, `y1`, `x2` or `y2`, so every `<line>` in
+every icon lost its coordinates. The `frame` icon shipped as
+`<line /><line /><line /><line />` — four elements drawing nothing — and looked
+like a rendering problem rather than a generator one.
+
+Nothing caught it because everything downstream was true: the file generated, the
+build succeeded, the type checked, the icon existed, the SVG was in the DOM.
+
+Two rules came out of it:
+
+1. **Parse exhaustively, then assert nothing is left over.** After matching the
+   attributes, the script now checks that the remaining text is whitespace and
+   throws if it is not. That single check is what surfaced the bug.
+2. **A rejection pattern must be wide enough to MATCH what it rejects.** The tag
+   pattern was `[a-z-]+`, so `<foreignObject />` did not fail the "unexpected
+   element" check — it failed a later backstop, by luck. A pattern that misses
+   the dangerous input cannot refuse it.
+
+The test that found this asserts on the extractor's *refusals*, not its output.
+
+## Lucide names alignment icons after the rule's axis, not the movement
+
+`align-start-vertical` is align-**left**: "vertical" describes the orientation of
+the rule the objects land against, not the direction they travel. Six of the
+eight alignment icons are named this way and picking them by name gets half of
+them wrong. `test/unit/icons.test.ts` asserts against the geometry instead — that
+`alignLeft` contains a rule at `x=2`, `alignBottom` one at `y=22`, and so on — so
+a future icon swap cannot silently transpose them.

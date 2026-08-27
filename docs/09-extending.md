@@ -158,9 +158,31 @@ required when an existing field changes shape.
 
 ### 5. Add it to the UI
 
-`src/ui/toolbar.ts` — a `TOOLS` entry and an icon in `src/ui/icons.ts`. Then
-handle it in the controller's `beginBoxCreate` case list, alongside `rectangle`
-and `ellipse`.
+`src/ui/toolbar.ts` — a `TOOLS` entry, and an icon. Then handle it in the
+controller's `beginBoxCreate` case list, alongside `rectangle` and `ellipse`.
+
+**Icons are generated, not written.** `src/ui/icons.ts` carries a
+`DO NOT EDIT BY HAND` banner and means it. Add a line to `MANIFEST` in
+`scripts/build-icons.mjs` mapping your name to a [Lucide](https://lucide.dev)
+slug, then:
+
+```bash
+npm run icons
+```
+
+Commit the regenerated file along with your change — `test/unit/icons.test.ts`
+regenerates it in memory and fails the build if the committed copy is stale, the
+same way `index.html` is a committed artifact that must not lag `src/`.
+
+If your type also wants its own colour palette in the style panel, declare one
+on the definition:
+
+```ts
+palette: { fill: PALETTE.sticky },
+```
+
+Optional, and UI-only — it changes what is *offered*, never what the format
+accepts.
 
 ### 6. Export
 
