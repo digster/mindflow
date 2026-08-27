@@ -89,6 +89,7 @@ Break these and something subtle fails.
 npm run dev         # watch and rebuild; open index.html directly
 npm run serve       # watch + http://localhost:8000 (Drive needs an http origin)
 npm run build       # produce the single-file index.html
+npm run icons       # regenerate src/ui/icons.ts from Lucide (after a manifest edit)
 npm run typecheck   # esbuild does NOT type-check — this does
 npm test            # unit + contract
 npm run test:e2e    # Playwright against the BUILT file over file://
@@ -97,6 +98,9 @@ npm run check       # typecheck + test + build
 
 - **`index.html` is a committed build artifact.** Run `npm run build` and commit
   it with any `src/` change, or the deployed app silently lags the source.
+- **`src/ui/icons.ts` is one too.** It is generated from `scripts/build-icons.mjs`
+  and carries a `DO NOT EDIT BY HAND` banner — add an icon to the manifest there
+  and run `npm run icons`. A unit test regenerates it and fails on drift.
 - **A successful build proves nothing about types.** Always run `npm run
   typecheck` too.
 - Delete `test-results/` and `playwright-report/` after an e2e run; never commit
@@ -139,6 +143,8 @@ npm run check       # typecheck + test + build
 | A keyboard shortcut | `src/input/keyboard.ts` (and its `SHORTCUT_REFERENCE`) |
 | Drive behaviour | `src/io/drive/` + `docs/08-google-drive.md` |
 | Anything visual in the chrome | `src/styles/app.css` |
+| An icon | `scripts/build-icons.mjs`, then `npm run icons` |
+| Which colours a type offers | `palette` on its registry definition |
 
 ---
 

@@ -134,3 +134,25 @@ Building the per-cell undo test uncovered a pre-existing bug: undoing a text edi
 had never worked, for any element type. `TextEditor.commit` rewound to the
 element it read back out of the document, which `onInput` had already
 overwritten. Fixed, with two regression tests on a sticky note.
+
+> work on the following as 2 separate commits -
+> * add color support in our app
+> * the current icons look very amateur, use some free icons now and in the future
+
+**Commit 1 — colour.** The format had been colour-complete since 1.0.0; the UI
+exposed two of its colour fields. Added a text colour row (writing `color` or
+`label.color` depending on the type), a table header fill row, and a board
+background picker in the top bar, which finally gave `PALETTE.canvas` — defined
+since the first commit and referenced by nothing — a caller. Replaced the raw
+`<input type="color">` at the end of each swatch row with a popover carrying the
+palette, a recent-colours strip and a hex field. Types can now declare their own
+palette on their registry definition, so a sticky note offers paper tones without
+anything branching on `element.type`.
+
+**Commit 2 — icons.** Replaced the 46 hand-written path strings with Lucide
+(ISC), extracted at build time by `scripts/build-icons.mjs` from a devDependency
+so the page still makes zero external requests. `icon()` now takes inner markup
+rather than a single path's `d`, because real icons need several elements.
+Building the extractor's whitelist test caught a silent bug in the extractor
+itself: attribute names containing digits (`x1`, `y1`) matched nothing and were
+dropped, so the frame icon had been generated as four empty `<line />` elements.

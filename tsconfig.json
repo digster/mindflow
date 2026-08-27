@@ -23,6 +23,6 @@
 
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "build.mjs"],
+  "include": ["src/**/*.ts", "test/**/*.ts", "build.mjs", "scripts/**/*.d.mts"],
   "exclude": ["node_modules", "dist"]
 }

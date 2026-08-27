@@ -13,10 +13,11 @@ import { ARROWHEADS, CURVE_STYLES, FILL_STYLES, FONT_FAMILIES, STROKE_STYLES } f
 import type { Store } from '../store/store.ts';
 import type { Actions } from '../app/actions.ts';
 import { capabilitiesOf, getDefinition } from '../model/registry.ts';
-import { PALETTE } from '../model/defaults.ts';
+import { DEFAULT_TEXT_COLOR, PALETTE } from '../model/defaults.ts';
 import { updateElements } from '../store/commands.ts';
 import { insertColumn, insertRow, removeColumn, removeRow } from '../render/shapes/table.ts';
 import { clear, el, icon } from './dom.ts';
+import { colorTrigger, swatch } from './colorPicker.ts';
 import { ICONS } from './icons.ts';
 
 const STROKE_WIDTHS: [string, number][] = [
@@ -39,6 +40,20 @@ const FONT_SIZES: [string, number][] = [
   ['L', 28],
   ['XL', 40],
 ];
+
+/**
+ * The ink colour an element is currently using.
+ *
+ * Two storage shapes, one question: a type with `capabilities.text` owns `color`
+ * directly, while a labelled shape keeps it on `label`. `Actions.setTextProperty`
+ * already writes to whichever applies, so this is only the read half of the same
+ * split, and it stays out of the registry because it is a display concern — the
+ * panel needs a value to mark a swatch active, nothing more.
+ */
+function textColorOf(element: MindflowElement): string {
+  if ('color' in element && typeof element.color === 'string') return element.color;
+  return element.label?.color ?? DEFAULT_TEXT_COLOR;
+}
 
 export class StylePanel {
   readonly element: HTMLElement;
@@ -103,24 +118,38 @@ export class StylePanel {
       for (const row of this.tableRows(first as TableElement)) this.element.append(row);
     }
 
+    // Palettes come from the type's definition where it declares one — a sticky
+    // note offers its own paper tones — falling back to the shared defaults.
+    // `first` decides for a mixed selection, matching how every other control in
+    // this panel already reports state.
+    const definition = getDefinition(first.type);
+
     this.element.append(
-      this.swatchRow('Stroke', PALETTE.stroke, first.style.stroke, (color) =>
-        this.actions.restyle({ stroke: color }, 'Change stroke'),
+      this.swatchRow(
+        'Stroke',
+        definition.palette?.stroke ?? PALETTE.stroke,
+        first.style.stroke,
+        (color, live) => this.actions.restyle({ stroke: color }, 'Change stroke', live),
       ),
     );
 
     if (anyFillable) {
       this.element.append(
-        this.swatchRow('Fill', PALETTE.fill, first.style.fill, (color) =>
-          this.actions.restyle(
-            // Choosing "transparent" must also switch fillStyle off, or the
-            // shape would render an invisible-but-present fill and still swallow
-            // clicks through its interior.
-            color === 'transparent'
-              ? { fill: color, fillStyle: 'none' }
-              : { fill: color, fillStyle: 'solid' },
-            'Change fill',
-          ),
+        this.swatchRow(
+          'Fill',
+          definition.palette?.fill ?? PALETTE.fill,
+          first.style.fill,
+          (color, live) =>
+            this.actions.restyle(
+              // Choosing "transparent" must also switch fillStyle off, or the
+              // shape would render an invisible-but-present fill and still swallow
+              // clicks through its interior.
+              color === 'transparent'
+                ? { fill: color, fillStyle: 'none' }
+                : { fill: color, fillStyle: 'solid' },
+              'Change fill',
+              live,
+            ),
         ),
       );
     }
@@ -199,6 +228,13 @@ export class StylePanel {
 
     if (anyText) {
       this.element.append(
+        // Ink, not outline. `color` has been in the format since 1.0.0 on text,
+        // sticky and table elements and on every `label`, but until now there
+        // was no way to set it — a board could carry coloured text that
+        // MindFlow rendered correctly and could not produce.
+        this.swatchRow('Text colour', PALETTE.text, textColorOf(first), (color, live) =>
+          this.actions.setTextProperty({ color }, live),
+        ),
         this.buttonRow(
           'Font',
           FONT_FAMILIES.map((family) => ({
@@ -261,6 +297,23 @@ export class StylePanel {
           onSelect: edit('Toggle header row', (el) => ({ ...el, headerRow: !el.headerRow })),
         },
       ]),
+      // Offered only with a header to fill. `headerFill` is specified as
+      // "ignored entirely when headerRow is false", so showing it otherwise
+      // would be a control that visibly does nothing.
+      ...(table.headerRow
+        ? [
+            this.swatchRow('Header fill', PALETTE.header, table.headerFill, (color) => {
+              this.store.execute(
+                updateElements(
+                  this.store.document,
+                  [table.id],
+                  (element) => ({ ...element, headerFill: color }) as MindflowElement,
+                  'Change header fill',
+                ),
+              );
+            }),
+          ]
+        : []),
       this.buttonRow('Rows', [
         { label: 'Add', active: false, onSelect: edit('Add row', (el) => insertRow(el, el.rows.length)) },
         {
@@ -356,34 +409,33 @@ export class StylePanel {
     );
   }
 
+  /**
+   * A row of palette swatches plus the trigger for the full picker.
+   *
+   * `onSelect` receives a `live` flag that is true only while the user is
+   * dragging inside the system colour picker. Callers pass it straight through
+   * to the command layer as `coalesce`, so a drag collapses into one undo step
+   * instead of one per frame. Clicking a swatch is never live.
+   */
   private swatchRow(
     label: string,
     colors: readonly string[],
     current: string,
-    onSelect: (color: string) => void,
+    onSelect: (color: string, live: boolean) => void,
   ): HTMLElement {
     const swatches = colors.map((color) =>
-      el('button', {
-        class: `mf-swatch${color === current ? ' is-active' : ''}${color === 'transparent' ? ' is-transparent' : ''}`,
-        type: 'button',
-        title: color,
-        'aria-label': `${label} ${color}`,
-        style: color === 'transparent' ? '' : `background:${color}`,
-        onclick: () => onSelect(color),
-      }),
+      swatch(color, { label, current, onSelect: (value) => onSelect(value, false) }),
     );
 
-    // A native color input as the escape hatch beyond the curated palette.
-    const custom = el('input', {
-      class: 'mf-color-input',
-      type: 'color',
-      title: 'Custom colour',
-      'aria-label': `Custom ${label.toLowerCase()} colour`,
-      value: current.startsWith('#') ? current.slice(0, 7) : '#000000',
-      oninput: (event: Event) => onSelect((event.target as HTMLInputElement).value),
+    const trigger = colorTrigger({
+      label,
+      current,
+      palette: colors,
+      onPreview: (color) => onSelect(color, true),
+      onCommit: (color) => onSelect(color, false),
     });
 
-    return this.section(label, ...swatches, custom);
+    return this.section(label, ...swatches, trigger);
   }
 
   private buttonRow(

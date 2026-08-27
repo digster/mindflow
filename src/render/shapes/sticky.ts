@@ -51,6 +51,11 @@ export const stickyDefinition: ElementDefinition<StickyElement> = {
     bindable: true,
   },
 
+  // The warm paper tones a note is actually created with, rather than the
+  // pastel washes the generic fill palette offers. Without this the style panel
+  // would present a set of colours that does not include the note's own.
+  palette: { fill: PALETTE.sticky },
+
   create(init: ElementInit): StickyElement {
     return {
       id: newElementId(),

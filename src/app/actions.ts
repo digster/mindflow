@@ -571,8 +571,21 @@ export class Actions {
     );
   }
 
-  /** Applies a style patch to every selected element. */
-  restyle(patch: Partial<MindflowElement['style']>, label = 'Change style'): void {
+  /**
+   * Applies a style patch to every selected element.
+   *
+   * `coalesce` merges consecutive same-label changes into one undo step, which
+   * live colour dragging needs: a native colour input fires `input` on every
+   * frame, so without it choosing a colour by dragging pushes dozens of history
+   * entries and `Cmd`+`Z` appears to do nothing. Off by default, because a
+   * discrete choice — clicking a swatch, picking a stroke width — should be its
+   * own step even when two arrive in quick succession.
+   */
+  restyle(
+    patch: Partial<MindflowElement['style']>,
+    label = 'Change style',
+    coalesce = false,
+  ): void {
     const ids = this.store.selectedIds();
     if (ids.length === 0) return;
     this.store.execute(
@@ -581,6 +594,7 @@ export class Actions {
         ids,
         (element) => ({ ...element, style: { ...element.style, ...patch } }),
         label,
+        coalesce,
       ),
     );
   }
@@ -606,7 +620,7 @@ export class Actions {
    * shape holds it inside `label`. Hiding that split here keeps the style panel
    * from having to know about it.
    */
-  setTextProperty(patch: Record<string, unknown>): void {
+  setTextProperty(patch: Record<string, unknown>, coalesce = false): void {
     const ids = this.store.selectedIds();
     if (ids.length === 0) return;
 
@@ -620,9 +634,15 @@ export class Actions {
           if (capabilities.label && element.label) {
             return { ...element, label: { ...element.label, ...patch } } as MindflowElement;
           }
+          // Neither owns text, or is labellable but has no label yet. Returning
+          // null skips it, so a mixed selection restyles what it can instead of
+          // refusing the whole edit.
           return null;
         },
         'Change text style',
+        // See `restyle`: live colour dragging needs the whole drag to be one
+        // undo step.
+        coalesce,
       ),
     );
   }

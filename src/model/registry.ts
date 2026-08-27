@@ -185,6 +185,24 @@ export interface ElementDefinition<T extends MindflowElement = MindflowElement> 
    */
   dragInteriorHandle?(el: T, id: string, local: Point): T;
 
+  /**
+   * Colour palettes this type offers in the style panel, overriding the
+   * defaults in `PALETTE`.
+   *
+   * Optional, and consulted only by the UI — it has no effect on the file
+   * format, which accepts any CSS colour for any element. It exists because a
+   * sticky note wants the warm paper tones it is actually created with, not the
+   * pastel washes a rectangle wants, and the alternative was a
+   * `type === 'sticky'` branch in the style panel. Same reasoning as
+   * {@link textRegions} and {@link interiorHandles}: an optional hook on the
+   * definition keeps the no-branching-on-type rule intact and costs existing
+   * types nothing.
+   */
+  palette?: {
+    stroke?: readonly string[];
+    fill?: readonly string[];
+  };
+
   capabilities: ElementCapabilities;
 }
 

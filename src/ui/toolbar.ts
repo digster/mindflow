@@ -45,6 +45,8 @@ export interface ToolbarCallbacks {
   onHelp: () => void;
   onSettings: () => void;
   onToggleGrid: () => void;
+  /** Opens the board background picker, anchored to the button that was clicked. */
+  onBackground: (at: { x: number; y: number }) => void;
   onRename: (name: string) => void;
 }
 
@@ -157,6 +159,10 @@ export class Toolbar {
         this.iconButton('zoomIn', `Zoom in — ${MOD_KEY}+`, () => this.actions.zoomBy(1.2)),
         this.iconButton('fit', `Zoom to fit — ${MOD_KEY}1`, () => this.actions.zoomToFit()),
         this.iconButton('grid', 'Toggle grid', () => this.callbacks.onToggleGrid()),
+        // Beside the grid toggle rather than in the style panel: both are
+        // board-level appearance, and the panel is hidden whenever nothing is
+        // selected — which is exactly when you reach for the background.
+        this.backgroundButton(),
       ),
       el(
         'div',
@@ -177,6 +183,33 @@ export class Toolbar {
         this.iconButton('settings', 'Settings', this.callbacks.onSettings),
       ),
     );
+  }
+
+  /**
+   * The background picker's trigger.
+   *
+   * Anchored by its own rect rather than by the pointer, so the popover lands in
+   * the same place whether the button was clicked or activated from the
+   * keyboard.
+   */
+  private backgroundButton(): HTMLButtonElement {
+    const button = el(
+      'button',
+      {
+        class: 'mf-icon-button',
+        type: 'button',
+        title: 'Board background',
+        'aria-label': 'Board background',
+        'aria-haspopup': 'dialog',
+        'data-action': 'background',
+        onclick: () => {
+          const rect = button.getBoundingClientRect();
+          this.callbacks.onBackground({ x: rect.left, y: rect.bottom + 6 });
+        },
+      },
+      icon(ICONS.palette),
+    ) as HTMLButtonElement;
+    return button;
   }
 
   private iconButton(name: IconName, title: string, onClick: () => void): HTMLButtonElement {

@@ -18,6 +18,7 @@ import { roughOutlineFor } from '../render/rough.ts';
 import { InteractionController } from '../input/controller.ts';
 import { installKeyboardShortcuts, isTypingTarget } from '../input/keyboard.ts';
 import { screenToScene } from '../model/geometry.ts';
+import { PALETTE } from '../model/defaults.ts';
 import { serializeDocument, type LoadResult } from '../model/document.ts';
 import { Actions } from './actions.ts';
 import { Toolbar, type ToolbarCallbacks } from '../ui/toolbar.ts';
@@ -28,6 +29,7 @@ import { StylePanel } from '../ui/stylePanel.ts';
 import { TextEditor } from '../ui/textEditor.ts';
 import { showContextMenu } from '../ui/contextMenu.ts';
 import { closePopover } from '../ui/popover.ts';
+import { openColorPopover } from '../ui/colorPicker.ts';
 import {
   confirmDialog,
   showDriveConnectDialog,
@@ -131,6 +133,7 @@ export class MindflowApp {
       onHelp: () => showShortcutsDialog(),
       onSettings: () => this.openSettings(),
       onToggleGrid: () => this.toggleGrid(),
+      onBackground: (at) => this.openBackgroundPicker(at),
       onRename: (name) => this.store.execute(renameBoard(this.store.document, name)),
     };
 
@@ -529,6 +532,38 @@ export class MindflowApp {
         visible ? 'Show grid' : 'Hide grid',
       ),
     );
+  }
+
+  /**
+   * Board background.
+   *
+   * Goes through `setCanvasSettings` like the grid toggle above, which is what
+   * makes it undoable — the command carries the whole `canvas` block before and
+   * after, so no separate history handling is needed for document-level state.
+   *
+   * Note that a dark background (the palette offers one) leaves the default
+   * near-black stroke almost invisible. That is left as the user's call rather
+   * than second-guessed: recolouring their elements because they changed the
+   * paper would be a far worse surprise than a board that needs a lighter pen.
+   */
+  private openBackgroundPicker(at: { x: number; y: number }): void {
+    openColorPopover({
+      at,
+      label: 'Background',
+      palette: PALETTE.canvas,
+      current: this.store.document.canvas.background,
+      onPreview: (background) => this.setBackground(background, true),
+      onCommit: (background) => this.setBackground(background, false),
+    });
+  }
+
+  private setBackground(background: string, coalesce: boolean): void {
+    const { canvas } = this.store.document;
+    if (canvas.background === background) return;
+    this.store.execute({
+      ...setCanvasSettings(this.store.document, { ...canvas, background }, 'Change background'),
+      coalesce,
+    });
   }
 
   private openSettings(): void {

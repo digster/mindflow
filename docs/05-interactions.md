@@ -140,6 +140,75 @@ its neighbours; equal gaps is what reads as evenly distributed. A negative `gap`
 
 Each operation is a single undo step, and bound connectors re-route afterwards.
 
+## Colour
+
+Every colour in the format is settable from the interface. Which controls appear
+follows from the selection's capabilities, exactly like the rest of the style
+panel.
+
+| Row | Writes | Shown when |
+|---|---|---|
+| **Stroke** | `style.stroke` | always |
+| **Fill** | `style.fill`, and `style.fillStyle` | the selection contains something fillable |
+| **Text colour** | `color`, or `label.color` | the selection can carry text |
+| **Header fill** | `headerFill` | a single table with `headerRow` on |
+| **Board background** | `canvas.background` | always — it is in the top bar, not the panel |
+
+Two of these need explaining.
+
+**Text colour writes to one of two places.** A type that owns its text directly
+(`text`, `sticky`, `table`) stores `color` on the element; every other shape
+stores it on `label`. One control covers both, and an element in a mixed
+selection that has no label yet is skipped rather than the whole edit being
+refused.
+
+**Board background lives in the top bar**, beside the grid toggle, rather than in
+the style panel. The panel is hidden whenever nothing is selected, which is
+precisely when you reach for the background.
+
+### The palette
+
+Each row offers a small curated palette. The values are in `PALETTE`
+(`src/model/defaults.ts`) and share their hues deliberately: text and stroke draw
+from the same six chromatic values, and every fill is a light tint of one of
+them, so a board looks composed without the user having to compose it.
+
+A type may override a palette by declaring one on its registry definition. A
+sticky note does, offering the warm paper tones it is actually created with
+rather than the generic pastel washes — and it does so without any code outside
+`render/shapes/` learning that sticky notes exist.
+
+**These are offered colours, not permitted ones.** The format accepts any CSS
+colour for any element, and nothing in this section constrains a document.
+
+### The picker
+
+The trailing swatch in each row — a rainbow ring around the colour currently in
+effect — opens a popover with:
+
+- the same palette, at a comfortable size;
+- **Recent**, the last eight colours used, most-recent first, de-duplicated
+  across notations so `#FFF` and `#ffffff` do not both occupy a slot. Stored in
+  `localStorage` under `mindflow.recentColors`; a browser that refuses storage
+  simply gets no strip;
+- a **hex field**, accepting `#rgb`, `#rgba`, `#rrggbb` and `#rrggbbaa` with or
+  without the leading `#`, in either case. Anything else is rejected visibly and
+  the typed text is left alone to be corrected;
+- the **system picker**, for anything else.
+
+Values are canonicalised to lower-case six- or eight-digit hex before being
+written, matching what the format says MindFlow emits.
+
+**One drag is one undo step.** A native colour input fires an event on every
+frame of a drag, so the whole interaction — including its final value — is
+applied as a single coalescing gesture, the same way a canvas drag is. Clicking a
+swatch or committing a hex value is a discrete choice and gets its own step.
+
+A dark board background is offered and leaves the default near-black stroke
+almost invisible. That is left as the author's call: silently recolouring
+elements because the paper changed would be a far worse surprise than a board
+that needs a lighter pen.
+
 ## Frames
 
 A **frame** is a named region that clips and moves its contents. Draw one with the

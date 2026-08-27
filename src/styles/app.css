@@ -393,7 +393,10 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  width: 232px;
+  /* Fits eight 22px swatches and their 5px gaps on one line — the widest row
+     any palette produces. At the old 232px the picker trigger wrapped onto a
+     line of its own under the fill and text rows. */
+  width: 244px;
   padding: 14px;
   overflow-y: auto;
   background: var(--mf-surface);
@@ -490,6 +493,83 @@ textarea {
 .mf-color-input::-webkit-color-swatch {
   border: none;
   border-radius: 3px;
+}
+
+/*
+ * The trigger that opens the full picker, sitting at the end of every swatch
+ * row. It carries a rainbow ring — the near-universal "choose a colour" signal —
+ * around a dot showing what is currently in effect, so it reads as "more
+ * colours" rather than as one more palette entry.
+ */
+.mf-color-trigger {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  cursor: pointer;
+  background: conic-gradient(
+    from 90deg,
+    #e03131,
+    #f08c00,
+    #ffec99,
+    #2f9e44,
+    #1971c2,
+    #9c36b5,
+    #e03131
+  );
+  border: 1px solid var(--mf-border-strong);
+  border-radius: var(--mf-radius-sm);
+  transition: transform var(--mf-transition), box-shadow var(--mf-transition);
+}
+
+.mf-color-trigger:hover {
+  transform: scale(1.1);
+}
+
+.mf-color-trigger::after {
+  position: absolute;
+  inset: 4px;
+  content: "";
+  background: var(--mf-trigger-color, transparent);
+  border: 1px solid var(--mf-surface);
+  border-radius: 2px;
+}
+
+/* No inner dot when the current value is "transparent" — the ring alone. */
+.mf-color-trigger.is-transparent::after {
+  background: var(--mf-surface);
+}
+
+.mf-color-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Same arithmetic as the style panel: a full row of eight recent colours has
+     to fit without wrapping. */
+  width: 240px;
+  padding: 12px;
+}
+
+.mf-hex-input {
+  /* `flex-basis: 0`, not `auto`: `.mf-input` sets `width: 100%`, which as a
+     basis would claim the whole row and wrap the system picker onto a line of
+     its own. */
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  font-family: var(--mf-font-mono);
+  font-size: 12px;
+  text-transform: lowercase;
+}
+
+/*
+ * Invalid hex. Deliberately a border change and not a cleared field: the typo
+ * has to stay on screen to be correctable, and blanking the input would read as
+ * the keystrokes having been dropped.
+ */
+.mf-hex-input.is-invalid {
+  border-color: var(--mf-danger);
+  outline-color: var(--mf-danger);
 }
 
 .mf-chip {
