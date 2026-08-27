@@ -44,6 +44,7 @@ async function getDocument(page: Page) {
     return JSON.parse(JSON.stringify(mf.store.document)) as {
       elements: Record<string, unknown>[];
       meta: { name: string };
+      canvas: { background: string; grid: { visible: boolean; size: number; snap: boolean } };
       files: Record<string, unknown>;
     };
   });
@@ -1430,6 +1431,134 @@ test.describe('tables', () => {
     // The interior rules: two verticals at 100 and 200 in the local frame.
     expect(svg).toContain('M100 0V120');
     expect(svg).toContain('M200 0V120');
+  });
+});
+
+test.describe('colour', () => {
+  test('a swatch sets the stroke, and the picker trigger is offered alongside', async ({ page }) => {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [280, 220]);
+
+    await page.getByRole('button', { name: 'Stroke #e03131' }).click();
+
+    const doc = await getDocument(page);
+    expect((doc.elements[0]?.style as { stroke: string }).stroke).toBe('#e03131');
+    await expect(page.getByRole('button', { name: 'More stroke colours' })).toBeVisible();
+  });
+
+  test('sets text colour on a sticky, which owns its text directly', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [260, 260]);
+
+    await page.getByRole('button', { name: 'Text colour #1971c2' }).click();
+
+    const doc = await getDocument(page);
+    expect(doc.elements[0]?.color).toBe('#1971c2');
+  });
+
+  test('sets text colour into `label` for a labelled shape', async ({ page }) => {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [280, 220]);
+    // Fill it, so its interior is hit-testable and can be double-clicked. An
+    // unfilled shape is click-through by design.
+    await page.getByRole('button', { name: 'Fill #ffffff' }).click();
+
+    // A rectangle has no `label` at all until it is given text, so type one.
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 190, box.y + 160);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('hello');
+    // Escape closes the editor AND clears the selection, which hides the panel.
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+a');
+
+    await page.getByRole('button', { name: 'Text colour #e03131' }).click();
+
+    const doc = await getDocument(page);
+    expect((doc.elements[0]?.label as { color: string }).color).toBe('#e03131');
+  });
+
+  test('a sticky offers its own paper palette, a rectangle the generic one', async ({ page }) => {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [260, 260]);
+
+    // #ffd8a8 is in PALETTE.sticky only; transparent is in PALETTE.fill only.
+    await expect(page.getByRole('button', { name: 'Fill #ffd8a8' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Fill transparent' })).toHaveCount(0);
+
+    await page.keyboard.press('Escape');
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [400, 100], [560, 220]);
+
+    await expect(page.getByRole('button', { name: 'Fill transparent' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Fill #ffd8a8' })).toHaveCount(0);
+  });
+
+  test('the popover offers hex entry, and rejects a value that is not a colour', async ({ page }) => {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [280, 220]);
+
+    await page.getByRole('button', { name: 'More stroke colours' }).click();
+    const hex = page.getByLabel('Stroke colour hex value');
+
+    await hex.fill('nonsense');
+    await hex.press('Enter');
+    // Still open, still marked invalid, and the element untouched.
+    await expect(hex).toHaveClass(/is-invalid/);
+    expect((await getDocument(page)).elements[0]?.style).toMatchObject({ stroke: '#1e1e1e' });
+
+    // Shorthand, no hash, upper case — all of which must be accepted.
+    await hex.fill('F0A');
+    await hex.press('Enter');
+    expect((await getDocument(page)).elements[0]?.style).toMatchObject({ stroke: '#ff00aa' });
+  });
+
+  test('remembers colours across selections', async ({ page }) => {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [280, 220]);
+
+    await page.getByRole('button', { name: 'More stroke colours' }).click();
+    const hex = page.getByLabel('Stroke colour hex value');
+    await hex.fill('#123456');
+    await hex.press('Enter');
+
+    // Re-open: the colour just used is now on the Recent strip. It is not in the
+    // curated palette, so the strip is the only place it can be coming from.
+    await page.getByRole('button', { name: 'More stroke colours' }).click();
+    const popover = page.locator('.mf-color-popover');
+    await expect(popover.getByRole('button', { name: 'Stroke #123456' })).toHaveCount(1);
+    await expect(popover.getByText('Recent')).toBeVisible();
+  });
+
+  test("a table's header fill is offered only when it has a header", async ({ page }) => {
+    await page.locator('[data-tool="table"]').click();
+    await drag(page, [100, 100], [400, 260]);
+
+    await expect(page.getByRole('button', { name: 'Header fill #d0ebff' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Header row' }).click();
+    await expect(page.getByRole('button', { name: /^Header fill/ })).toHaveCount(0);
+  });
+
+  test('changes the board background, and undo puts it back', async ({ page }) => {
+    expect((await getDocument(page)).canvas.background).toBe('#ffffff');
+
+    await page.getByRole('button', { name: 'Board background' }).click();
+    await page.getByRole('button', { name: 'Background #1e1e1e' }).click();
+
+    expect((await getDocument(page)).canvas.background).toBe('#1e1e1e');
+
+    await page.keyboard.press('Control+z');
+    expect((await getDocument(page)).canvas.background).toBe('#ffffff');
+  });
+
+  test('the background picker does not need a selection', async ({ page }) => {
+    // The reason it lives in the top bar rather than the style panel: the panel
+    // is hidden whenever nothing is selected, which is exactly when you reach
+    // for the background.
+    await expect(page.locator('.mf-style-panel')).toBeHidden();
+    await page.getByRole('button', { name: 'Board background' }).click();
+    await expect(page.locator('.mf-color-popover')).toBeVisible();
   });
 });
 

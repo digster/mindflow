@@ -587,3 +587,45 @@ does nothing.
 The corollary. `canUndo()`, an enabled button, a non-empty history and a dirty
 flag were all true and all meaningless above. A no-op command is still a command.
 Assert what the document contains after `undo()`.
+
+## A live colour drag is one gesture, so its *last* frame must coalesce too
+
+A native `<input type="color">` fires `input` on every frame of a drag. Each call
+into `Actions.restyle` pushed its own history entry, so picking a colour by
+dragging left dozens of undo steps and `Cmd`+`Z` appeared to do nothing. That bug
+shipped with the original swatch row and nothing caught it, because every proxy
+looked right: the element changed, the board went dirty, the undo button enabled.
+
+The obvious fix is half a fix. Threading `coalesce` through the preview path
+merges the frames — but if the *final* value then goes through a separate
+non-coalescing commit, the gesture costs **two** undos, and the first one rewinds
+only the last pixel of movement. That is arguably worse than the original bug,
+because it looks like it works.
+
+A drag is one gesture from first frame to last. `input` and `change` both go
+through the coalescing path; only a discrete choice — a swatch click, a typed hex
+value — earns its own step. This is the model `input/controller.ts` already used
+for canvas drags; the colour picker just had to adopt it.
+
+The test that catches it asserts the user-visible property, not the mechanism:
+*after one undo, the stroke is what it was before the drag started.* An assertion
+about the size of the undo stack would have passed the broken version.
+
+## Storing shorthand hex makes equal colours compare unequal
+
+`#fff` is a valid CSS colour and the format accepts it. Writing it into a
+document is still wrong: the style panel decides which swatch is active by
+comparing strings, so a shape whose fill is `#fff` matches no swatch even though
+`#ffffff` is right there in the palette, and two boards that are the same colour
+diff as different. `normalizeColor` expands shorthand and lower-cases before
+anything is stored — the "reading is lenient, writing is strict" rule applied to
+one more field.
+
+## `localStorage` can *throw* on access, not merely return null
+
+A browser set to block site data raises on `localStorage.getItem`, and in Node
+the identifier is not defined at all. Both are caught by the same `try/catch`,
+which is why every access in `ui/colorPicker.ts` has one. Worth stating because
+the failure mode is disproportionate: without the guard, a browser that declines
+to remember a shade of blue takes the whole application down at startup.
+

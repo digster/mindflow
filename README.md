@@ -36,6 +36,10 @@ cross-tab support, and a style clipboard that copies appearance without content.
 **Tables** — cell-by-cell editing with `Tab` to move on, draggable column and row
 dividers, and insert/delete for rows and columns from the right-click menu.
 
+**Colour** — stroke, fill, text, table header and board background, each with a
+curated palette, a hex field and a memory of the last eight colours you used.
+Types can offer their own palette: a sticky note shows paper tones, not pastels.
+
 **Getting around** — a command palette (`Cmd K`), text search across the board
 (`Cmd F`), and a right-click context menu.
 

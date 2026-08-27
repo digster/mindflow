@@ -81,12 +81,31 @@ export const Z_INDEX_STEP = 1000;
 /**
  * Default drawing colors. Kept deliberately small — a constrained palette makes
  * boards look coherent without the user having to think about color.
+ *
+ * The hues are shared across the palettes on purpose: `text` and `stroke` use
+ * the same six chromatic values, and every `fill` is a light tint of one of
+ * them. A board whose ink, outlines and washes are drawn from one family reads
+ * as designed rather than as assembled, and none of that requires the user to
+ * know it is happening.
+ *
+ * These are *offered* colors, not permitted ones. The format accepts any CSS
+ * color and the picker has a hex field, so nothing here constrains a document.
  */
 export const PALETTE = {
   stroke: ['#1e1e1e', '#e03131', '#2f9e44', '#1971c2', '#f08c00', '#9c36b5'],
   fill: ['transparent', '#ffffff', '#ffc9c9', '#b2f2bb', '#a5d8ff', '#ffec99', '#eebefa'],
   sticky: ['#ffec99', '#ffc9c9', '#b2f2bb', '#a5d8ff', '#eebefa', '#ffd8a8'],
-  canvas: ['#ffffff', '#f8f9fa', '#1e1e1e'],
+  /**
+   * Ink. Two neutrals ahead of the stroke hues, because most text is black or
+   * grey and burying those behind six colors would be the wrong default.
+   */
+  text: ['#1e1e1e', '#6b7280', '#e03131', '#2f9e44', '#1971c2', '#f08c00', '#9c36b5'],
+  /**
+   * Header row backgrounds for tables: neutrals and the palest tints, chosen so
+   * dark body text stays legible on every one of them.
+   */
+  header: ['#f1f3f5', '#e9ecef', '#ffe3e3', '#d3f9d8', '#d0ebff', '#fff3bf', '#f3d9fa'],
+  canvas: ['#ffffff', '#f8f9fa', '#fff9db', '#e7f5ff', '#1e1e1e'],
 } as const;
 
 export const DEFAULT_STYLE: ElementStyle = {

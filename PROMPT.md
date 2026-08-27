@@ -134,3 +134,18 @@ Building the per-cell undo test uncovered a pre-existing bug: undoing a text edi
 had never worked, for any element type. `TextEditor.commit` rewound to the
 element it read back out of the document, which `onInput` had already
 overwritten. Fixed, with two regression tests on a sticky note.
+
+> work on the following as 2 separate commits -
+> * add color support in our app
+> * the current icons look very amateur, use some free icons now and in the future
+
+**Commit 1 — colour.** The format had been colour-complete since 1.0.0; the UI
+exposed two of its colour fields. Added a text colour row (writing `color` or
+`label.color` depending on the type), a table header fill row, and a board
+background picker in the top bar, which finally gave `PALETTE.canvas` — defined
+since the first commit and referenced by nothing — a caller. Replaced the raw
+`<input type="color">` at the end of each swatch row with a popover carrying the
+palette, a recent-colours strip and a hex field. Types can now declare their own
+palette on their registry definition, so a sticky note offers paper tones without
+anything branching on `element.type`.
+
