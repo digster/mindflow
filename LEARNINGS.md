@@ -777,3 +777,18 @@ Cancelling now rewinds — transforms back to the elements captured at pointerdo
 creations deleted — and releases the pointer capture, which the handler also used
 to leak. That leak's symptom was the delayed, unrelated-looking one already in
 this file: the *next* drag silently does nothing.
+
+## Chromium's touch emulation is not a touch device
+
+The first version of the touch suite passed against the code it was written to
+fix. Emulated touch still sends the compatibility mouse events, so the textarea
+blurred and the editor closed by the old, accidental path — the tests asserted
+the right end state and proved nothing.
+
+What cannot be emulated is the *absence* of the focus change. The tests now
+install a capture-phase `mousedown` listener that prevents the default action,
+which reproduces the iPadOS condition exactly, and three of them fail without the
+fix (checked by reverting it, not by reasoning about it).
+
+The general lesson: when a bug is "the platform does not do X for us", the test
+has to stop the test platform doing X. Otherwise it is a test of the harness.

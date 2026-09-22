@@ -283,6 +283,8 @@ mid-drag is a surprising interaction no whiteboard offers.
 | Middle-button drag | Pan, from any tool. |
 | Pan tool + drag | Pan. |
 | Two-finger scroll / wheel | Pan. |
+| Two-finger drag on a touchscreen | Pan. See [Touch](#touch). |
+| Pinch on a touchscreen | Zoom about the fingers' midpoint. See [Touch](#touch). |
 | `Ctrl`/`Cmd` + wheel | Zoom about the pointer. |
 | Trackpad pinch | Zoom about the pointer. |
 
@@ -320,6 +322,8 @@ a stylus or a trackpad keeps the precise thresholds.
 | Drag | Move, resize, marquee — as with a mouse, past the 8px threshold. |
 | Double tap | Edit text, the touch equivalent of a double click. |
 | Long press | Open the context menu. |
+| Two-finger drag | Pan. |
+| Pinch | Zoom, about the midpoint of the two fingers. |
 
 **Targets are larger.** Click tolerance is **16 screen pixels** for a touch
 pointer rather than 8, and a selection handle's hit slop is 11 rather than 5. A
@@ -335,6 +339,26 @@ was the only route into editing an existing element.
 **A long press opens the context menu.** The press has already begun a move by
 the time the browser reports it, so that gesture is abandoned — which is free,
 because a press that has not crossed the drag threshold has changed nothing.
+
+**A second finger starts a pan and zoom**, and abandons whatever the first one
+had begun — rewinding it rather than committing it, since the user was reaching
+to zoom, not to move something. The new viewport is:
+
+```
+ratio  = spread(fingers now) / spread(fingers at touchdown)
+zoom   = clamp(zoom at touchdown x ratio, 0.1, 30)
+x      = anchor.x - midpoint(now).x / zoom
+y      = anchor.y - midpoint(now).y / zoom
+```
+
+where `anchor` is the scene point under the midpoint of the fingers when they
+landed, resolved in the viewport of that moment. One expression covers the pan
+and the zoom together, which is what keeps the board stuck to the fingers.
+
+Like every other gesture it is recomputed from the state captured at touchdown,
+so the fingers returning to where they started returns the board exactly with
+them. Lifting either finger ends the gesture; the remaining one does not inherit
+a drag, which would lurch the board from wherever that finger had travelled to.
 
 **Ending a text edit does not depend on focus.** See
 [Text editing](#text-editing).

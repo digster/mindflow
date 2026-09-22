@@ -76,6 +76,7 @@ import {
 } from './hitTest.ts';
 import { reassignFrames, withFrameMembers } from '../model/frames.ts';
 import { computeSnap } from './snapping.ts';
+import { type PinchPair, pinchViewport } from './pinch.ts';
 import {
   BIND_DISTANCE,
   connectorsToRefresh,
@@ -134,7 +135,8 @@ type Gesture =
   | { kind: 'createBox'; origin: Point; element: MindflowElement }
   | { kind: 'createLinear'; origin: Point; element: LinearElement }
   | { kind: 'freehand'; element: DrawElement; points: PointTuple[] }
-  | { kind: 'erase' };
+  | { kind: 'erase' }
+  | { kind: 'pinch'; start: PinchPair; startViewport: Viewport };
 
 export interface ControllerOptions {
   canvas: HTMLCanvasElement;
@@ -179,6 +181,14 @@ export class InteractionController {
    * the device may have a touchscreen without this particular gesture using it.
    */
   private coarsePointer = false;
+  /**
+   * Every touch currently down, in screen coordinates.
+   *
+   * Only touches: a mouse or a stylus cannot produce a second contact, and
+   * tracking them would mean clearing entries on a `pointerup` the canvas never
+   * receives because the press ended outside it.
+   */
+  private touches = new Map<number, Point>();
   /** The last completed tap, for recognising a double tap. */
   private lastTap: { at: Point; time: number } | null = null;
   /**
@@ -259,8 +269,21 @@ export class InteractionController {
   // -------------------------------------------------------------------------
 
   private onPointerDown = (event: PointerEvent): void => {
-    if (!event.isPrimary) return;
     const { store } = this.options;
+
+    if (event.pointerType === 'touch') {
+      this.touches.set(event.pointerId, this.screenPoint(event));
+      // A second finger means the user is panning or zooming, not drawing. The
+      // gesture the first finger began is abandoned rather than committed: it
+      // was never what they were asking for, and by this point it may already
+      // have moved something.
+      if (this.touches.size === 2) {
+        this.beginPinch();
+        return;
+      }
+    }
+
+    if (!event.isPrimary) return;
 
     // A text editor is open. Committing it here is not an optimisation of the
     // browser's own behaviour — it is the only thing that reliably ends the
@@ -526,6 +549,52 @@ export class InteractionController {
     this.gesture = { kind: 'createBox', origin: scene, element };
   }
 
+  /**
+   * Starts a two-finger pan and zoom.
+   *
+   * The board has no browser-provided fallback here: the canvas sets
+   * `touch-action: none` so it can own every gesture, which also means nothing
+   * pans or zooms unless this does. Before it existed, a touchscreen could only
+   * zoom through the toolbar.
+   */
+  private beginPinch(): void {
+    const points = [...this.touches.values()];
+    const [first, second] = points;
+    if (!first || !second) return;
+
+    // Undo whatever the first finger had begun. A press that never crossed its
+    // threshold has applied nothing, but one that did has already moved an
+    // element, and committing that would leave the user with a stray edit to
+    // undo after every pinch.
+    this.rewindGesture();
+    this.marquee = null;
+    this.guides = [];
+    this.bindingCandidates = [];
+    this.movedPastThreshold = false;
+    this.pointerDownScreen = null;
+    // A pinch is not a tap, and its two touchdowns must not read as a double
+    // tap when the fingers lift.
+    this.lastTap = null;
+
+    this.gesture = {
+      kind: 'pinch',
+      start: [first, second] as PinchPair,
+      startViewport: { ...this.options.store.viewport },
+    };
+    this.options.onOverlayChange();
+  }
+
+  private updatePinch(): void {
+    if (this.gesture.kind !== 'pinch') return;
+    const points = [...this.touches.values()];
+    const [first, second] = points;
+    if (!first || !second) return;
+
+    this.options.store.setViewport(
+      pinchViewport(this.gesture.startViewport, this.gesture.start, [first, second]),
+    );
+  }
+
   private beginLinearCreate(tool: 'line' | 'arrow', scene: Point): void {
     const { store } = this.options;
     const element = getDefinition<LinearElement>(tool).create({
@@ -585,6 +654,13 @@ export class InteractionController {
   // -------------------------------------------------------------------------
 
   private onPointerMove = (event: PointerEvent): void => {
+    if (event.pointerType === 'touch' && this.touches.has(event.pointerId)) {
+      this.touches.set(event.pointerId, this.screenPoint(event));
+      if (this.gesture.kind === 'pinch') {
+        this.updatePinch();
+        return;
+      }
+    }
     if (!event.isPrimary) return;
     const { store } = this.options;
     const scene = this.scenePoint(event);
@@ -824,6 +900,20 @@ export class InteractionController {
   // -------------------------------------------------------------------------
 
   private onPointerUp = (event: PointerEvent): void => {
+    this.touches.delete(event.pointerId);
+
+    if (this.gesture.kind === 'pinch') {
+      // Lifting one finger ends the pinch outright. Handing the gesture to the
+      // finger still down would lurch the board, because that finger has
+      // travelled a long way from where it would have started a drag.
+      this.gesture = { kind: 'none' };
+      this.releaseCapture(event.pointerId);
+      this.pointerDownScreen = null;
+      this.movedPastThreshold = false;
+      this.lastTap = null;
+      return;
+    }
+
     if (!event.isPrimary) return;
     const { store } = this.options;
     const scene = this.scenePoint(event);
@@ -1049,6 +1139,7 @@ export class InteractionController {
     // or one undo would rewind both.
     this.options.store.history.breakCoalescing();
 
+    this.touches.delete(event.pointerId);
     this.rewindGesture();
     this.gesture = { kind: 'none' };
     this.marquee = null;

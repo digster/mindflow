@@ -193,3 +193,10 @@ became a real teardown that rewinds what the gesture had applied and releases
 the capture. Double tap opens the text editor, since `dblclick` does not arrive
 reliably from a finger, and a long press opens the context menu instead of being
 swallowed by the move it had already started.
+
+**Commit 4 — pan and pinch.** Not part of the three, and the third made it
+impossible to leave out: `touch-action: none` means nothing pans or zooms unless
+the app does, so a touchscreen could only zoom from the toolbar. A second finger
+abandons the first one's gesture and starts a pinch, recomputed from the captured
+start like every other gesture. The arithmetic is a pure function so it can be
+unit-tested, since two simultaneous contacts need raw CDP.

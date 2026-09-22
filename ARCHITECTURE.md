@@ -166,7 +166,17 @@ classes means duplicating the shared cases in every one of them.
 **Each `pointermove` recomputes from the state captured at `pointerdown`**, never
 by applying a delta to the previous frame. Incremental application accumulates
 floating-point error across a long drag and, worse, makes a dropped or coalesced
-event corrupt the result permanently.
+event corrupt the result permanently. A pinch follows the same rule, which is why
+the fingers returning to where they started returns the board exactly with them.
+
+**Touch is a property of the gesture, not of the device.** The controller records
+`event.pointerType` at `pointerdown`, and the drag threshold, click tolerance and
+handle slop all read from it. A media query would be wrong: a tablet driven with
+a stylus or a trackpad wants the precise numbers, and owning a touchscreen says
+nothing about what is touching it right now. The pinch arithmetic lives in
+[`src/input/pinch.ts`](src/input/pinch.ts), free of the DOM, because Playwright
+can only drive two simultaneous contacts through raw CDP and the numbers deserve
+a unit test.
 
 ## Text editing
 

@@ -46,6 +46,10 @@ Types can offer their own palette: a sticky note shows paper tones, not pastels.
 **Getting around** — a command palette (`Cmd K`), text search across the board
 (`Cmd F`), and a right-click context menu.
 
+**Touch** — tap to select, drag to move, double-tap to edit text, long-press for
+the context menu, two-finger drag to pan and pinch to zoom. Hit targets and drag
+thresholds size themselves to whatever is doing the pointing.
+
 **Connectors** — arrows that bind to shapes and re-route automatically when those
 shapes move. Straight, curved or elbow routing; five arrowhead styles.
 

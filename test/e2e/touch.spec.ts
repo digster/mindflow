@@ -99,6 +99,40 @@ async function doubleTap(page: Page, point: Point) {
   await tap(page, point);
 }
 
+/** A two-finger gesture: both contacts move from `from` to `to` together. */
+async function pinch(page: Page, from: [Point, Point], to: [Point, Point], steps = 6) {
+  const start = [await onCanvas(page, from[0]), await onCanvas(page, from[1])];
+  const end = [await onCanvas(page, to[0]), await onCanvas(page, to[1])];
+
+  await dispatch(page, 'touchStart', [
+    { ...start[0]!, id: 1 },
+    { ...start[1]!, id: 2 },
+  ]);
+  for (let step = 1; step <= steps; step += 1) {
+    await dispatch(
+      page,
+      'touchMove',
+      start.map((point, index) => ({
+        x: point.x + ((end[index]!.x - point.x) * step) / steps,
+        y: point.y + ((end[index]!.y - point.y) * step) / steps,
+        id: index + 1,
+      })),
+    );
+  }
+  await dispatch(page, 'touchEnd', []);
+}
+
+async function viewport(page: Page) {
+  return page.evaluate(() => {
+    const mf = (
+      window as unknown as {
+        mindflow: { store: { viewport: { x: number; y: number; zoom: number } } };
+      }
+    ).mindflow;
+    return { ...mf.store.viewport };
+  });
+}
+
 async function getDocument(page: Page) {
   return page.evaluate(() => {
     const mf = (window as unknown as { mindflow: { store: { document: unknown } } }).mindflow;
@@ -351,5 +385,79 @@ test.describe('selecting and dragging by touch', () => {
 
     const after = await positionOf(page);
     expect(after.x - before.x).toBeCloseTo(150, 0);
+  });
+});
+
+test.describe('two-finger pan and pinch', () => {
+  test('spreading two fingers zooms in', async ({ page }) => {
+    const before = await viewport(page);
+
+    await pinch(page, [[400, 300], [500, 300]], [[350, 300], [550, 300]]);
+
+    const after = await viewport(page);
+    expect(after.zoom).toBeCloseTo(before.zoom * 2, 1);
+  });
+
+  test('bringing them together zooms out', async ({ page }) => {
+    const before = await viewport(page);
+
+    await pinch(page, [[300, 300], [500, 300]], [[350, 300], [450, 300]]);
+
+    const after = await viewport(page);
+    expect(after.zoom).toBeCloseTo(before.zoom / 2, 1);
+  });
+
+  test('moving both together pans without zooming', async ({ page }) => {
+    const before = await viewport(page);
+
+    await pinch(page, [[300, 300], [400, 300]], [[200, 350], [300, 350]]);
+
+    const after = await viewport(page);
+    expect(after.zoom).toBeCloseTo(before.zoom, 3);
+    expect(after.x).toBeCloseTo(before.x + 100, 0);
+    expect(after.y).toBeCloseTo(before.y - 50, 0);
+  });
+
+  test('a second finger abandons the drag the first one started', async ({ page }) => {
+    // Committing it instead would leave a stray edit to undo after every pinch,
+    // and the user never asked for it — they were reaching to zoom.
+    await stickyWithMouse(page, [300, 250], [460, 410]);
+    const doc = await getDocument(page);
+    const before = { x: doc.elements[0]?.x as number, y: doc.elements[0]?.y as number };
+
+    const first = await onCanvas(page, [380, 330]);
+    await dispatch(page, 'touchStart', [{ ...first, id: 1 }]);
+    await dispatch(page, 'touchMove', [{ x: first.x + 60, y: first.y + 60, id: 1 }]);
+
+    const second = await onCanvas(page, [600, 330]);
+    await dispatch(page, 'touchStart', [
+      { x: first.x + 60, y: first.y + 60, id: 1 },
+      { ...second, id: 2 },
+    ]);
+    await dispatch(page, 'touchEnd', []);
+
+    const after = await getDocument(page);
+    expect({ x: after.elements[0]?.x, y: after.elements[0]?.y }).toEqual(before);
+  });
+
+  test('the board is still usable afterwards', async ({ page }) => {
+    // The pinch ends when a finger lifts; the next gesture must start clean
+    // rather than inheriting a capture or a half-finished state.
+    await stickyWithMouse(page, [300, 250], [460, 410]);
+    await pinch(page, [[600, 500], [700, 500]], [[560, 500], [740, 500]]);
+
+    // The pinch moved the board, so the element is no longer where it was on
+    // screen. Its centre is computed from the viewport the gesture left behind
+    // — which also checks that viewport is coherent.
+    const view = await viewport(page);
+    const doc = await getDocument(page);
+    const element = doc.elements[0]!;
+    const centre: Point = [
+      ((element.x as number) + (element.width as number) / 2 - view.x) * view.zoom,
+      ((element.y as number) + (element.height as number) / 2 - view.y) * view.zoom,
+    ];
+
+    await tap(page, centre);
+    expect(await selectedCount(page)).toBe(1);
   });
 });
