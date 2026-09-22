@@ -64,10 +64,6 @@ export {
   cylinderDefinition,
   coneDefinition,
   pyramidDefinition,
-  sphereDefinition,
-  prismDefinition,
-  torusDefinition,
-  capsuleDefinition,
   depthOf,
   isSolidType,
   solidFaces,
@@ -75,5 +71,4 @@ export {
   solidSilhouette,
   toneColor,
   DEPTH_RATIO,
-  TORUS_HOLE,
 } from './solids.ts';

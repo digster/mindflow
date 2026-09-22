@@ -1,5 +1,5 @@
 /**
- * Solids: cube, cylinder, cone, pyramid, sphere, prism, torus and capsule.
+ * Solids: cube, cylinder, cone and pyramid.
  *
  * MindFlow draws on a 2D canvas, so these are 2.5D: a fixed oblique projection
  * of a solid, not a camera looking at a model. That choice is what keeps them
@@ -56,16 +56,12 @@ import type { ElementDefinition, ElementInit, RenderContext } from '../../model/
 import { registerElement } from '../../model/registry.ts';
 import type {
   BaseElement,
-  CapsuleElement,
   ConeElement,
   CubeElement,
   CylinderElement,
   MindflowElement,
   Point,
-  PrismElement,
   PyramidElement,
-  SphereElement,
-  TorusElement,
 } from '../../model/types.ts';
 import { DEFAULT_STYLE, newElementId } from '../../model/defaults.ts';
 import {
@@ -82,32 +78,13 @@ import {
   tracePoints,
 } from './shared.ts';
 
-/** The eight types this module registers. */
-export type SolidType =
-  | 'cube'
-  | 'cylinder'
-  | 'cone'
-  | 'pyramid'
-  | 'sphere'
-  | 'prism'
-  | 'torus'
-  | 'capsule';
+/** The four types this module registers. */
+export type SolidType = 'cube' | 'cylinder' | 'cone' | 'pyramid';
 
-type SolidElement =
-  | CubeElement
-  | CylinderElement
-  | ConeElement
-  | PyramidElement
-  | SphereElement
-  | PrismElement
-  | TorusElement
-  | CapsuleElement;
+type SolidElement = CubeElement | CylinderElement | ConeElement | PyramidElement;
 
 /** Depth offset as a fraction of the box's shorter side. */
 export const DEPTH_RATIO = 0.25;
-
-/** How flat a torus's hole is, as a fraction of the box. */
-export const TORUS_HOLE = { x: 0.42, y: 0.3 } as const;
 
 /** The projection offset for one element. */
 export function depthOf(width: number, height: number): number {
@@ -122,12 +99,6 @@ export interface SolidFace {
   /** Closed outline, curves already sampled. */
   points: Point[];
   tone: FaceTone;
-  /**
-   * A second contour subtracted from `points` under the even-odd rule. Only a
-   * torus has one, and it is what makes the hole a hole rather than a disc
-   * painted in the same colour as the ring.
-   */
-  hole?: Point[];
 }
 
 /** The colour a tone resolves to for a given fill. */
@@ -271,80 +242,7 @@ export function solidFaces(type: SolidType, w: number, h: number): SolidFace[] {
         { tone: 'shaded', points: [apex, front, { x: w, y: h - ry }] },
       ];
     }
-
-    case 'sphere': {
-      const ry = d / 2;
-      // The lens between the equator's near half and the lower outline reads as
-      // the shaded underside; the equator itself is the boundary between them,
-      // so no separate seam has to be stroked.
-      const equator = arcPoints(w / 2, h / 2, w / 2, ry, Math.PI, 0);
-      const lower = arcPoints(w / 2, h / 2, w / 2, h / 2, 0, Math.PI);
-      return [
-        { tone: 'base', points: ellipseLoop(w / 2, h / 2, w / 2, h / 2) },
-        { tone: 'shaded', points: [...equator, ...lower.slice(1)] },
-      ];
-    }
-
-    case 'prism': {
-      // A triangular prism on its rectangular face. The back triangle is the
-      // front one translated by (+d, -d); only the right-hand roof face and the
-      // front triangle survive the projection.
-      const apex = { x: (w - d) / 2, y: d };
-      const left = { x: 0, y: h };
-      const right = { x: w - d, y: h };
-      const backApex = { x: (w + d) / 2, y: 0 };
-      const backRight = { x: w, y: h - d };
-      return [
-        { tone: 'lit', points: [apex, backApex, backRight, right] },
-        { tone: 'base', points: [apex, right, left] },
-      ];
-    }
-
-    case 'torus': {
-      return [
-        {
-          tone: 'base',
-          points: ellipseLoop(w / 2, h / 2, w / 2, h / 2),
-          hole: ellipseLoop(w / 2, h / 2, (w / 2) * TORUS_HOLE.x, (h / 2) * TORUS_HOLE.y),
-        },
-      ];
-    }
-
-    case 'capsule': {
-      const vertical = h >= w;
-      const r = vertical ? w / 2 : h / 2;
-      const body = capsuleOutline(w, h, r, vertical);
-      // The seam sits one cap in from the near end; everything beyond it is the
-      // dome, which catches the light.
-      const cap = vertical
-        ? [
-            ...arcPoints(w / 2, r, w / 2, d / 2, Math.PI, 0),
-            ...arcPoints(w / 2, r, r, r, 0, Math.PI).slice(1),
-          ]
-        : [
-            ...arcPoints(r, h / 2, d / 2, h / 2, -Math.PI / 2, Math.PI / 2),
-            ...arcPoints(r, h / 2, r, r, Math.PI / 2, (Math.PI * 3) / 2).slice(1),
-          ];
-      return [
-        { tone: 'base', points: body },
-        { tone: 'lit', points: cap },
-      ];
-    }
   }
-}
-
-/** A stadium: two semicircular caps on the box's longer axis. */
-function capsuleOutline(w: number, h: number, r: number, vertical: boolean): Point[] {
-  if (vertical) {
-    return [
-      ...arcPoints(w / 2, r, r, r, Math.PI, Math.PI * 2), // top cap
-      ...arcPoints(w / 2, h - r, r, r, 0, Math.PI), // bottom cap
-    ];
-  }
-  return [
-    ...arcPoints(r, h / 2, r, r, Math.PI / 2, (Math.PI * 3) / 2), // left cap
-    ...arcPoints(w - r, h / 2, r, r, -Math.PI / 2, Math.PI / 2), // right cap
-  ];
 }
 
 /**
@@ -354,24 +252,20 @@ function capsuleOutline(w: number, h: number, r: number, vertical: boolean): Poi
  * Derived from the same face geometry rather than written a second time, so a
  * change to the projection cannot leave the hit region describing the old shape.
  * For a convex solid the union of the faces IS the silhouette; the outline is
- * recovered by walking the outermost face boundary, which for these eight shapes
- * is the convex hull of every face vertex.
+ * recovered by walking the outermost face boundary, which for the flat-faced
+ * solids is the convex hull of every face vertex.
  */
 export function solidSilhouette(type: SolidType, w: number, h: number): Point[] {
-  // Curved solids have an exact outline that a hull of sampled points would only
-  // approximate from the inside, shrinking the hit region slightly.
-  if (type === 'sphere' || type === 'torus') return ellipseLoop(w / 2, h / 2, w / 2, h / 2);
-  if (type === 'capsule') {
-    const vertical = h >= w;
-    return capsuleOutline(w, h, vertical ? w / 2 : h / 2, vertical);
-  }
+  // A curved solid's first face already runs along its whole outline, exactly;
+  // a hull of sampled points would only approximate it from the inside,
+  // shrinking the hit region slightly.
   if (type === 'cylinder' || type === 'cone') {
     return solidFaces(type, w, h)[0]!.points;
   }
   return convexHull(solidFaces(type, w, h).flatMap((face) => face.points));
 }
 
-/** Andrew's monotone chain. Small inputs — the eight faces above are at most six points each. */
+/** Andrew's monotone chain. Small inputs — the faces above are at most four points each. */
 function convexHull(points: Point[]): Point[] {
   const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
   if (sorted.length < 3) return sorted;
@@ -417,20 +311,6 @@ export function solidLabelBox(
     case 'cone':
     case 'pyramid':
       return { x: w / 4, y: h / 2, width: w / 2, height: Math.max(h / 2 - d / 2, 1) };
-    case 'prism':
-      return {
-        x: (w - d) * 0.25,
-        y: d + (h - d) * 0.5,
-        width: Math.max((w - d) * 0.5, 1),
-        height: Math.max((h - d) * 0.5, 1),
-      };
-    case 'sphere':
-      // Above the equator, which would otherwise strike through the text.
-      return { x: w * 0.15, y: h * 0.15, width: w * 0.7, height: h * 0.35 };
-    default:
-      // A torus's hole and a capsule's waist are both centred, so the whole box
-      // is already right.
-      return { x: 0, y: 0, width: w, height: h };
   }
 }
 
@@ -443,25 +323,10 @@ const DEFAULT_SIZES: Record<SolidType, { width: number; height: number }> = {
   cylinder: { width: 110, height: 130 },
   cone: { width: 110, height: 130 },
   pyramid: { width: 120, height: 110 },
-  sphere: { width: 110, height: 110 },
-  prism: { width: 130, height: 110 },
-  torus: { width: 130, height: 110 },
-  capsule: { width: 90, height: 140 },
 };
 
 export function isSolidType(type: string): type is SolidType {
   return type in DEFAULT_SIZES;
-}
-
-/** Traces a face, including its hole, as the current path. */
-function traceFace(ctx: CanvasRenderingContext2D, face: SolidFace): void {
-  tracePoints(ctx, face.points, true);
-  if (!face.hole) return;
-  const [first, ...rest] = face.hole;
-  if (!first) return;
-  ctx.moveTo(first.x, first.y);
-  for (const point of rest) ctx.lineTo(point.x, point.y);
-  ctx.closePath();
 }
 
 function silhouetteOf(el: MindflowElement): Point[] {
@@ -528,13 +393,8 @@ function defineSolid<T extends SolidElement>(type: T['type'], title: string): El
     draw(el: T, { ctx }: RenderContext): void {
       const fill = hasFill(el.style) ? el.style.fill : null;
       for (const face of solidFaces(type, el.width, el.height)) {
-        traceFace(ctx, face);
-        paintFace(
-          ctx,
-          el.style,
-          fill === null ? null : toneColor(fill, face.tone),
-          face.hole ? 'evenodd' : 'nonzero',
-        );
+        tracePoints(ctx, face.points, true);
+        paintFace(ctx, el.style, fill === null ? null : toneColor(fill, face.tone));
       }
       drawLabel(ctx, el);
     },
@@ -543,16 +403,7 @@ function defineSolid<T extends SolidElement>(type: T['type'], title: string): El
       const outline = silhouetteOf(el);
       const solid = hasFill(el.style) || (el.label && el.label.text !== '');
 
-      if (solid && pointInPolygon(local, outline)) {
-        // A torus is a ring: the hole is genuinely empty, so a click there must
-        // reach whatever is behind it.
-        if (type === 'torus') {
-          const hole = solidFaces(type, el.width, el.height)[0]?.hole;
-          if (!hole || !pointInPolygon(local, hole)) return true;
-        } else {
-          return true;
-        }
-      }
+      if (solid && pointInPolygon(local, outline)) return true;
 
       return distanceToPolyline(local, [...outline, outline[0]!]) <= tolerance;
     },
@@ -571,16 +422,8 @@ export const cubeDefinition = defineSolid<CubeElement>('cube', 'Cube');
 export const cylinderDefinition = defineSolid<CylinderElement>('cylinder', 'Cylinder');
 export const coneDefinition = defineSolid<ConeElement>('cone', 'Cone');
 export const pyramidDefinition = defineSolid<PyramidElement>('pyramid', 'Pyramid');
-export const sphereDefinition = defineSolid<SphereElement>('sphere', 'Sphere');
-export const prismDefinition = defineSolid<PrismElement>('prism', 'Prism');
-export const torusDefinition = defineSolid<TorusElement>('torus', 'Torus');
-export const capsuleDefinition = defineSolid<CapsuleElement>('capsule', 'Capsule');
 
 registerElement(cubeDefinition);
 registerElement(cylinderDefinition);
 registerElement(coneDefinition);
 registerElement(pyramidDefinition);
-registerElement(sphereDefinition);
-registerElement(prismDefinition);
-registerElement(torusDefinition);
-registerElement(capsuleDefinition);

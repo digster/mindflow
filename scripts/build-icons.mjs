@@ -70,10 +70,6 @@ export const MANIFEST = {
   cylinder: 'cylinder',
   cone: 'cone',
   pyramid: 'pyramid',
-  sphere: 'globe',
-  prism: 'tent',
-  torus: 'torus',
-  capsule: 'pill',
 
   // History and view
   undo: 'undo-2',

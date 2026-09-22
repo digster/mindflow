@@ -1629,13 +1629,17 @@ test.describe('the shape flyout', () => {
 
   test('lists every closed shape', async ({ page }) => {
     await page.getByRole('button', { name: 'More shapes' }).click();
-    // Sixteen: the three that predate the flyout, five flat polygons, eight solids.
-    await expect(page.locator('.mf-shape-option')).toHaveCount(16);
+    // Twelve: the three that predate the flyout, five flat polygons, four solids.
+    await expect(page.locator('.mf-shape-option')).toHaveCount(12);
     await expect(page.locator('.mf-shape-option[data-shape="cube"]')).toBeVisible();
+    // Retired in schema 1.5.0.
+    for (const retired of ['sphere', 'prism', 'torus', 'capsule']) {
+      await expect(page.locator(`.mf-shape-option[data-shape="${retired}"]`)).toHaveCount(0);
+    }
   });
 
   test('does not grow the tool strip', async ({ page }) => {
-    // The whole point of the flyout: thirteen new types, no new buttons.
+    // The whole point of the flyout: nine new types, no new buttons.
     await expect(page.locator('.mf-tool')).toHaveCount(14);
   });
 
@@ -1669,10 +1673,10 @@ test.describe('the shape flyout', () => {
 
   test('a shape chosen from the command palette appears in the slot', async ({ page }) => {
     await page.keyboard.press('Control+k');
-    await page.locator('.mf-palette-input').fill('Torus');
+    await page.locator('.mf-palette-input').fill('Pyramid');
     await page.keyboard.press('Enter');
 
-    await expect(page.locator('[data-tool="torus"]')).toHaveClass(/is-active/);
+    await expect(page.locator('[data-tool="pyramid"]')).toHaveClass(/is-active/);
   });
 });
 
@@ -1759,21 +1763,33 @@ test.describe('polygons and solids', () => {
     expect(svg).not.toContain('<ellipse');
   });
 
-  test('a torus exports with a real hole', async ({ page }) => {
-    await page.getByRole('button', { name: 'More shapes' }).click();
-    await page.locator('.mf-shape-option[data-shape="torus"]').click();
-    await drag(page, [100, 100], [300, 260]);
+  test('a 1.4.0 board opens its retired solids as flat shapes', async ({ page }) => {
+    // Through the real open path — a file dropped on the window — so the
+    // migration is proven to run before the board reaches the store, and the
+    // shapes land in the drawn element list rather than the preserved one.
+    const board = {
+      type: 'mindflow.board',
+      schemaVersion: '1.4.0',
+      elements: [
+        { id: 'el_torus', type: 'torus', x: 80, y: 80, width: 160, height: 120 },
+        { id: 'el_capsule', type: 'capsule', x: 320, y: 80, width: 80, height: 160 },
+      ],
+    };
 
-    const svg = await page.evaluate(() => {
-      const mf = (
-        window as unknown as {
-          mindflow: { store: { document: unknown }; exportToSVG(doc: unknown): string };
-        }
-      ).mindflow;
-      return mf.exportToSVG(mf.store.document);
-    });
+    await page.evaluate((content) => {
+      const data = new DataTransfer();
+      data.items.add(new File([content], 'old.mindflow.json', { type: 'application/json' }));
+      document
+        .querySelector('.mf-canvas')!
+        .dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
+    }, JSON.stringify(board));
 
-    expect(svg).toContain('fill-rule="evenodd"');
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(2);
+    const doc = await getDocument(page);
+    expect(doc.elements.map((element) => element.type)).toEqual(['ellipse', 'rectangle']);
+    expect(doc.elements[1]).toMatchObject({ cornerRadius: 40 });
+    // An upgrade is an `info` note, which is not worth interrupting anyone for.
+    await expect(page.locator('dialog.mf-dialog')).toHaveCount(0);
   });
 });
 

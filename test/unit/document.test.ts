@@ -354,6 +354,172 @@ describe('version handling', () => {
   });
 });
 
+/**
+ * 1.5.0 retired four of the solids 1.4.0 introduced. An unrecognised type is
+ * preserved but never drawn, so without the migration a board holding one
+ * would lose the shape from the canvas while still carrying it in the file.
+ */
+describe('1.4.0 → 1.5.0: retired solids', () => {
+  /** A fully-populated element as a 1.4.0 build wrote it. */
+  const written = (id: string, type: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    type,
+    x: 40,
+    y: 60,
+    width: 90,
+    height: 140,
+    angle: 15,
+    zIndex: 1000,
+    opacity: 0.8,
+    locked: false,
+    visible: true,
+    groupId: null,
+    frameId: null,
+    style: {
+      stroke: '#1e1e1e',
+      strokeWidth: 2,
+      strokeStyle: 'dashed',
+      fill: '#a5d8ff',
+      fillStyle: 'solid',
+      // Stored by a paste-style onto a solid, which never drew it.
+      roughness: 1.4,
+    },
+    label: { text: 'Kept', fontFamily: 'sans', fontSize: 20, fontWeight: 400, color: '#1e1e1e', textAlign: 'center', verticalAlign: 'middle' },
+    meta: { source: 'third-party' },
+    ...extra,
+  });
+
+  const board = (...elements: unknown[]) =>
+    JSON.stringify({ type: 'mindflow.board', schemaVersion: '1.4.0', elements });
+
+  const loaded = (...elements: unknown[]) => loadDocument(board(...elements));
+
+  it('turns each one into the flat shape of its outline', () => {
+    const { document, preserved } = loaded(
+      written('el_sphere', 'sphere'),
+      written('el_torus', 'torus'),
+      written('el_prism', 'prism'),
+      written('el_capsule', 'capsule'),
+    );
+
+    expect(document.elements.map((element) => [element.id, element.type])).toEqual([
+      ['el_sphere', 'ellipse'],
+      ['el_torus', 'ellipse'],
+      ['el_prism', 'triangle'],
+      ['el_capsule', 'rectangle'],
+    ]);
+    // Nothing fell through to the unknown-type path, where it would not be drawn.
+    expect(preserved).toEqual([]);
+  });
+
+  it('carries everything but the type across untouched', () => {
+    const { document } = loaded(
+      written('el_sphere', 'sphere', { groupId: 'grp_pair' }),
+      written('el_cube', 'cube', { groupId: 'grp_pair', x: 400 }),
+    );
+    const element = document.elements[0] as MindflowElement;
+
+    expect(element).toMatchObject({
+      id: 'el_sphere',
+      x: 40,
+      y: 60,
+      width: 90,
+      height: 140,
+      angle: 15,
+      zIndex: 1000,
+      opacity: 0.8,
+      groupId: 'grp_pair',
+      meta: { source: 'third-party' },
+    });
+    expect(element.style).toMatchObject({ stroke: '#1e1e1e', strokeStyle: 'dashed', fill: '#a5d8ff' });
+    expect(element.label?.text).toBe('Kept');
+  });
+
+  it('makes a capsule a rectangle rounded into a pill, whichever way it lies', () => {
+    const { document } = loaded(
+      written('el_upright', 'capsule', { width: 90, height: 140 }),
+      written('el_lying', 'capsule', { width: 200, height: 60 }),
+    );
+    const radii = document.elements.map((element) => (element as MindflowElement & { cornerRadius: number }).cornerRadius);
+    expect(radii).toEqual([45, 30]);
+  });
+
+  it('zeroes the roughness a solid stored but never drew', () => {
+    // Every shape a solid can become has a hand-drawn form, so carrying the value
+    // across would make it turn sketchy on upgrade.
+    const { document } = loaded(written('el_prism', 'prism'));
+    expect(document.elements[0]?.style.roughness).toBe(0);
+  });
+
+  it('leaves every other type alone, including the solids that stayed', () => {
+    const { document } = loaded(
+      written('el_cube', 'cube'),
+      written('el_rect', 'rectangle', { cornerRadius: 8 }),
+    );
+    expect(document.elements.map((element) => element.type)).toEqual(['cube', 'rectangle']);
+    // Roughness is only reset on a converted element; a rectangle drew its own.
+    expect(document.elements.map((element) => element.style.roughness)).toEqual([1.4, 1.4]);
+  });
+
+  it('keeps a connector bound to a converted shape', () => {
+    const { document, warnings } = loaded(
+      written('el_capsule', 'capsule'),
+      written('el_cube', 'cube', { x: 400 }),
+      {
+        id: 'el_arrow',
+        type: 'arrow',
+        x: 0,
+        y: 0,
+        width: 10,
+        height: 10,
+        points: [[0, 0], [10, 10]],
+        startBinding: { elementId: 'el_capsule', anchor: { mode: 'auto' }, gap: 6 },
+        endBinding: { elementId: 'el_cube', anchor: { mode: 'auto' }, gap: 6 },
+      },
+    );
+
+    const arrow = document.elements.find((element) => element.id === 'el_arrow') as LinearElement;
+    expect(arrow.startBinding?.elementId).toBe('el_capsule');
+    expect(warnings.filter((warning) => warning.level === 'error')).toEqual([]);
+  });
+
+  it('reports the upgrade quietly, as every other migration does', () => {
+    const { warnings } = loaded(written('el_torus', 'torus'));
+    const upgrade = warnings.find((warning) => warning.message.includes('1.4.0 → 1.5.0'));
+    expect(upgrade?.level).toBe('info');
+    expect(warnings.filter((warning) => warning.level !== 'info')).toEqual([]);
+  });
+
+  it('copes with a capsule whose box it cannot read', () => {
+    // Reading is lenient: the loader repairs the box, and the rectangle keeps its
+    // default radius rather than one computed from garbage.
+    const { document } = loaded(written('el_capsule', 'capsule', { width: 'wide', height: null }));
+    const element = document.elements[0] as MindflowElement & { cornerRadius: number };
+    expect(element.type).toBe('rectangle');
+    expect(Number.isFinite(element.cornerRadius)).toBe(true);
+  });
+
+  it('also upgrades a board from before the solids existed', () => {
+    // The chain runs 1.3.0 → 1.4.0 → 1.5.0, so a hand-written board that used a
+    // type ahead of its declared version still lands on a drawable shape.
+    const { document } = loadDocument(
+      JSON.stringify({ type: 'mindflow.board', schemaVersion: '1.3.0', elements: [written('el_sphere', 'sphere')] }),
+    );
+    expect(document.elements[0]?.type).toBe('ellipse');
+  });
+
+  it('does not rewrite a board that already claims 1.5.0', () => {
+    // A current-version board naming a retired type was not written by MindFlow.
+    // It gets the ordinary unknown-type treatment — preserved verbatim, not
+    // reinterpreted — exactly as a type from a future version would.
+    const { document, preserved } = loadDocument(
+      JSON.stringify({ type: 'mindflow.board', schemaVersion: '1.5.0', elements: [written('el_sphere', 'sphere')] }),
+    );
+    expect(document.elements).toEqual([]);
+    expect(preserved).toHaveLength(1);
+  });
+});
+
 function stripUpdatedAt(json: string): unknown {
   const parsed = JSON.parse(json) as { meta: { updatedAt?: string } };
   delete parsed.meta.updatedAt;

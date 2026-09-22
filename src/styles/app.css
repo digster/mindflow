@@ -391,7 +391,7 @@ textarea {
  * The shape slot: one tool button plus a small opener for the flyout.
  *
  * The opener overlaps the button's bottom-right corner rather than sitting
- * beside it, so a sixteen-shape family costs the palette no extra width — the
+ * beside it, so a twelve-shape family costs the palette no extra width — the
  * strip stays one column, which is the whole reason the flyout exists.
  */
 .mf-tool-slot {

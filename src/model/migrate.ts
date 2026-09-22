@@ -6,10 +6,11 @@
  * the format ships with a transform from the previous version, and loading walks
  * the chain from a document's declared version up to {@link CURRENT_SCHEMA_VERSION}.
  *
- * Every published version so far has been purely additive, so each entry below
- * is an identity transform. They are not omitted: `needsMigration` triggers on
- * any version inequality, so a missing step would make every older board load
- * with a "no migration is available" warning, which reads as data loss.
+ * Every version up to 1.4.0 was purely additive, so those entries are identity
+ * transforms. They are not omitted: `needsMigration` triggers on any version
+ * inequality, so a missing step would make every older board load with a "no
+ * migration is available" warning, which reads as data loss. 1.5.0 is the first
+ * to transform anything — it retired four element types.
  *
  * ---------------------------------------------------------------------------
  * Adding a migration
@@ -19,7 +20,7 @@
  *   3. Copy `docs/schema/mindflow-<old>.schema.json` and edit the new copy —
  *      published schemas are immutable, since files reference them by URL.
  *   4. Record the change in `docs/CHANGELOG.md` with a rationale.
- *   5. Add a fixture in `test/unit/migrate.test.ts` proving the old file loads.
+ *   5. Add a fixture in `test/unit/document.test.ts` proving the old file loads.
  *
  * Migrations receive and return plain unvalidated objects, never typed elements.
  * They run before normalisation, so each one sees the document exactly as its
@@ -100,7 +101,90 @@ const MIGRATIONS: Record<string, Migration> = {
     description: 'Additive: the flat polygon and solid element types.',
     migrate: (document) => document,
   },
+
+  /**
+   * The first migration that changes anything. 1.5.0 retired four of the
+   * solids 1.4.0 introduced, and a board holding one must not lose it: an
+   * unrecognised type is preserved but not drawn, so without this step the
+   * shape would silently vanish from the canvas while lingering in the file.
+   *
+   * Each becomes the flat shape that draws its silhouette — see
+   * {@link RETIRED_SOLIDS}. Everything else about the element (id, box, angle,
+   * z-order, style, label, group and frame membership, `meta`) is carried over
+   * untouched, so connectors bound to it stay bound.
+   */
+  '1.4.0': {
+    to: '1.5.0',
+    description:
+      'Retired the `sphere`, `prism`, `torus` and `capsule` types; any on this board ' +
+      'became the flat shape of their outline.',
+    migrate(document) {
+      if (!Array.isArray(document.elements)) return document;
+      return { ...document, elements: document.elements.map(retireSolid) };
+    },
+  },
 };
+
+// ---------------------------------------------------------------------------
+// 1.4.0 → 1.5.0
+// ---------------------------------------------------------------------------
+
+type RawElement = Record<string, unknown>;
+
+function isRawElement(value: unknown): value is RawElement {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * What each type retired in 1.5.0 becomes: the flat shape whose outline is the
+ * solid's silhouette, so the board keeps its layout and loses only the shading.
+ *
+ *   sphere   the ellipse inscribed in the box — exactly its old silhouette
+ *   torus    the same ellipse; the hole is the one thing that cannot survive
+ *   prism    a triangle, apex top-centre — the prism seen face-on
+ *   capsule  a rectangle whose corner radius is half its shorter side, which
+ *            is precisely a stadium: the old silhouette, exactly
+ *
+ * Published in `docs/CHANGELOG.md` so another reader of the format can apply
+ * the same conversion.
+ */
+const RETIRED_SOLIDS: Record<string, (element: RawElement) => RawElement> = {
+  sphere: (element) => ({ ...element, type: 'ellipse' }),
+  torus: (element) => ({ ...element, type: 'ellipse' }),
+  prism: (element) => ({ ...element, type: 'triangle' }),
+  capsule: (element) => {
+    const radius = pillRadius(element.width, element.height);
+    // A box too malformed to size a pill from is left to the loader, which
+    // repairs it and falls back to the rectangle's default radius.
+    return radius === null
+      ? { ...element, type: 'rectangle' }
+      : { ...element, type: 'rectangle', cornerRadius: radius };
+  },
+};
+
+function retireSolid(element: unknown): unknown {
+  if (!isRawElement(element) || typeof element.type !== 'string') return element;
+  const convert = RETIRED_SOLIDS[element.type];
+  if (!convert) return element;
+
+  const converted = convert(element);
+  // A solid never drew its `roughness` — it has no hand-drawn form — but every
+  // shape it can become does. Carrying a stored value across would make the
+  // shape turn sketchy the moment the board is upgraded, so it is zeroed to
+  // keep the drawing as it was. A missing or malformed style is left for the
+  // loader, whose default roughness is already 0.
+  return isRawElement(converted.style)
+    ? { ...converted, style: { ...converted.style, roughness: 0 } }
+    : converted;
+}
+
+/** Half the box's shorter side, or `null` when the raw box cannot be read. */
+function pillRadius(width: unknown, height: unknown): number | null {
+  const w = Number(width);
+  const h = Number(height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+  return Math.min(w, h) / 2;
+}
 
 // ---------------------------------------------------------------------------
 // Version comparison

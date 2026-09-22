@@ -199,10 +199,6 @@ export const ELEMENT_TYPES = [
   'cylinder',
   'cone',
   'pyramid',
-  'sphere',
-  'prism',
-  'torus',
-  'capsule',
 ] as const;
 export type ElementType = (typeof ELEMENT_TYPES)[number];
 
@@ -586,24 +582,6 @@ export interface PyramidElement extends BaseElement {
   type: 'pyramid';
 }
 
-export interface SphereElement extends BaseElement {
-  type: 'sphere';
-}
-
-/** A triangular prism resting on its rectangular face. */
-export interface PrismElement extends BaseElement {
-  type: 'prism';
-}
-
-export interface TorusElement extends BaseElement {
-  type: 'torus';
-}
-
-/** A cylinder with hemispherical ends — a pill. */
-export interface CapsuleElement extends BaseElement {
-  type: 'capsule';
-}
-
 /** Discriminated union of every element type. Narrow on `.type`. */
 export type MindflowElement =
   | RectangleElement
@@ -624,11 +602,7 @@ export type MindflowElement =
   | CubeElement
   | CylinderElement
   | ConeElement
-  | PyramidElement
-  | SphereElement
-  | PrismElement
-  | TorusElement
-  | CapsuleElement;
+  | PyramidElement;
 
 /** Elements whose geometry is a point list rather than a box. */
 export type PathElement = LinearElement | DrawElement;
@@ -719,7 +693,7 @@ export interface MindflowDocument {
 }
 
 /** The schema version this build reads and writes natively. */
-export const CURRENT_SCHEMA_VERSION = '1.4.0';
+export const CURRENT_SCHEMA_VERSION = '1.5.0';
 
 /** Canonical filename extension for a board. */
 export const FILE_EXTENSION = '.mindflow.json';

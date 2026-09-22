@@ -34,7 +34,7 @@ const TOOLS: ToolSpec[] = [
   { id: 'pan', icon: 'pan', label: 'Pan', shortcut: 'H' },
   { id: 'rectangle', icon: 'rectangle', label: 'Rectangle', shortcut: 'R' },
   { id: 'ellipse', icon: 'ellipse', label: 'Ellipse', shortcut: 'O' },
-  // The shape slot. Sixteen shapes cannot each have a toolbar button without
+  // The shape slot. Twelve shapes cannot each have a toolbar button without
   // turning the strip into a wall of icons, so all of them live in a flyout and
   // one slot shows the last one used. It starts on `diamond`, which is what the
   // slot replaced.
