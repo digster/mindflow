@@ -156,3 +156,47 @@ rather than a single path's `d`, because real icons need several elements.
 Building the extractor's whitelist test caught a silent bug in the extractor
 itself: attribute names containing digits (`x1`, `y1`) matched nothing and were
 dropped, so the frame icon had been generated as four empty `<line />` elements.
+
+> - add some basic 3d shapes
+> - while working with a touch device like an ipad, if the cursor in the text box
+>   is active and i click elsewhere or select something else, the cursor is still
+>   active.
+> - Also, the text box selecting and dragging does not seem to work well(on touch
+>   devices).
+> - do the 3 changes in different commits
+
+Scoped in conversation to thirteen new element types (five flat polygons, eight
+solids), reached through a new shape flyout rather than thirteen more toolbar
+buttons, plus a fourth commit adding the two-finger pan and pinch-to-zoom a
+touchscreen otherwise has no way to reach.
+
+**Commit 1 — shapes.** Schema 1.4.0. `triangle`, `pentagon`, `hexagon`, `star`,
+`parallelogram`, `cube`, `cylinder`, `cone`, `pyramid`, `sphere`, `prism`,
+`torus`, `capsule`. None adds a field: a polygon's vertices are fractions of the
+box, and a solid's depth is computed (`0.25 × min(w, h)`) rather than stored, so
+resizing one is the ordinary base-geometry change every other type gets. Faces
+derive lit and shaded tones from the element's single `fill`. One new optional
+registry member, `labelBox`, puts a solid's label on its front face in all three
+renderers at once.
+
+**Commit 2 — the caret that would not go away.** The canvas press handler
+carried a comment saying it committed the editor and only cleared a store flag;
+the editor actually closed as a side effect of a native focus change, which a
+touch screen does not reliably cause. It now commits explicitly, a window-level
+listener covers presses on the chrome, `commit()` blurs before hiding so the
+soft keyboard goes down, and `open()` focuses inside the gesture so it comes up.
+
+**Commit 3 — selecting and dragging by touch.** Every input constant had been
+sized for a mouse. The drag threshold, the click tolerance and the handle slop
+now read from the pointer type of the gesture in progress. `pointercancel`
+became a real teardown that rewinds what the gesture had applied and releases
+the capture. Double tap opens the text editor, since `dblclick` does not arrive
+reliably from a finger, and a long press opens the context menu instead of being
+swallowed by the move it had already started.
+
+**Commit 4 — pan and pinch.** Not part of the three, and the third made it
+impossible to leave out: `touch-action: none` means nothing pans or zooms unless
+the app does, so a touchscreen could only zoom from the toolbar. A second finger
+abandons the first one's gesture and starts a pinch, recomputed from the captured
+start like every other gesture. The arithmetic is a pure function so it can be
+unit-tested, since two simultaneous contacts need raw CDP.

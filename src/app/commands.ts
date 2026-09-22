@@ -13,6 +13,8 @@
  */
 
 import type { Store, ToolId } from '../store/store.ts';
+import { SHAPE_TOOLS } from '../store/store.ts';
+import { getDefinition } from '../model/registry.ts';
 import type { Actions } from './actions.ts';
 import type { ToolbarCallbacks } from '../ui/toolbar.ts';
 import { MOD_KEY } from '../ui/dom.ts';
@@ -31,24 +33,49 @@ export interface Command {
   enabled: () => boolean;
 }
 
-const TOOL_COMMANDS: { tool: ToolId; title: string; shortcut: string }[] = [
-  { tool: 'select', title: 'Select tool', shortcut: 'V' },
-  { tool: 'pan', title: 'Pan tool', shortcut: 'H' },
-  { tool: 'rectangle', title: 'Rectangle tool', shortcut: 'R' },
-  { tool: 'ellipse', title: 'Ellipse tool', shortcut: 'O' },
-  { tool: 'line', title: 'Line tool', shortcut: 'L' },
-  { tool: 'arrow', title: 'Arrow tool', shortcut: 'A' },
-  { tool: 'draw', title: 'Draw tool', shortcut: 'P' },
-  { tool: 'text', title: 'Text tool', shortcut: 'T' },
-  { tool: 'sticky', title: 'Sticky note tool', shortcut: 'N' },
-  { tool: 'table', title: 'Table tool', shortcut: 'B' },
-  // Diamond and frame were missing here while being present in the toolbar and
-  // the keyboard map — the palette is a hand-maintained third copy, and this is
-  // exactly the drift that costs.
-  { tool: 'diamond', title: 'Diamond tool', shortcut: 'D' },
-  { tool: 'frame', title: 'Frame tool', shortcut: 'F' },
-  { tool: 'eraser', title: 'Eraser tool', shortcut: 'E' },
+/** Single-letter shortcuts, for the handful of tools that have one. */
+const TOOL_SHORTCUTS: Partial<Record<ToolId, string>> = {
+  select: 'V',
+  pan: 'H',
+  rectangle: 'R',
+  ellipse: 'O',
+  line: 'L',
+  arrow: 'A',
+  draw: 'P',
+  text: 'T',
+  sticky: 'N',
+  table: 'B',
+  diamond: 'D',
+  frame: 'F',
+  eraser: 'E',
+};
+
+/**
+ * The palette used to be a hand-maintained copy of the tool list, and drifted:
+ * `diamond` and `frame` were in the toolbar and the keyboard map but missing
+ * here for two releases. The shape family now comes from `SHAPE_TOOLS` and its
+ * titles from the element registry, so a new shape type appears here the moment
+ * it is registered. Shapes reached only through the toolbar's flyout have no
+ * single-letter shortcut — there are not enough letters, and this is how they
+ * stay discoverable.
+ */
+const TOOL_LIST: { tool: ToolId; title: string }[] = [
+  { tool: 'select', title: 'Select tool' },
+  { tool: 'pan', title: 'Pan tool' },
+  ...SHAPE_TOOLS.map((tool) => ({ tool, title: `${getDefinition(tool).title} tool` })),
+  { tool: 'line', title: 'Line tool' },
+  { tool: 'arrow', title: 'Arrow tool' },
+  { tool: 'draw', title: 'Draw tool' },
+  { tool: 'text', title: 'Text tool' },
+  { tool: 'sticky', title: 'Sticky note tool' },
+  { tool: 'table', title: 'Table tool' },
+  { tool: 'frame', title: 'Frame tool' },
+  { tool: 'eraser', title: 'Eraser tool' },
 ];
+
+const TOOL_COMMANDS: { tool: ToolId; title: string; shortcut: string }[] = TOOL_LIST.map(
+  ({ tool, title }) => ({ tool, title, shortcut: TOOL_SHORTCUTS[tool] ?? '' }),
+);
 
 export function buildCommands(
   store: Store,

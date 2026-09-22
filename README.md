@@ -25,8 +25,11 @@ drift apart.
 
 **Canvas** — infinite pan and zoom, grid with snapping, alignment guides.
 
-**Tools** — select, pan, rectangle, ellipse, diamond, line, arrow, freehand, text,
-table, sticky note, frame, image, eraser. Shapes can render clean or hand-drawn.
+**Tools** — select, pan, line, arrow, freehand, text, table, sticky note, frame,
+image, eraser, and sixteen closed shapes in a flyout: rectangle, ellipse,
+diamond, triangle, pentagon, hexagon, star, parallelogram, and the solids — cube,
+cylinder, cone, pyramid, sphere, prism, torus and capsule. Flat shapes can render
+clean or hand-drawn.
 
 **Editing** — move, resize and rotate (including correct rotated resizing),
 multi-select, marquee, grouping, frames that clip and move their contents, align
@@ -42,6 +45,10 @@ Types can offer their own palette: a sticky note shows paper tones, not pastels.
 
 **Getting around** — a command palette (`Cmd K`), text search across the board
 (`Cmd F`), and a right-click context menu.
+
+**Touch** — tap to select, drag to move, double-tap to edit text, long-press for
+the context menu, two-finger drag to pan and pinch to zoom. Hit targets and drag
+thresholds size themselves to whatever is doing the pointing.
 
 **Connectors** — arrows that bind to shapes and re-route automatically when those
 shapes move. Straight, curved or elbow routing; five arrowhead styles.

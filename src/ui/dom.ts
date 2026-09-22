@@ -92,3 +92,17 @@ export function clear(node: Element): void {
 export const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 export const MOD_KEY = IS_MAC ? '⌘' : 'Ctrl';
+
+/**
+ * True when the primary pointer is a finger rather than a mouse or stylus.
+ *
+ * Note that `IS_MAC` above cannot answer this: iPadOS reports
+ * `navigator.platform === 'MacIntel'` and a desktop Safari user agent, so an
+ * iPad is indistinguishable from a Mac that way. The pointer media query asks
+ * the question that actually matters — how accurate the pointing device is —
+ * and `maxTouchPoints` covers browsers that answer it conservatively.
+ */
+export const IS_COARSE_POINTER =
+  typeof window !== 'undefined' &&
+  (window.matchMedia?.('(pointer: coarse)').matches === true ||
+    (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0));

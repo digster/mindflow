@@ -58,6 +58,23 @@ export const MANIFEST = {
   image: 'image',
   eraser: 'eraser',
 
+  // Shapes. `shapes` opens the toolbar's flyout; the rest are its contents, and
+  // each key is an element type name so the flyout can index this by tool id.
+  shapes: 'shapes',
+  triangle: 'triangle',
+  pentagon: 'pentagon',
+  hexagon: 'hexagon',
+  star: 'star',
+  parallelogram: 'local:parallelogram',
+  cube: 'box',
+  cylinder: 'cylinder',
+  cone: 'cone',
+  pyramid: 'pyramid',
+  sphere: 'globe',
+  prism: 'tent',
+  torus: 'torus',
+  capsule: 'pill',
+
   // History and view
   undo: 'undo-2',
   redo: 'redo-2',
@@ -94,6 +111,24 @@ export const MANIFEST = {
   alignBottom: 'align-end-horizontal',
   distributeH: 'align-horizontal-distribute-center',
   distributeV: 'align-vertical-distribute-center',
+};
+
+/**
+ * Icons Lucide does not carry, drawn here in its idiom: a 24x24 box, stroked at
+ * width 2, no fill.
+ *
+ * A `local:` slug in the manifest resolves to this map instead of to a file in
+ * `node_modules`. These still go through `extract` and its whitelist, so a
+ * hand-written icon is held to exactly the same standard as an upstream one —
+ * which is what keeps `icon()`'s use of `innerHTML` justified.
+ *
+ *   parallelogram  Lucide has hexagon, pentagon, octagon and triangle, but no
+ *                  parallelogram. Approximating one with `rectangle-horizontal`
+ *                  would make the flyout's most distinctive flowchart shape
+ *                  indistinguishable from a rectangle.
+ */
+export const LOCAL_ICONS = {
+  parallelogram: '<svg viewBox="0 0 24 24"><path d="M7 4h14l-4 16H3Z"/></svg>',
 };
 
 /**
@@ -184,8 +219,15 @@ export function extract(slug, source) {
 export async function generate() {
   const entries = [];
   for (const [name, slug] of Object.entries(MANIFEST)) {
-    const source = await readFile(join(ICON_DIR, `${slug}.svg`), 'utf8');
-    entries.push(`  /** Lucide \`${slug}\` */\n  ${name}: '${extract(slug, source)}',`);
+    const local = slug.startsWith('local:') ? slug.slice('local:'.length) : null;
+    if (local !== null && !LOCAL_ICONS[local]) {
+      throw new Error(`${name}: no local icon named "${local}"`);
+    }
+    const source = local === null
+      ? await readFile(join(ICON_DIR, `${slug}.svg`), 'utf8')
+      : LOCAL_ICONS[local];
+    const credit = local === null ? `Lucide \`${slug}\`` : `MindFlow, drawn in Lucide's idiom`;
+    entries.push(`  /** ${credit} */\n  ${name}: '${extract(slug, source)}',`);
   }
 
   const { version } = JSON.parse(

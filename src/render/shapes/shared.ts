@@ -10,6 +10,7 @@
 
 import type { ElementLabel, ElementStyle, FontFamily, MindflowElement, Point } from '../../model/types.ts';
 import { clamp } from '../../model/geometry.ts';
+import { labelBoxOf } from '../../model/registry.ts';
 
 // ---------------------------------------------------------------------------
 // Fonts
@@ -238,13 +239,21 @@ export function drawTextBlock(
   ctx.restore();
 }
 
-/** Draws an element's `label`, if it has one, centred in its local box. */
+/**
+ * Draws an element's `label`, if it has one, centred in its label box.
+ *
+ * The box is usually the element's own, but a type may inset it — a solid puts
+ * its label on the front face. `labelBoxOf` is the one reader of that hook, and
+ * the DOM text editor consults the same function, which is what keeps the two
+ * layout engines agreeing.
+ */
 export function drawLabel(ctx: CanvasRenderingContext2D, el: MindflowElement): void {
   const label: ElementLabel | null = el.label;
   if (!label || label.text === '') return;
 
-  const innerWidth = Math.max(el.width - label.padding * 2, 1);
-  const innerHeight = Math.max(el.height - label.padding * 2, 1);
+  const box = labelBoxOf(el);
+  const innerWidth = Math.max(box.width - label.padding * 2, 1);
+  const innerHeight = Math.max(box.height - label.padding * 2, 1);
   const metrics = layoutText(label.text, {
     maxWidth: innerWidth,
     fontFamily: label.fontFamily,
@@ -256,7 +265,12 @@ export function drawLabel(ctx: CanvasRenderingContext2D, el: MindflowElement): v
   drawTextBlock(
     ctx,
     metrics,
-    { x: label.padding, y: label.padding, width: innerWidth, height: innerHeight },
+    {
+      x: box.x + label.padding,
+      y: box.y + label.padding,
+      width: innerWidth,
+      height: innerHeight,
+    },
     {
       color: label.color,
       textAlign: label.textAlign,
@@ -305,17 +319,111 @@ export function applyStroke(ctx: CanvasRenderingContext2D, style: ElementStyle):
   ctx.setLineDash(dashPattern(style));
 }
 
-/** Fills then strokes the current path, honouring the style's on/off switches. */
-export function paintPath(ctx: CanvasRenderingContext2D, style: ElementStyle): void {
+/**
+ * Fills then strokes the current path, honouring the style's on/off switches.
+ *
+ * `fillRule` exists for the one shape with a hole in it: a torus is a single
+ * path holding two ellipses, and `"evenodd"` is what makes the inner one a hole
+ * the board shows through rather than a disc painted over the outer one. SVG
+ * export carries the same rule across as `fill-rule`.
+ */
+export function paintPath(
+  ctx: CanvasRenderingContext2D,
+  style: ElementStyle,
+  fillRule: CanvasFillRule = 'nonzero',
+): void {
   if (hasFill(style)) {
     ctx.fillStyle = style.fill;
-    ctx.fill();
+    ctx.fill(fillRule);
   }
   if (hasStroke(style)) {
     applyStroke(ctx, style);
     ctx.stroke();
     ctx.setLineDash([]); // Leave the context clean for the next element.
   }
+}
+
+/**
+ * Fills the current path with an explicit colour, then strokes it with the
+ * element's own stroke. The painting primitive for one face of a solid: the
+ * faces differ only in tone, and every edge between them is the same stroke the
+ * silhouette uses, so a solid reads as one object rather than three shapes.
+ *
+ * `fill` of `null` skips the fill, which is how an unfilled solid stays
+ * see-through instead of quietly gaining a white interior.
+ */
+export function paintFace(
+  ctx: CanvasRenderingContext2D,
+  style: ElementStyle,
+  fill: string | null,
+  fillRule: CanvasFillRule = 'nonzero',
+): void {
+  if (fill !== null) {
+    ctx.fillStyle = fill;
+    ctx.fill(fillRule);
+  }
+  if (hasStroke(style)) {
+    applyStroke(ctx, style);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Face shading
+// ---------------------------------------------------------------------------
+
+/**
+ * How far a lit or shaded face moves from the element's own fill, 0..1.
+ *
+ * Published in `docs/07-rendering.md`: the tones are COMPUTED, so a reader
+ * given only `"fill": "#a5d8ff"` cannot reproduce a cube without this constant
+ * and the formulas in {@link shadeColor}.
+ */
+export const FACE_SHADE = 0.15;
+
+/**
+ * Mixes a hex colour towards white (`amount > 0`) or black (`amount < 0`).
+ *
+ * Returns the input untouched for anything it cannot parse — `transparent`, a
+ * CSS keyword, `rgb()`, a gradient a future version might allow. That is a
+ * deliberate fallback rather than an oversight: guessing a tone for an unknown
+ * colour space would make MindFlow and an external renderer disagree, whereas
+ * "all faces share the fill and the stroke carries the form" is reproducible by
+ * anyone. MindFlow itself always writes hex, so the fallback is rare in practice.
+ */
+export function shadeColor(color: string, amount: number): string {
+  const parsed = parseHex(color);
+  if (!parsed) return color;
+
+  const mix = (channel: number): number =>
+    amount >= 0
+      ? Math.round(channel + (255 - channel) * amount)
+      : Math.round(channel * (1 + amount));
+
+  const hex = (value: number): string => clamp(mix(value), 0, 255).toString(16).padStart(2, '0');
+  return `#${hex(parsed.r)}${hex(parsed.g)}${hex(parsed.b)}${parsed.a}`;
+}
+
+/** `#rgb`, `#rgba`, `#rrggbb` and `#rrggbbaa`, the four forms MindFlow writes. */
+function parseHex(color: string): { r: number; g: number; b: number; a: string } | null {
+  const value = color.trim();
+  if (!/^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value)) return null;
+
+  const body = value.slice(1);
+  const short = body.length <= 4;
+  const at = (index: number): number => {
+    const digits = short ? body[index]!.repeat(2) : body.slice(index * 2, index * 2 + 2);
+    return parseInt(digits, 16);
+  };
+
+  // Alpha is carried through as text rather than re-emitted, so a fill that
+  // arrived as `#rrggbbaa` keeps exactly the transparency it was given.
+  const alpha = short
+    ? (body[3] ?? '') && body[3]!.repeat(2)
+    : body.slice(6, 8);
+
+  return { r: at(0), g: at(1), b: at(2), a: alpha || '' };
 }
 
 /**

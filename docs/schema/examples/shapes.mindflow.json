@@ -1,0 +1,458 @@
+{
+  "$schema": "https://digster.github.io/mindflow/docs/schema/mindflow-1.4.0.schema.json",
+  "type": "mindflow.board",
+  "schemaVersion": "1.4.0",
+  "id": "brd_ShapesEx14",
+  "meta": {
+    "name": "Polygons and solids",
+    "createdAt": "2026-09-22T10:00:00.000Z",
+    "updatedAt": "2026-09-22T10:00:00.000Z",
+    "app": {
+      "name": "mindflow",
+      "version": "0.1.0"
+    }
+  },
+  "canvas": {
+    "background": "#ffffff",
+    "grid": {
+      "visible": false,
+      "size": 20,
+      "snap": false
+    }
+  },
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "elements": [
+    {
+      "id": "el_Triangle00",
+      "type": "triangle",
+      "x": 40,
+      "y": 60,
+      "width": 120,
+      "height": 100,
+      "angle": 0,
+      "zIndex": 1000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 1
+      },
+      "label": null,
+      "meta": {}
+    },
+    {
+      "id": "el_Pentagon01",
+      "type": "pentagon",
+      "x": 190,
+      "y": 60,
+      "width": 120,
+      "height": 110,
+      "angle": 0,
+      "zIndex": 1010,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#a5d8ff",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {}
+    },
+    {
+      "id": "el_Hexagon02",
+      "type": "hexagon",
+      "x": 340,
+      "y": 60,
+      "width": 120,
+      "height": 110,
+      "angle": 0,
+      "zIndex": 1020,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#b2f2bb",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": {
+        "text": "Hex",
+        "fontFamily": "sans",
+        "fontSize": 16,
+        "fontWeight": 400,
+        "lineHeight": 1.25,
+        "color": "#1e1e1e",
+        "textAlign": "center",
+        "verticalAlign": "middle",
+        "padding": 8
+      },
+      "meta": {}
+    },
+    {
+      "id": "el_Star03",
+      "type": "star",
+      "x": 490,
+      "y": 60,
+      "width": 120,
+      "height": 115,
+      "angle": 0,
+      "zIndex": 1030,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#ffec99",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {}
+    },
+    {
+      "id": "el_Parallelo04",
+      "type": "parallelogram",
+      "x": 640,
+      "y": 60,
+      "width": 140,
+      "height": 90,
+      "angle": 0,
+      "zIndex": 1040,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 0
+      },
+      "label": {
+        "text": "I/O",
+        "fontFamily": "sans",
+        "fontSize": 16,
+        "fontWeight": 400,
+        "lineHeight": 1.25,
+        "color": "#1e1e1e",
+        "textAlign": "center",
+        "verticalAlign": "middle",
+        "padding": 8
+      },
+      "meta": {}
+    },
+    {
+      "id": "el_Cube05",
+      "type": "cube",
+      "x": 40,
+      "y": 230,
+      "width": 120,
+      "height": 110,
+      "angle": 0,
+      "zIndex": 1050,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#a5d8ff",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": {
+        "text": "API",
+        "fontFamily": "sans",
+        "fontSize": 16,
+        "fontWeight": 400,
+        "lineHeight": 1.25,
+        "color": "#1e1e1e",
+        "textAlign": "center",
+        "verticalAlign": "middle",
+        "padding": 8
+      },
+      "meta": {}
+    },
+    {
+      "id": "el_Cylinder06",
+      "type": "cylinder",
+      "x": 190,
+      "y": 230,
+      "width": 110,
+      "height": 130,
+      "angle": 0,
+      "zIndex": 1060,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#b2f2bb",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": {
+        "text": "DB",
+        "fontFamily": "sans",
+        "fontSize": 16,
+        "fontWeight": 400,
+        "lineHeight": 1.25,
+        "color": "#1e1e1e",
+        "textAlign": "center",
+        "verticalAlign": "middle",
+        "padding": 8
+      },
+      "meta": {}
+    },
+    {
+      "id": "el_Cone07",
+      "type": "cone",
+      "x": 330,
+      "y": 230,
+      "width": 110,
+      "height": 130,
+      "angle": 0,
+      "zIndex": 1070,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#ffc9c9",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {}
+    },
+    {
+      "id": "el_Pyramid08",
+      "type": "pyramid",
+      "x": 470,
+      "y": 230,
+      "width": 120,
+      "height": 110,
+      "angle": 0,
+      "zIndex": 1080,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#eebefa",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {}
+    },
+    {
+      "id": "el_Sphere09",
+      "type": "sphere",
+      "x": 620,
+      "y": 230,
+      "width": 110,
+      "height": 110,
+      "angle": 0,
+      "zIndex": 1090,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#ffec99",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {}
+    },
+    {
+      "id": "el_Prism10",
+      "type": "prism",
+      "x": 40,
+      "y": 400,
+      "width": 130,
+      "height": 110,
+      "angle": 0,
+      "zIndex": 1100,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#d0bfff",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {}
+    },
+    {
+      "id": "el_Torus11",
+      "type": "torus",
+      "x": 200,
+      "y": 400,
+      "width": 130,
+      "height": 110,
+      "angle": 0,
+      "zIndex": 1110,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#ffd8a8",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {}
+    },
+    {
+      "id": "el_Capsule12",
+      "type": "capsule",
+      "x": 360,
+      "y": 400,
+      "width": 90,
+      "height": 140,
+      "angle": 0,
+      "zIndex": 1120,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#c5f6fa",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": {
+        "text": "Pill",
+        "fontFamily": "sans",
+        "fontSize": 16,
+        "fontWeight": 400,
+        "lineHeight": 1.25,
+        "color": "#1e1e1e",
+        "textAlign": "center",
+        "verticalAlign": "middle",
+        "padding": 8
+      },
+      "meta": {}
+    },
+    {
+      "id": "el_BoundArrow",
+      "type": "arrow",
+      "x": 165.99,
+      "y": 289.55,
+      "width": 18.03,
+      "height": 1.24,
+      "angle": 0,
+      "zIndex": 1200,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {},
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          18.03,
+          1.24
+        ]
+      ],
+      "curve": "straight",
+      "startArrowhead": "none",
+      "endArrowhead": "triangle",
+      "startBinding": {
+        "elementId": "el_Cube05",
+        "anchor": {
+          "mode": "auto"
+        },
+        "gap": 6
+      },
+      "endBinding": {
+        "elementId": "el_Cylinder06",
+        "anchor": {
+          "mode": "auto"
+        },
+        "gap": 6
+      }
+    }
+  ],
+  "files": {}
+}

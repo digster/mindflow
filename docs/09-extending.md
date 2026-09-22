@@ -271,6 +271,29 @@ callers this API exists to keep ignorant of them.
 rest (a table's header row): the DOM overlay has to match the canvas exactly, or
 the text visibly changes weight the moment editing starts.
 
+### Label placement
+
+A type whose text does not belong in the centre of its box implements one
+optional member:
+
+```ts
+labelBox(el)   // { x, y, width, height } in the element's LOCAL frame
+```
+
+Omitting it means "the whole box", which is right for every flat shape. The
+solids use it to put a label on the face the viewer is looking at: a label
+centred in a cube's bounding box straddles the projected top and side and reads
+as floating in front of the shape rather than written on it.
+
+This has to be a registry member rather than a `ctx.translate` inside `draw`,
+because the canvas is only one of **three** readers of that box. The DOM text
+editor positions itself from it, and the SVG exporter places the same text a
+third time. Two of the three disagreeing is precisely the failure mode where
+text visibly jumps the moment editing starts — so they all call `labelBoxOf`.
+
+Publish the box in `docs/03-elements.md`: a reader cannot reproduce a labelled
+cube without it.
+
 ### Interior handles
 
 For a type whose box is subdivided, implement:
@@ -307,6 +330,22 @@ with any curves already sampled. Displacement is applied centrally by
 `roughOutlineFor` in `src/render/rough.ts`, which both the canvas renderer and the
 SVG exporter call — that shared call is the only reason the two agree. Omit
 `roughOutline` and the type simply renders cleanly whatever `roughness` says.
+
+## One module, several types
+
+`docs/09-extending.md` says "one file per type" and two modules do not follow it:
+`linear.ts` registers both `line` and `arrow`, and `polygons.ts` and `solids.ts`
+register five and eight types respectively.
+
+The rule that actually matters is *no branching on `element.type` outside
+`render/shapes/`* — inside this directory, grouping types that differ only in a
+vertex list is the lesser evil. Five files that each held a slightly different
+copy of the same `hitTest`, `outlineIntersect` and `create` would be five places
+to fix a bug in, and the fifth would be missed. Write one file per type when the
+types are genuinely different, and one module per family when they are not.
+
+Each registration is still separate, so the registry, the schema and the docs see
+thirteen ordinary types and nothing downstream knows they share a file.
 
 ## Using `meta` instead
 

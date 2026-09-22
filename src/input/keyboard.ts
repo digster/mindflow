@@ -45,6 +45,8 @@ export interface KeyboardOptions {
   onSpaceChange: (held: boolean) => void;
   onCommandPalette: () => void;
   onFind: () => void;
+  /** Closes the text editor, writing whatever was typed. */
+  onCommitText: () => void;
 }
 
 /**
@@ -236,7 +238,10 @@ export function installKeyboardShortcuts(options: KeyboardOptions): () => void {
     }
 
     if (key === 'escape') {
-      store.setEditing(null);
+      // Commit rather than merely clearing the flag: an editor that is open but
+      // has lost focus (which happens on touch, where a tap elsewhere does not
+      // always blur) would otherwise stay on screen with its text unwritten.
+      options.onCommitText();
       store.clearSelection();
       store.setTool('select');
       return;

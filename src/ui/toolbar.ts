@@ -5,24 +5,40 @@
  * `reason` is used to skip work, so panning at 60fps does not re-render buttons.
  */
 
-import type { Store, ToolId } from '../store/store.ts';
+import type { ShapeToolId, Store, ToolId } from '../store/store.ts';
+import { FLAT_SHAPE_COUNT, SHAPE_TOOLS, isShapeTool } from '../store/store.ts';
 import type { Actions } from '../app/actions.ts';
+import { getDefinition } from '../model/registry.ts';
 import { el, icon, MOD_KEY } from './dom.ts';
 import { ICONS, type IconName } from './icons.ts';
+import { Popover, closePopover } from './popover.ts';
 
 interface ToolSpec {
   id: ToolId;
   icon: IconName;
   label: string;
   shortcut: string;
+  /**
+   * Marks the slot that also opens the shape flyout. The slot behaves like any
+   * other tool button — it activates whichever shape it is currently showing —
+   * and carries a second, smaller button that opens the full grid.
+   */
+  flyout?: boolean;
 }
+
+/** Where the flyout's last pick is remembered between sessions. */
+const SHAPE_STORAGE_KEY = 'mindflow.shapeTool';
 
 const TOOLS: ToolSpec[] = [
   { id: 'select', icon: 'select', label: 'Select', shortcut: 'V' },
   { id: 'pan', icon: 'pan', label: 'Pan', shortcut: 'H' },
   { id: 'rectangle', icon: 'rectangle', label: 'Rectangle', shortcut: 'R' },
   { id: 'ellipse', icon: 'ellipse', label: 'Ellipse', shortcut: 'O' },
-  { id: 'diamond', icon: 'diamond', label: 'Diamond', shortcut: 'D' },
+  // The shape slot. Sixteen shapes cannot each have a toolbar button without
+  // turning the strip into a wall of icons, so all of them live in a flyout and
+  // one slot shows the last one used. It starts on `diamond`, which is what the
+  // slot replaced.
+  { id: 'diamond', icon: 'diamond', label: 'Diamond', shortcut: 'D', flyout: true },
   { id: 'line', icon: 'line', label: 'Line', shortcut: 'L' },
   { id: 'arrow', icon: 'arrow', label: 'Arrow', shortcut: 'A' },
   { id: 'draw', icon: 'draw', label: 'Draw', shortcut: 'P' },
@@ -60,6 +76,9 @@ export class Toolbar {
   private undoButton!: HTMLButtonElement;
   private redoButton!: HTMLButtonElement;
   private dirtyDot!: HTMLElement;
+  /** The shape the flyout slot is currently showing. */
+  private slotShape: ShapeToolId = 'diamond';
+  private slotButton!: HTMLButtonElement;
 
   constructor(
     private readonly store: Store,
@@ -79,6 +98,12 @@ export class Toolbar {
     });
 
     for (const tool of TOOLS) {
+      if (tool.flyout) {
+        this.slotShape = rememberedShape(tool.id as ShapeToolId);
+        container.append(this.buildShapeSlot());
+        continue;
+      }
+
       const title = tool.shortcut ? `${tool.label} — ${tool.shortcut}` : tool.label;
       const button = el(
         'button',
@@ -103,6 +128,122 @@ export class Toolbar {
     }
 
     return container;
+  }
+
+  /**
+   * The shape slot: a normal tool button showing the last shape used, plus a
+   * small affordance that opens the full grid.
+   *
+   * Two buttons rather than one that opens on a second click, because "click to
+   * activate, click again to open a menu" is a mode with no visible state — and
+   * because the main button keeps the `data-tool` attribute every other tool
+   * button has, so nothing else in the app (or in the e2e suite) has to know the
+   * slot is special.
+   */
+  private buildShapeSlot(): HTMLElement {
+    this.slotButton = el('button', {
+      class: 'mf-tool',
+      type: 'button',
+      'aria-pressed': 'false',
+      onclick: () => this.store.setTool(this.slotShape),
+    }) as HTMLButtonElement;
+    this.applySlotShape();
+
+    const more = el(
+      'button',
+      {
+        class: 'mf-tool-more',
+        type: 'button',
+        title: 'More shapes',
+        'aria-label': 'More shapes',
+        'aria-haspopup': 'dialog',
+        onclick: (event: Event) => this.openShapeFlyout(event.currentTarget as HTMLElement),
+      },
+      el('span', { class: 'mf-caret', 'aria-hidden': 'true' }),
+    );
+
+    return el('div', { class: 'mf-tool-slot' }, this.slotButton, more);
+  }
+
+  /** Writes the slot's icon, label and `data-tool` for whatever shape it holds. */
+  private applySlotShape(): void {
+    const title = getDefinition(this.slotShape).title;
+    this.slotButton.title = this.slotShape === 'diamond' ? `${title} — D` : title;
+    this.slotButton.setAttribute('aria-label', this.slotButton.title);
+    this.slotButton.setAttribute('data-tool', this.slotShape);
+    this.slotButton.replaceChildren(icon(ICONS[this.slotShape as IconName]));
+  }
+
+  private setSlotShape(shape: ShapeToolId): void {
+    if (this.slotShape === shape) return;
+    this.slotShape = shape;
+    this.applySlotShape();
+    rememberShape(shape);
+  }
+
+  private openShapeFlyout(anchor: HTMLElement): void {
+    const rect = anchor.getBoundingClientRect();
+    // The palette is a vertical strip on the left at desktop widths and a
+    // horizontal one along the bottom below 760px. Opening the flyout beside a
+    // vertical strip and above a horizontal one keeps it off the buttons in
+    // both — dropping it straight down covers half the toolbar.
+    const strip = this.toolbarElement.getBoundingClientRect();
+    const vertical = strip.height > strip.width;
+    const popover = new Popover({
+      at: vertical
+        ? { x: strip.right + 8, y: rect.top - 8 }
+        : { x: rect.left + rect.width / 2, y: strip.top - 8 },
+      align: vertical ? 'start' : 'center',
+      className: 'mf-shape-flyout',
+      label: 'Shapes',
+    });
+
+    const section = (heading: string, tools: readonly ShapeToolId[]): HTMLElement =>
+      el(
+        'div',
+        { class: 'mf-shape-section' },
+        el('div', { class: 'mf-shape-heading', text: heading }),
+        el(
+          'div',
+          { class: 'mf-shape-grid' },
+          ...tools.map((tool) => {
+            const title = getDefinition(tool).title;
+            return el(
+              'button',
+              {
+                class: 'mf-shape-option',
+                type: 'button',
+                title,
+                'aria-label': title,
+                'data-shape': tool,
+                onclick: () => {
+                  // Only shapes without a button of their own take over the
+                  // slot: picking "Rectangle" here lights up the rectangle
+                  // button, and two buttons showing as active at once would be
+                  // a lie about which one is doing the work.
+                  if (!this.toolButtons.has(tool)) this.setSlotShape(tool);
+                  this.store.setTool(tool);
+                  closePopover();
+                },
+              },
+              icon(ICONS[tool as IconName]),
+            );
+          }),
+        ),
+      );
+
+    popover.element.append(
+      section('Flat', SHAPE_TOOLS.slice(0, FLAT_SHAPE_COUNT)),
+      section('3D', SHAPE_TOOLS.slice(FLAT_SHAPE_COUNT)),
+    );
+
+    // Popover places its TOP at the point it is given, which cannot express
+    // "sit above this". The height is only knowable once the content is in the
+    // DOM, so the one case that needs it is corrected here.
+    if (!vertical) {
+      const height = popover.element.getBoundingClientRect().height;
+      popover.element.style.top = `${Math.max(8, Math.round(strip.top - 8 - height))}px`;
+    }
   }
 
   private buildTopBar(): HTMLElement {
@@ -224,6 +365,15 @@ export class Toolbar {
   sync(): void {
     const state = this.store.getState();
 
+    // A shape reached from the command palette rather than the flyout still has
+    // to appear somewhere, so the slot adopts any active shape that has no
+    // button of its own.
+    const tool = state.activeTool;
+    if (isShapeTool(tool) && !this.toolButtons.has(tool)) this.setSlotShape(tool);
+    const slotActive = tool === this.slotShape && !this.toolButtons.has(tool);
+    this.slotButton.classList.toggle('is-active', slotActive);
+    this.slotButton.setAttribute('aria-pressed', String(slotActive));
+
     for (const [id, button] of this.toolButtons) {
       const active = state.activeTool === id;
       button.classList.toggle('is-active', active);
@@ -240,5 +390,30 @@ export class Toolbar {
     this.undoButton.disabled = !this.store.history.canUndo();
     this.redoButton.disabled = !this.store.history.canRedo();
     this.zoomLabel.textContent = `${Math.round(state.viewport.zoom * 100)}%`;
+  }
+}
+
+/**
+ * The shape the flyout slot should start on.
+ *
+ * Remembered per browser, like the colour picker's recent swatches, and for the
+ * same reason: someone building a diagram out of cylinders should not have to
+ * reopen the flyout after every reload. Storage failing is not worth a word to
+ * the user — the slot simply starts on its default.
+ */
+function rememberedShape(fallback: ShapeToolId): ShapeToolId {
+  try {
+    const stored = localStorage.getItem(SHAPE_STORAGE_KEY);
+    return stored !== null && isShapeTool(stored) ? stored : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function rememberShape(shape: ShapeToolId): void {
+  try {
+    localStorage.setItem(SHAPE_STORAGE_KEY, shape);
+  } catch {
+    /* Full, or blocked. See above. */
   }
 }

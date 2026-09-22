@@ -89,6 +89,17 @@ const MIGRATIONS: Record<string, Migration> = {
     description: 'Additive: the `table` element type.',
     migrate: (document) => document,
   },
+
+  /**
+   * Also identity. 1.4.0 adds thirteen element types — five flat polygons and
+   * eight solids — and not one field on any existing type. A 1.3.0 file simply
+   * contains none of them.
+   */
+  '1.3.0': {
+    to: '1.4.0',
+    description: 'Additive: the flat polygon and solid element types.',
+    migrate: (document) => document,
+  },
 };
 
 // ---------------------------------------------------------------------------

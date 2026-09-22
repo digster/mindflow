@@ -308,6 +308,91 @@ wingB = tip − size × (cos(angle + spread), sin(angle + spread))
 
 ---
 
+## Solids
+
+The eight solid types — `cube`, `cylinder`, `cone`, `pyramid`, `sphere`,
+`prism`, `torus` and `capsule` — are drawn in a fixed oblique projection. Every
+part of that projection is *computed*, so this section is what a reader needs in
+order to reproduce one from a file that stores nothing but a box.
+
+### The depth offset
+
+One number drives all eight:
+
+```
+d = 0.25 × min(width, height)
+```
+
+Depth runs **up and to the right**, and every vertex lies inside
+`(0, 0)`–`(width, height)`. Per-type vertex lists are in
+[03-elements.md](03-elements.md#cube).
+
+### Curve sampling
+
+Round solids sample their arcs to polylines before drawing, so that a canvas
+renderer and an SVG exporter produce identical geometry. For an arc of radii
+`rx`, `ry` sweeping `θ` radians:
+
+```
+perimeter = π(3(rx + ry) − √((3·rx + ry)(rx + 3·ry)))      (Ramanujan)
+spaced    = ceil((θ / 2π) × perimeter / 12)
+segments  = clamp(ceil(spaced / 4) × 4, 4, 64)
+```
+
+with `segments + 1` points placed at equal angular steps from the start angle to
+the end angle. The spacing rule is the one used for the hand-drawn ellipse above
+at twice the resolution — these are clean curves, and the jitter that hides
+faceting there is absent here.
+
+**Rounding the count up to a multiple of four is required, not cosmetic.** It
+places a sample exactly on the arc's midpoint, and on all four quadrant points of
+a full ellipse. Those are the tangent points where a curve touches the element's
+box, so a renderer that samples otherwise produces a silhouette that falls short
+of its own bounding box.
+
+### Faces and tones
+
+A solid is a list of faces painted **back to front**, each filled with a tone
+derived from the element's single `style.fill` and stroked with the element's own
+`style.stroke`. Every edge between two faces is therefore an ordinary stroke, and
+there is no separate seam geometry.
+
+The three tones, per sRGB channel `c` of the fill, with the shade amount
+**0.15**:
+
+| Tone | Formula |
+|---|---|
+| base | the fill, unchanged |
+| lit | `round(c + (255 − c) × 0.15)` |
+| shaded | `round(c × (1 − 0.15))` |
+
+An alpha component, if the fill carries one, is passed through unchanged.
+
+**A fill that is not a hex colour is used unchanged for every face.** That
+includes `transparent`, CSS keywords and any function notation. This is
+specified rather than left open because the alternative — each renderer guessing
+a tone in its own colour space — is how two implementations come to disagree
+about the same file.
+
+When `style.fillStyle` is `"none"`, no face is filled at all and the solid is
+drawn as its stroked edges.
+
+### The even-odd hole
+
+A `torus` is one path containing two ellipses, filled under the **even-odd**
+rule, so the inner ellipse is a hole rather than a disc painted in the same
+colour. Renderers must use even-odd and not non-zero winding here; SVG export
+emits `fill-rule="evenodd"` for the same reason.
+
+### Labels on a solid
+
+A solid's `label` is drawn in its **label box**, not in its bounding box — on a
+cube, the front face. The per-type boxes are listed in
+[03-elements.md](03-elements.md#cube). A renderer that ignores this and centres
+the label in the bounding box will place text that straddles the projected top
+and side faces.
+
+
 ## Binding resolution
 
 **The most important algorithm here.** A bound connector's stored `points` are a
@@ -358,6 +443,28 @@ tip       = a + direction × gap
 
 If `|a − c|` is zero, the gap is skipped. This is why an arrow never quite touches
 the shape it points at.
+
+### Polygonal outlines
+
+`diamond` solves its outline analytically. The flat polygons and the solids
+share one rule instead: intersect the ray from the element's centre with each
+edge of the outline in turn and take the crossing with the **largest** positive
+parameter. With the centre `c`, an edge running `a → b` and a direction `dir`,
+the crossing solves
+
+```
+c + t·dir = a + u·(b − a),    t ≥ 0,  0 ≤ u ≤ 1
+```
+
+a 2×2 system whose determinant is the 2D cross product of `dir` and `b − a`; a
+determinant of zero means the edge is parallel to the ray and is skipped.
+
+Taking the largest `t` rather than the smallest is what makes a `star` anchor to
+the tip of a point instead of to the notch between two of them. For a convex
+outline the two choices coincide.
+
+The outline used is the type's silhouette, which for a solid is the outside of
+its projection rather than any one face.
 
 ### Choosing the reference point
 
@@ -457,7 +564,8 @@ identically.
 | `rectangle` | Its rounded outline. Straight sides are single edges; each corner arc is sampled at **4 segments per quarter turn**, with the radius clamped to half the shorter side as usual. A radius of `0` gives the four corners only. |
 | `ellipse` | A closed polygon of `clamp(ceil(perimeter / 24), 8, 64)` evenly spaced points, where `perimeter` is Ramanujan's first approximation `π(3(a+b) − √((3a+b)(a+3b)))` with `a = w/2`, `b = h/2`. |
 | `diamond` | Its four vertices. |
-| everything else | **Not roughened.** `line`, `arrow`, `draw`, `text`, `sticky`, `image`, `frame` and `table` render cleanly whatever `roughness` says. |
+| `triangle`, `pentagon`, `hexagon`, `star`, `parallelogram` | Their own vertices, listed in [03-elements.md](03-elements.md#flat-polygons). |
+| everything else | **Not roughened.** `line`, `arrow`, `draw`, `text`, `sticky`, `image`, `frame`, `table` and every solid render cleanly whatever `roughness` says. For the solids this is a consequence of the rule rather than an omission: the displacement below is defined on ONE closed polygon, and a cube is three faces whose shared edges would vanish if its silhouette were roughened as a single outline. |
 
 Curves are sampled to polylines *before* displacement so that exactly one jitter
 rule exists.

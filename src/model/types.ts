@@ -188,6 +188,21 @@ export const ELEMENT_TYPES = [
   'diamond',
   'frame',
   'table',
+  // Flat polygons inscribed in the box; see the interfaces below.
+  'triangle',
+  'pentagon',
+  'hexagon',
+  'star',
+  'parallelogram',
+  // Solids, drawn in the oblique projection specified in docs/07-rendering.md.
+  'cube',
+  'cylinder',
+  'cone',
+  'pyramid',
+  'sphere',
+  'prism',
+  'torus',
+  'capsule',
 ] as const;
 export type ElementType = (typeof ELEMENT_TYPES)[number];
 
@@ -492,6 +507,103 @@ export interface ImageElement extends BaseElement {
   objectFit: ObjectFit;
 }
 
+// ---------------------------------------------------------------------------
+// Flat polygons
+// ---------------------------------------------------------------------------
+
+/**
+ * Polygons inscribed in the element's box.
+ *
+ * Like `diamond`, none of them carries a field of its own: every vertex is a
+ * fixed proportion of `width` and `height`, so the box is the entire geometry
+ * and resizing one is the ordinary base-geometry change every type gets. The
+ * exact vertex lists are published in `docs/03-elements.md`.
+ *
+ * A regular pentagon or hexagon is deliberately NOT modelled — the vertices are
+ * placed on the box's inscribed ellipse, so the shape stretches with the box the
+ * way a rectangle does. A type that insisted on regularity would have to either
+ * ignore one of `width`/`height` or refuse to be resized freely, and both lie
+ * about the geometry the file records.
+ */
+export interface TriangleElement extends BaseElement {
+  type: 'triangle';
+}
+
+export interface PentagonElement extends BaseElement {
+  type: 'pentagon';
+}
+
+export interface HexagonElement extends BaseElement {
+  type: 'hexagon';
+}
+
+export interface StarElement extends BaseElement {
+  type: 'star';
+}
+
+export interface ParallelogramElement extends BaseElement {
+  type: 'parallelogram';
+}
+
+// ---------------------------------------------------------------------------
+// Solids
+// ---------------------------------------------------------------------------
+
+/**
+ * Solids drawn in a single oblique projection.
+ *
+ * None of them stores its depth. The projection offset is computed from the box
+ * (`d = 0.25 x min(width, height)`, specified in `docs/07-rendering.md`), which
+ * keeps a solid's file representation identical to a rectangle's and its resize
+ * path identical to every other type's.
+ *
+ * A stored `depth` was the obvious alternative and is worse: it is a second
+ * description of how big the shape is, so it has to be kept in step with
+ * `width`/`height` on every resize — which would mean a type-specific branch in
+ * `input/transform.ts`, the one module forbidden from knowing what a cube is —
+ * and it puts an invariant in the file that a hand-authored board can break
+ * silently.
+ *
+ * All visible geometry is INSCRIBED in the box rather than projected outside it,
+ * so `x`, `y`, `width` and `height` stay a truthful bounding box. Culling,
+ * marquee selection and the AABB pre-rejection in hit-testing all depend on
+ * that; see the note in `render/shapes/frame.ts` about the one place it is
+ * knowingly broken.
+ */
+export interface CubeElement extends BaseElement {
+  type: 'cube';
+}
+
+export interface CylinderElement extends BaseElement {
+  type: 'cylinder';
+}
+
+export interface ConeElement extends BaseElement {
+  type: 'cone';
+}
+
+export interface PyramidElement extends BaseElement {
+  type: 'pyramid';
+}
+
+export interface SphereElement extends BaseElement {
+  type: 'sphere';
+}
+
+/** A triangular prism resting on its rectangular face. */
+export interface PrismElement extends BaseElement {
+  type: 'prism';
+}
+
+export interface TorusElement extends BaseElement {
+  type: 'torus';
+}
+
+/** A cylinder with hemispherical ends — a pill. */
+export interface CapsuleElement extends BaseElement {
+  type: 'capsule';
+}
+
 /** Discriminated union of every element type. Narrow on `.type`. */
 export type MindflowElement =
   | RectangleElement
@@ -503,7 +615,20 @@ export type MindflowElement =
   | ImageElement
   | DiamondElement
   | FrameElement
-  | TableElement;
+  | TableElement
+  | TriangleElement
+  | PentagonElement
+  | HexagonElement
+  | StarElement
+  | ParallelogramElement
+  | CubeElement
+  | CylinderElement
+  | ConeElement
+  | PyramidElement
+  | SphereElement
+  | PrismElement
+  | TorusElement
+  | CapsuleElement;
 
 /** Elements whose geometry is a point list rather than a box. */
 export type PathElement = LinearElement | DrawElement;
@@ -594,7 +719,7 @@ export interface MindflowDocument {
 }
 
 /** The schema version this build reads and writes natively. */
-export const CURRENT_SCHEMA_VERSION = '1.3.0';
+export const CURRENT_SCHEMA_VERSION = '1.4.0';
 
 /** Canonical filename extension for a board. */
 export const FILE_EXTENSION = '.mindflow.json';

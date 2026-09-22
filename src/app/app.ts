@@ -15,6 +15,7 @@ import { ImageCache } from '../render/images.ts';
 import { drawOverlay } from '../render/overlay.ts';
 import { exportToPNG, exportToSVG } from '../render/export.ts';
 import { roughOutlineFor } from '../render/rough.ts';
+import { labelBoxOf } from '../model/registry.ts';
 import { InteractionController } from '../input/controller.ts';
 import { installKeyboardShortcuts, isTypingTarget } from '../input/keyboard.ts';
 import { screenToScene } from '../model/geometry.ts';
@@ -115,6 +116,7 @@ export class MindflowApp {
       canvas: this.canvas,
       store: this.store,
       onEditText: (element, regionKey) => this.textEditor.open(element, regionKey),
+      onCommitText: () => this.textEditor.commit(),
       onOverlayChange: () => this.renderer.invalidate(),
       onRequestImage: (point) => void this.insertImageAtPoint(point),
       onContextMenu: ({ scene, screen, hit }) =>
@@ -212,6 +214,7 @@ export class MindflowApp {
         onSpaceChange: (held) => this.controller.setSpaceHeld(held),
         onCommandPalette: () => this.openCommandPalette(),
         onFind: () => showFindBar(this.store, this.actions),
+        onCommitText: () => this.textEditor.commit(),
       }),
     );
 
@@ -695,6 +698,7 @@ export class MindflowApp {
     supportsFileSystemAccess: boolean;
     exportToSVG: typeof exportToSVG;
     roughOutlineFor: typeof roughOutlineFor;
+    labelBoxOf: typeof labelBoxOf;
   } {
     return {
       store: this.store,
@@ -706,6 +710,9 @@ export class MindflowApp {
       // them agree — worth a test that would notice if it stopped being true.
       exportToSVG,
       roughOutlineFor,
+      // Same reasoning: a solid's label box is read by the canvas, this app's
+      // text editor and the SVG exporter, and the suite asserts they agree.
+      labelBoxOf,
     };
   }
 }

@@ -143,6 +143,24 @@ export interface ElementDefinition<T extends MindflowElement = MindflowElement> 
   roughOutline?(el: T): Point[];
 
   /**
+   * Where this type draws its `label`, in the LOCAL frame. Optional; omitting it
+   * means "the whole box", which is right for every flat shape.
+   *
+   * It exists for the solids, whose front face is inset from the box: a cube's
+   * label belongs on the face the viewer is looking at, not floating across the
+   * projected top and side. That cannot be done with a `ctx.translate` inside
+   * `draw`, because the canvas is only one of THREE readers of this box — the
+   * DOM text editor positions itself from it too, and the SVG exporter places
+   * the same text a third time. Two of those disagreeing is the failure mode
+   * where text visibly jumps the moment editing starts, so the box has to come
+   * from one place.
+   *
+   * Published in `docs/03-elements.md` per type: a reader cannot reproduce a
+   * labelled cube without it.
+   */
+  labelBox?(el: T): { x: number; y: number; width: number; height: number };
+
+  /**
    * The element's editable text sub-regions, in tab order.
    *
    * Most types own either one block of text (`capabilities.text`) or a `label`,
@@ -285,6 +303,22 @@ export function drawElement(el: MindflowElement, render: RenderContext): void {
 
 export function hitTestElement(el: MindflowElement, local: Point, tolerance: number): boolean {
   return getDefinition(el.type).hitTest(el as never, local, tolerance);
+}
+
+/**
+ * Where an element's label sits, in its LOCAL frame.
+ *
+ * The single reader of {@link ElementDefinition.labelBox}, so the canvas, the
+ * DOM editor and the SVG exporter cannot disagree about the default.
+ */
+export function labelBoxOf(el: MindflowElement): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  const box = getDefinition(el.type).labelBox?.(el as never);
+  return box ?? { x: 0, y: 0, width: el.width, height: el.height };
 }
 
 /**

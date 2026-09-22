@@ -1620,6 +1620,163 @@ test.describe('hand-drawn rendering', () => {
   });
 });
 
+test.describe('the shape flyout', () => {
+  /** Opens the flyout and picks a shape by its accessible name. */
+  async function pickShape(page: Page, name: string) {
+    await page.getByRole('button', { name: 'More shapes' }).click();
+    await page.locator(`.mf-shape-option[data-shape="${name}"]`).click();
+  }
+
+  test('lists every closed shape', async ({ page }) => {
+    await page.getByRole('button', { name: 'More shapes' }).click();
+    // Sixteen: the three that predate the flyout, five flat polygons, eight solids.
+    await expect(page.locator('.mf-shape-option')).toHaveCount(16);
+    await expect(page.locator('.mf-shape-option[data-shape="cube"]')).toBeVisible();
+  });
+
+  test('does not grow the tool strip', async ({ page }) => {
+    // The whole point of the flyout: thirteen new types, no new buttons.
+    await expect(page.locator('.mf-tool')).toHaveCount(14);
+  });
+
+  test('draws the shape it was given', async ({ page }) => {
+    await pickShape(page, 'cube');
+    await drag(page, [100, 100], [280, 220]);
+
+    const doc = await getDocument(page);
+    expect(doc.elements[0]).toMatchObject({ type: 'cube', width: 180, height: 120 });
+  });
+
+  test('the slot takes over the shape that was picked', async ({ page }) => {
+    await pickShape(page, 'cylinder');
+    await expect(page.locator('[data-tool="cylinder"]')).toBeVisible();
+
+    // And clicking the slot itself re-selects it, without reopening the flyout.
+    await page.locator('[data-tool="select"]').click();
+    await page.locator('[data-tool="cylinder"]').click();
+    await drag(page, [100, 100], [220, 260]);
+    const doc = await getDocument(page);
+    expect(doc.elements[0]?.type).toBe('cylinder');
+  });
+
+  test('leaves the shapes that have their own button alone', async ({ page }) => {
+    // Picking `rectangle` from the grid must not move it into the slot, or two
+    // buttons would claim to be the active tool at once.
+    await pickShape(page, 'rectangle');
+    await expect(page.locator('[data-tool="diamond"]')).toBeVisible();
+    await expect(page.locator('[data-tool="rectangle"]')).toHaveClass(/is-active/);
+  });
+
+  test('a shape chosen from the command palette appears in the slot', async ({ page }) => {
+    await page.keyboard.press('Control+k');
+    await page.locator('.mf-palette-input').fill('Torus');
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator('[data-tool="torus"]')).toHaveClass(/is-active/);
+  });
+});
+
+test.describe('polygons and solids', () => {
+  test('a solid defaults to filled, a polygon does not', async ({ page }) => {
+    await page.getByRole('button', { name: 'More shapes' }).click();
+    await page.locator('.mf-shape-option[data-shape="pyramid"]').click();
+    await drag(page, [100, 100], [260, 240]);
+
+    await page.getByRole('button', { name: 'More shapes' }).click();
+    await page.locator('.mf-shape-option[data-shape="hexagon"]').click();
+    await drag(page, [400, 100], [560, 240]);
+
+    const doc = await getDocument(page);
+    const style = (type: string) =>
+      (doc.elements.find((element) => element.type === type)?.style as { fillStyle: string })
+        .fillStyle;
+    expect(style('pyramid')).toBe('solid');
+    expect(style('hexagon')).toBe('none');
+  });
+
+  test('offers the sketch control to a polygon but not to a solid', async ({ page }) => {
+    await page.getByRole('button', { name: 'More shapes' }).click();
+    await page.locator('.mf-shape-option[data-shape="star"]').click();
+    await drag(page, [100, 100], [260, 260]);
+    await expect(page.getByRole('button', { name: 'Sketchy' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'More shapes' }).click();
+    await page.locator('.mf-shape-option[data-shape="cube"]').click();
+    await drag(page, [400, 100], [560, 260]);
+    // A cube has three faces and a rough outline is one polygon, so it has no
+    // hand-drawn form and the control must not be offered.
+    await expect(page.getByRole('button', { name: 'Sketchy' })).toHaveCount(0);
+  });
+
+  test('puts a cube’s label on its front face, and the editor agrees', async ({ page }) => {
+    await page.getByRole('button', { name: 'More shapes' }).click();
+    await page.locator('.mf-shape-option[data-shape="cube"]').click();
+    await drag(page, [100, 100], [300, 260]);
+
+    await page.mouse.dblclick((await canvasBox(page)).x + 200, (await canvasBox(page)).y + 200);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('API');
+    await page.keyboard.press('Escape');
+
+    const doc = await getDocument(page);
+    const cube = doc.elements[0]!;
+    expect((cube.label as { text: string }).text).toBe('API');
+
+    // d = 0.25 * min(200, 160) = 40, so the label box is the front face:
+    // inset by 40 from the top and 40 narrower than the box.
+    const box = await page.evaluate(() => {
+      const mf = (
+        window as unknown as {
+          mindflow: {
+            store: { document: { elements: unknown[] } };
+            labelBoxOf(el: unknown): { x: number; y: number; width: number; height: number };
+          };
+        }
+      ).mindflow;
+      return mf.labelBoxOf(mf.store.document.elements[0]);
+    });
+    expect(box).toEqual({ x: 0, y: 40, width: 160, height: 120 });
+  });
+
+  test('the SVG export draws a cube as its three faces', async ({ page }) => {
+    await page.getByRole('button', { name: 'More shapes' }).click();
+    await page.locator('.mf-shape-option[data-shape="cube"]').click();
+    await drag(page, [100, 100], [300, 260]);
+
+    const svg = await page.evaluate(() => {
+      const mf = (
+        window as unknown as {
+          mindflow: { store: { document: unknown }; exportToSVG(doc: unknown): string };
+        }
+      ).mindflow;
+      return mf.exportToSVG(mf.store.document);
+    });
+
+    // Three polygons, and the top face lightened from the base fill rather than
+    // sharing it — the tone derivation, reproduced by the second renderer.
+    expect(svg.match(/<polygon/g)?.length).toBe(3);
+    expect(svg).toContain('40,0 200,0');
+    expect(svg).not.toContain('<ellipse');
+  });
+
+  test('a torus exports with a real hole', async ({ page }) => {
+    await page.getByRole('button', { name: 'More shapes' }).click();
+    await page.locator('.mf-shape-option[data-shape="torus"]').click();
+    await drag(page, [100, 100], [300, 260]);
+
+    const svg = await page.evaluate(() => {
+      const mf = (
+        window as unknown as {
+          mindflow: { store: { document: unknown }; exportToSVG(doc: unknown): string };
+        }
+      ).mindflow;
+      return mf.exportToSVG(mf.store.document);
+    });
+
+    expect(svg).toContain('fill-rule="evenodd"');
+  });
+});
+
 test.describe('frames', () => {
   /** Draws a frame, then a sticky whose centre lands inside it. */
   async function frameWithMember(page: Page) {

@@ -663,3 +663,132 @@ eight alignment icons are named this way and picking them by name gets half of
 them wrong. `test/unit/icons.test.ts` asserts against the geometry instead — that
 `alignLeft` contains a rule at `x=2`, `alignBottom` one at `y=22`, and so on — so
 a future icon swap cannot silently transpose them.
+
+## A sampled arc misses the tangent points unless you make it land on them
+
+**Symptom:** a cylinder's silhouette was `0.1` scene units short of its own
+bounding box, so the top of the shape did not quite touch the top of its
+selection frame.
+
+**Cause:** arcs are sampled to polylines so the canvas and the SVG exporter
+consume identical geometry. The sample count came from a spacing rule, which
+meant the angular step rarely divided the arc evenly at the points where the
+curve is tangent to the box — the very points that define the extent.
+
+**Fix:** round the segment count up to a multiple of four. That puts a sample on
+the arc's midpoint and, for a full ellipse, on all four quadrant points.
+
+The general rule: **when sampling a curve whose bounding box matters, force
+samples onto the extremes.** Spacing alone describes smoothness, not extent, and
+here the extent is what culling, marquee selection and snapping all read.
+
+## `roughOutline` is one closed polygon, so a multi-face shape cannot have one
+
+The hand-drawn renderer displaces a single closed polygon, and `export.ts`
+short-circuits a rough element to a single `<polygon>`. Both are fine for a
+rectangle or a hexagon and impossible for a cube: its three faces share edges
+that a single silhouette does not contain, so roughening would erase exactly the
+lines that make it read as a solid.
+
+The solids therefore omit `roughOutline` entirely, and get the correct UI for
+free — `stylePanel.ts` gates the sketch control on `Boolean(definition.roughOutline)`.
+Anything drawn from more than one contour should do the same rather than trying
+to make one polygon stand in for several.
+
+## Three renderers read a label's box, not two
+
+`drawLabel` on the canvas, the DOM `<textarea>` overlay, and `labelToSvg` in the
+exporter each place the same text independently. A solid wants its label on its
+front face rather than in the centre of its bounding box, and doing that with a
+`ctx.translate` inside `draw` moves only the first of the three — which shows up
+as text jumping the moment editing starts, the failure mode this project has
+already paid for once.
+
+`labelBox` on the registry definition, read through `labelBoxOf`, is why all
+three agree. Any future per-type text placement belongs there for the same
+reason.
+
+## Blur is a platform convention, not a way to end an edit
+
+The text editor used to close only because pressing the canvas moved focus out
+of its `<textarea>`. That is a mouse convention. On iPadOS, over a
+`touch-action: none` canvas that has taken a pointer capture, a tap does not
+reliably move focus at all — so the editor stayed open, focused and blinking
+after the user had moved on, and the store's `editingId` (cleared by the same
+press) no longer agreed with it, which let the *next* tap start a gesture
+underneath a live editor.
+
+An overlay that must close on an outside press has to close itself: an explicit
+commit from the canvas handler, plus a window-level `pointerdown` listener for
+everything else. `Popover` already did exactly this and was the model.
+
+Two traps in that listener:
+
+- **Register it a task later.** The press that opens the editor is still
+  bubbling towards `window`, so a listener added synchronously dismisses the
+  editor it just opened. A microtask is not enough — the dispatcher drains the
+  microtask queue between listeners, so the handler still runs for the same
+  event.
+- **Register it on the bubble phase**, so a press on the canvas is handled once,
+  by the controller, which also has to swallow it.
+
+## Focusing inside the gesture costs you the focus, unless you prevent the default
+
+iOS Safari raises the soft keyboard only for a `focus()` called inside a trusted
+user gesture, so the editor's `focus()` had to move out of its
+`requestAnimationFrame` and into the `pointerdown` handler. That immediately
+broke three desktop tests: the compatibility `mousedown` the browser sends after
+`pointerdown` moves focus to the document, blurring the textarea — which fired
+blur-to-commit and closed the editor before a key could be pressed.
+
+`event.preventDefault()` on that one `pointerdown` suppresses the compatibility
+events and keeps the focus. Note it is done **only** where the press takes focus.
+Doing it for every canvas press would stop the board-name field committing when
+you click away from it, which is the same class of bug in the other direction.
+
+## Every input constant in this app was sized for a mouse
+
+Not one of them was wrong; all of them assumed a pointing device whose hot spot
+is a single pixel and whose tremor is measured in ones. Under a finger:
+
+- the 3px drag threshold is below the wander of a tap the user means to be
+  stationary, so taps became drags — and because a gesture recomputes from its
+  origin rather than from the threshold, the element jumped the whole distance;
+- 8px of click tolerance makes a thin shape feel like it is dodging the tap;
+- a 9.5px handle radius is hard to hit, and handles are tested *before*
+  elements, so widening it too far turns "move this" into "resize this".
+
+The fix is per-gesture, not per-device: the controller records
+`event.pointerType` at pointerdown and every threshold reads from that. A media
+query would have been wrong — a tablet driven with a stylus or a trackpad wants
+the precise numbers, and the device having a touchscreen says nothing about what
+is touching it right now.
+
+## `pointercancel` is a real code path once there is a finger involved
+
+It used to abandon the gesture and leave its transient edits in place. Nothing
+had reached the undo stack, so the element sat where the interrupted drag left
+it with no way to undo, and an interrupted *creation* left a shape that could not
+be removed by undo at all. With a mouse this needed the device to be unplugged
+mid-drag; with a finger the system claims the pointer for palm rejection, a
+second touch, or a system gesture, routinely.
+
+Cancelling now rewinds — transforms back to the elements captured at pointerdown,
+creations deleted — and releases the pointer capture, which the handler also used
+to leak. That leak's symptom was the delayed, unrelated-looking one already in
+this file: the *next* drag silently does nothing.
+
+## Chromium's touch emulation is not a touch device
+
+The first version of the touch suite passed against the code it was written to
+fix. Emulated touch still sends the compatibility mouse events, so the textarea
+blurred and the editor closed by the old, accidental path — the tests asserted
+the right end state and proved nothing.
+
+What cannot be emulated is the *absence* of the focus change. The tests now
+install a capture-phase `mousedown` listener that prevents the default action,
+which reproduces the iPadOS condition exactly, and three of them fail without the
+fix (checked by reverting it, not by reasoning about it).
+
+The general lesson: when a bug is "the platform does not do X for us", the test
+has to stop the test platform doing X. Otherwise it is a test of the harness.

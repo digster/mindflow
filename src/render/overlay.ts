@@ -18,6 +18,17 @@ import { degToRad, elementWorldAABB, rotatePoint, unionAABB } from '../model/geo
 /** Screen-pixel sizes. Divided by zoom before use. */
 export const HANDLE_SIZE = 9;
 export const HANDLE_HIT_SLOP = 5;
+
+/**
+ * Handle slop for a finger, in screen pixels.
+ *
+ * Deliberately restrained. Handles are tested BEFORE elements, so every pixel
+ * of slop is a pixel where a tap meant to move something resizes it instead —
+ * and a finger cannot see what it is covering. This widens the handle to about
+ * 30 screen pixels across, enough to grab and still well inside the element's
+ * own edge at any usable size.
+ */
+export const TOUCH_HANDLE_HIT_SLOP = 11;
 export const ROTATE_HANDLE_OFFSET = 24;
 
 const ACCENT = '#5b5bd6';
@@ -116,8 +127,9 @@ export function handleAt(
   world: Point,
   zoom: number,
   allowRotate: boolean,
+  slop: number = HANDLE_HIT_SLOP,
 ): HandleId | null {
-  const radius = (HANDLE_SIZE / 2 + HANDLE_HIT_SLOP) / zoom;
+  const radius = (HANDLE_SIZE / 2 + slop) / zoom;
   const candidates: HandleId[] = allowRotate ? [...RESIZE_HANDLES, 'rotate'] : [...RESIZE_HANDLES];
 
   for (const handle of candidates) {

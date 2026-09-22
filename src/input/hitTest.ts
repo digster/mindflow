@@ -24,8 +24,18 @@ import {
  */
 export const HIT_TOLERANCE_PX = 8;
 
-export function toleranceFor(zoom: number): number {
-  return HIT_TOLERANCE_PX / zoom;
+/**
+ * Click tolerance for a finger, in SCREEN pixels.
+ *
+ * 8px is tuned for a cursor whose hot spot is one pixel. A fingertip covers
+ * something closer to 40px and the user cannot see what is under it, so the same
+ * tolerance makes a thin shape feel like it is dodging the tap. Larger than this
+ * and a tap starts claiming elements it is visibly nowhere near.
+ */
+export const TOUCH_HIT_TOLERANCE_PX = 16;
+
+export function toleranceFor(zoom: number, tolerancePx: number = HIT_TOLERANCE_PX): number {
+  return tolerancePx / zoom;
 }
 
 /**
@@ -42,9 +52,9 @@ export function elementAt(
   document: MindflowDocument,
   world: Point,
   zoom: number,
-  options: { includeLocked?: boolean } = {},
+  options: { includeLocked?: boolean; tolerancePx?: number } = {},
 ): MindflowElement | null {
-  const tolerance = toleranceFor(zoom);
+  const tolerance = toleranceFor(zoom, options.tolerancePx);
 
   for (let i = document.elements.length - 1; i >= 0; i--) {
     const element = document.elements[i];
@@ -77,8 +87,9 @@ export function elementsAt(
   document: MindflowDocument,
   world: Point,
   zoom: number,
+  tolerancePx?: number,
 ): MindflowElement[] {
-  const tolerance = toleranceFor(zoom);
+  const tolerance = toleranceFor(zoom, tolerancePx);
   const hits: MindflowElement[] = [];
 
   for (let i = document.elements.length - 1; i >= 0; i--) {

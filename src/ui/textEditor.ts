@@ -46,13 +46,13 @@
 import type { MindflowElement, StickyElement, TextElement } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
 import type { TextRegion } from '../model/registry.ts';
-import { getDefinition } from '../model/registry.ts';
+import { getDefinition, labelBoxOf } from '../model/registry.ts';
 import { BASELINE_RATIO, FONT_STACKS, layoutText } from '../render/shapes/shared.ts';
 import { measureTextElement } from '../render/shapes/text.ts';
 import { defaultLabel } from '../model/defaults.ts';
 import { localToWorld, sceneToScreen } from '../model/geometry.ts';
 import { replaceElements } from '../store/commands.ts';
-import { el } from './dom.ts';
+import { IS_COARSE_POINTER, el } from './dom.ts';
 
 /** Typography for the element being edited, whether it lives in `text` or `label`. */
 interface EditingStyle {
@@ -116,14 +116,21 @@ function editingStyleOf(element: MindflowElement, regionKey: string | null): Edi
   return null;
 }
 
-/** The local-frame box the editor covers: a region's, or the whole element's. */
+/**
+ * The local-frame box the editor covers: a region's, or the element's label box.
+ *
+ * `labelBoxOf` rather than the element's own box, because a solid draws its
+ * label on its front face. The canvas and this overlay are two independent
+ * layout engines and reading the box from one function is what stops the text
+ * jumping the moment editing starts.
+ */
 function editBox(
   element: MindflowElement,
   regionKey: string | null,
 ): { x: number; y: number; width: number; height: number } {
   const region = regionOf(element, regionKey);
   if (region) return region.box;
-  return { x: 0, y: 0, width: element.width, height: element.height };
+  return labelBoxOf(element);
 }
 
 /**
@@ -188,6 +195,8 @@ export class TextEditor {
    */
   private original: MindflowElement | null = null;
   private committed = false;
+  /** Pending registration of the outside-press listener; see `listenForDismissal`. */
+  private dismissalTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Whether any keystroke actually reached the document this session.
    *
@@ -210,8 +219,56 @@ export class TextEditor {
     this.element.addEventListener('input', () => this.onInput());
     this.element.addEventListener('blur', () => this.commit());
     this.element.addEventListener('keydown', (event) => this.onKeyDown(event));
-    // A click inside the editor must not reach the canvas and dismiss it.
+    // A click inside the editor must not reach the canvas and dismiss it. This
+    // also stops the window-level listener below from seeing it, since that one
+    // is registered on the bubble phase.
     this.element.addEventListener('pointerdown', (event) => event.stopPropagation());
+  }
+
+  /**
+   * Commits when a press lands anywhere outside the editor.
+   *
+   * Blur was the only automatic commit path, and blur is a convention rather
+   * than a guarantee: whether pressing a toolbar button moves focus out of a
+   * textarea differs between platforms, and on a touch screen a tap on the
+   * canvas may not move focus at all. `app.ts` already worked around this for
+   * "New board" and for loading a file; this closes the general case, the way
+   * `Popover` does for menus.
+   *
+   * Registered on the BUBBLE phase, not capture, so a press on the canvas is
+   * handled once — by the controller, which also needs to swallow it so the
+   * dismissing tap does not start a gesture.
+   */
+  private onWindowPointerDown = (event: PointerEvent): void => {
+    if (this.element.contains(event.target as Node)) return;
+    this.commit();
+  };
+
+  /**
+   * Starts listening for the press that dismisses — but not until the press
+   * that OPENED the editor has finished propagating.
+   *
+   * The text tool opens the editor from the canvas's own `pointerdown` handler,
+   * and that event is still bubbling towards `window`. Registering the listener
+   * synchronously means the opening press immediately dismisses the editor it
+   * just opened. A microtask is not enough either: the event dispatcher drains
+   * the microtask queue between listeners, so the handler would still run for
+   * the same event. A task boundary is the first point at which the current
+   * event is genuinely finished.
+   */
+  private listenForDismissal(): void {
+    this.dismissalTimer = setTimeout(() => {
+      this.dismissalTimer = null;
+      if (this.editingId !== null) window.addEventListener('pointerdown', this.onWindowPointerDown);
+    }, 0);
+  }
+
+  private stopListeningForDismissal(): void {
+    if (this.dismissalTimer !== null) {
+      clearTimeout(this.dismissalTimer);
+      this.dismissalTimer = null;
+    }
+    window.removeEventListener('pointerdown', this.onWindowPointerDown);
   }
 
   get isEditing(): boolean {
@@ -246,13 +303,36 @@ export class TextEditor {
     this.element.value = style.text;
     this.applyStyle(style, element);
     this.position(element);
+    this.listenForDismissal();
 
-    // Focus after layout so the browser does not scroll the page to reach a
-    // still-unpositioned element.
+    // Focus synchronously, inside the gesture that opened the editor. iOS
+    // Safari raises the soft keyboard only for a `focus()` that happens in a
+    // trusted user gesture, and this used to be deferred a frame — which is
+    // outside it, so on an iPad the caret appeared and the keyboard did not.
+    // The deferral existed so the browser would not scroll to reach an
+    // unpositioned textarea, and `position()` above already ran, so there is
+    // nothing left to wait for. The frame-late retry stays as a belt-and-braces
+    // for the case where something else takes focus in between.
+    this.focusEditor();
     requestAnimationFrame(() => {
-      this.element.focus();
-      this.element.select();
+      if (this.editingId !== null && document.activeElement !== this.element) {
+        this.focusEditor();
+      }
     });
+  }
+
+  private focusEditor(): void {
+    this.element.focus();
+    if (IS_COARSE_POINTER) {
+      // Selecting all of it pops iOS's selection callout and its drag handles
+      // over the board, and a finger cannot then place the caret without first
+      // dismissing them. A caret at the end is what tapping into a field does
+      // everywhere else on a touch device.
+      const end = this.element.value.length;
+      this.element.setSelectionRange(end, end);
+      return;
+    }
+    this.element.select();
   }
 
   /** Repositions the editor after a pan or zoom. */
@@ -489,6 +569,12 @@ export class TextEditor {
     this.editingId = null;
     this.regionKey = null;
     this.original = null;
+    this.stopListeningForDismissal();
+    // Blur before hiding. Hiding a textarea that is still `document.activeElement`
+    // leaves the soft keyboard up on iOS — a caret that is, as far as the user
+    // can tell, still active. The `committed` flag above makes the `blur`
+    // event this fires a no-op.
+    this.element.blur();
     this.element.hidden = true;
     this.element.value = '';
 

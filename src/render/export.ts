@@ -32,10 +32,12 @@ import type {
   TextElement,
 } from '../model/types.ts';
 import type { RenderContext } from '../model/registry.ts';
-import { drawElement } from '../model/registry.ts';
+import { drawElement, labelBoxOf } from '../model/registry.ts';
 import { clamp, degToRad, unionAABB } from '../model/geometry.ts';
 import { roughOutlineFor } from './rough.ts';
 import { FRAME_NAME_GAP, FRAME_NAME_SIZE } from './shapes/frame.ts';
+import { isPolygonType, polygonVertices } from './shapes/polygons.ts';
+import { isSolidType, solidFaces, toneColor } from './shapes/solids.ts';
 import { cellBox, cellFontWeight, columnEdges, rowEdges } from './shapes/table.ts';
 import {
   BASELINE_RATIO,
@@ -257,11 +259,16 @@ function textToSvg(
 /** The element's `label`, if any, as SVG. */
 function labelToSvg(element: MindflowElement): string {
   if (!element.label || element.label.text === '') return '';
-  return textToSvg(
+  // The label box, not the element box: a solid puts its label on the front
+  // face, and the exporter has to place it exactly where the canvas does.
+  const box = labelBoxOf(element);
+  const markup = textToSvg(
     element.label.text,
-    { width: element.width, height: element.height, padding: element.label.padding },
+    { width: box.width, height: box.height, padding: element.label.padding },
     element.label,
   );
+  if (box.x === 0 && box.y === 0) return markup;
+  return `<g transform="translate(${round(box.x)} ${round(box.y)})">${markup}</g>`;
 }
 
 function pointsToPath(element: LinearElement | DrawElement, smooth: boolean): string {
@@ -331,6 +338,52 @@ function arrowheadToSvg(element: LinearElement, atEnd: boolean): string {
   }
 }
 
+/**
+ * A solid, as one `<g>` of faces.
+ *
+ * Grouped, with opacity on the group, for the reason the table already
+ * documents: per-piece alpha would let the back faces show through the front
+ * one, which is not what a translucent object looks like.
+ *
+ * The face geometry and the derived tones both come from `shapes/solids.ts`, so
+ * the exporter reproduces the canvas rather than approximating it.
+ */
+function solidToSvg(element: MindflowElement): string {
+  if (!isSolidType(element.type)) return '';
+
+  const fill = hasFill(element.style) ? element.style.fill : null;
+  const strokeParts: string[] = [];
+  if (hasStroke(element.style)) {
+    strokeParts.push(`stroke="${escapeXml(element.style.stroke)}"`);
+    strokeParts.push(`stroke-width="${round(element.style.strokeWidth)}"`);
+    strokeParts.push('stroke-linejoin="round"');
+    const dashes = dashPattern(element.style);
+    if (dashes.length > 0) strokeParts.push(`stroke-dasharray="${dashes.map(round).join(' ')}"`);
+  } else {
+    strokeParts.push('stroke="none"');
+  }
+  const stroke = strokeParts.join(' ');
+
+  const ring = (points: { x: number; y: number }[]): string =>
+    `M ${points.map((p, i) => `${i === 0 ? '' : 'L '}${round(p.x)} ${round(p.y)}`).join(' ')} Z`;
+
+  const faces = solidFaces(element.type, element.width, element.height)
+    .map((face) => {
+      const paint = fill === null ? 'none' : escapeXml(toneColor(fill, face.tone));
+      if (!face.hole) {
+        const points = face.points.map((p) => `${round(p.x)},${round(p.y)}`).join(' ');
+        return `<polygon points="${points}" fill="${paint}" ${stroke}/>`;
+      }
+      // Two rings in one path under the even-odd rule: the inner one is a hole,
+      // not a disc drawn on top. Matches `paintPath`'s `fillRule` on canvas.
+      return `<path d="${ring(face.points)} ${ring(face.hole)}" fill="${paint}" fill-rule="evenodd" ${stroke}/>`;
+    })
+    .join('');
+
+  const markup = faces + labelToSvg(element);
+  return element.opacity < 1 ? `<g opacity="${round(element.opacity)}">${markup}</g>` : markup;
+}
+
 /** Serialises one element's inner markup, in its local coordinate space. */
 function elementToSvg(element: MindflowElement, document: MindflowDocument): string {
   const style = styleAttributes(element);
@@ -375,6 +428,30 @@ function elementToSvg(element: MindflowElement, document: MindflowDocument): str
       const points = `${round(w / 2)},0 ${w},${round(h / 2)} ${round(w / 2)},${h} 0,${round(h / 2)}`;
       return `<polygon points="${points}" ${style}/>${labelToSvg(element)}`;
     }
+
+    case 'triangle':
+    case 'pentagon':
+    case 'hexagon':
+    case 'star':
+    case 'parallelogram': {
+      // The vertices come from the shape module rather than being written out a
+      // second time here — `polygonVertices` is the one definition of where a
+      // pentagon's corners are.
+      const points = polygonVertices(element.type, element.width, element.height)
+        .map((point) => `${round(point.x)},${round(point.y)}`)
+        .join(' ');
+      return `<polygon points="${points}" ${style}/>${labelToSvg(element)}`;
+    }
+
+    case 'cube':
+    case 'cylinder':
+    case 'cone':
+    case 'pyramid':
+    case 'sphere':
+    case 'prism':
+    case 'torus':
+    case 'capsule':
+      return solidToSvg(element);
 
     case 'line':
     case 'arrow': {
