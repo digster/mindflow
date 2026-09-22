@@ -178,3 +178,10 @@ resizing one is the ordinary base-geometry change every other type gets. Faces
 derive lit and shaded tones from the element's single `fill`. One new optional
 registry member, `labelBox`, puts a solid's label on its front face in all three
 renderers at once.
+
+**Commit 2 — the caret that would not go away.** The canvas press handler
+carried a comment saying it committed the editor and only cleared a store flag;
+the editor actually closed as a side effect of a native focus change, which a
+touch screen does not reliably cause. It now commits explicitly, a window-level
+listener covers presses on the chrome, `commit()` blurs before hiding so the
+soft keyboard goes down, and `open()` focuses inside the gesture so it comes up.

@@ -35,7 +35,22 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: /touch\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
+    },
+    /**
+     * Touch behaviour, in a context that actually has a touchscreen.
+     *
+     * A second project rather than a flag on the first: `hasTouch` changes how
+     * the browser reports pointers and what compatibility events it sends, and
+     * the desktop suite should go on proving the mouse path. The viewport is
+     * tablet-sized and stays above the 760px breakpoint, so the layout under
+     * test is the ordinary one.
+     */
+    {
+      name: 'touch',
+      testMatch: /touch\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1024, height: 768 }, hasTouch: true },
     },
   ],
 });

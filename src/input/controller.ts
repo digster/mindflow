@@ -121,6 +121,14 @@ export interface ControllerOptions {
    * the type has them (a table cell). `null` means "the element as a whole".
    */
   onEditText: (element: MindflowElement, regionKey: string | null) => void;
+  /**
+   * Closes the text editor, writing whatever was typed.
+   *
+   * A callback rather than a store flag because closing the editor is a DOM
+   * operation the controller must not reach into, and because the flag alone was
+   * never enough: see {@link InteractionController.onPointerDown}.
+   */
+  onCommitText: () => void;
   /** Called when the overlay needs redrawing (hover, marquee, guides). */
   onOverlayChange: () => void;
   /** Prompts for an image file, used by the image tool. */
@@ -197,10 +205,20 @@ export class InteractionController {
     if (!event.isPrimary) return;
     const { store } = this.options;
 
-    // A text editor is open; clicking the canvas should commit it, and that
-    // click should not also start a gesture.
+    // A text editor is open. Committing it here is not an optimisation of the
+    // browser's own behaviour — it is the only thing that reliably ends the
+    // edit. The editor used to close as a side effect of the native focus
+    // change a press on the canvas causes, which a mouse gives you and a touch
+    // screen does not: over a `touch-action: none` canvas that has taken a
+    // pointer capture, iPadOS leaves the textarea focused and the caret
+    // blinking. Clearing the store flag alone (which is what this did) also
+    // desynchronised the flag from the editor, so the NEXT press fell through
+    // this guard and started a gesture underneath a live editor.
+    //
+    // The press that dismisses does not also act, which is the same rule the
+    // rest of the app's overlays follow.
     if (store.getState().editingId !== null) {
-      store.setEditing(null);
+      this.options.onCommitText();
       return;
     }
 
@@ -253,7 +271,7 @@ export class InteractionController {
         this.beginFreehand(event, scene);
         break;
       case 'text':
-        this.createTextAt(scene);
+        this.createTextAt(event, scene);
         break;
       case 'image':
         this.options.onRequestImage(scene);
@@ -473,8 +491,18 @@ export class InteractionController {
     this.gesture = { kind: 'freehand', element, points: [[0, 0, event.pressure || 0.5]] };
   }
 
-  private createTextAt(scene: Point): void {
+  private createTextAt(event: PointerEvent, scene: Point): void {
     const { store } = this.options;
+    // The editor this opens focuses itself synchronously, inside this gesture,
+    // because iOS raises the soft keyboard only for a focus that happens there.
+    // The compatibility `mousedown` the browser sends after this press would
+    // then move focus to the document and blur it straight back out — which
+    // fires the editor's blur-to-commit and closes it before a key is pressed.
+    // Preventing this press's default action suppresses those compatibility
+    // events. It is done here and nowhere else in the gesture handler: a press
+    // that does NOT take focus still needs the default behaviour, or clicking
+    // the canvas would stop committing the board-name field.
+    event.preventDefault();
     const element = getDefinition('text').create({
       x: scene.x,
       y: scene.y,

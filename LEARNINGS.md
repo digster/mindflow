@@ -707,3 +707,41 @@ already paid for once.
 `labelBox` on the registry definition, read through `labelBoxOf`, is why all
 three agree. Any future per-type text placement belongs there for the same
 reason.
+
+## Blur is a platform convention, not a way to end an edit
+
+The text editor used to close only because pressing the canvas moved focus out
+of its `<textarea>`. That is a mouse convention. On iPadOS, over a
+`touch-action: none` canvas that has taken a pointer capture, a tap does not
+reliably move focus at all — so the editor stayed open, focused and blinking
+after the user had moved on, and the store's `editingId` (cleared by the same
+press) no longer agreed with it, which let the *next* tap start a gesture
+underneath a live editor.
+
+An overlay that must close on an outside press has to close itself: an explicit
+commit from the canvas handler, plus a window-level `pointerdown` listener for
+everything else. `Popover` already did exactly this and was the model.
+
+Two traps in that listener:
+
+- **Register it a task later.** The press that opens the editor is still
+  bubbling towards `window`, so a listener added synchronously dismisses the
+  editor it just opened. A microtask is not enough — the dispatcher drains the
+  microtask queue between listeners, so the handler still runs for the same
+  event.
+- **Register it on the bubble phase**, so a press on the canvas is handled once,
+  by the controller, which also has to swallow it.
+
+## Focusing inside the gesture costs you the focus, unless you prevent the default
+
+iOS Safari raises the soft keyboard only for a `focus()` called inside a trusted
+user gesture, so the editor's `focus()` had to move out of its
+`requestAnimationFrame` and into the `pointerdown` handler. That immediately
+broke three desktop tests: the compatibility `mousedown` the browser sends after
+`pointerdown` moves focus to the document, blurring the textarea — which fired
+blur-to-commit and closed the editor before a key could be pressed.
+
+`event.preventDefault()` on that one `pointerdown` suppresses the compatibility
+events and keeps the focus. Note it is done **only** where the press takes focus.
+Doing it for every canvas press would stop the board-name field committing when
+you click away from it, which is the same class of bug in the other direction.

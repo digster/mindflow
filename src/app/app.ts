@@ -116,6 +116,7 @@ export class MindflowApp {
       canvas: this.canvas,
       store: this.store,
       onEditText: (element, regionKey) => this.textEditor.open(element, regionKey),
+      onCommitText: () => this.textEditor.commit(),
       onOverlayChange: () => this.renderer.invalidate(),
       onRequestImage: (point) => void this.insertImageAtPoint(point),
       onContextMenu: ({ scene, screen, hit }) =>
@@ -213,6 +214,7 @@ export class MindflowApp {
         onSpaceChange: (held) => this.controller.setSpaceHeld(held),
         onCommandPalette: () => this.openCommandPalette(),
         onFind: () => showFindBar(this.store, this.actions),
+        onCommitText: () => this.textEditor.commit(),
       }),
     );
 

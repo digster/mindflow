@@ -360,10 +360,17 @@ if the element does not have it yet.
 | `Cmd`/`Ctrl` + `Enter` | Finish editing. |
 | `Escape` | Finish editing, **keeping** what was typed. |
 | `Tab` / `Shift` + `Tab` | Next / previous cell, in a table. |
-| Click elsewhere | Finish editing. |
+| Click or tap elsewhere | Finish editing. |
 
 `Escape` means "stop editing", not "undo" — matching every other canvas tool. The
 whole typing session collapses into one undo step.
+
+**"Elsewhere" means anywhere outside the editor**, including the toolbar and the
+style panel, and the editor commits explicitly rather than waiting to lose focus.
+Whether pressing a button moves focus out of a text field is a platform
+convention rather than a guarantee, and on a touch screen a tap on the canvas may
+not move focus at all — which left the caret alive on an iPad long after the user
+had moved on. The press that dismisses the editor does not also act on the board.
 
 `Tab` stops at the last cell rather than wrapping round to the first. Wrapping
 would silently discard the "I am done here" reading of a final `Tab`, with no
