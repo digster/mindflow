@@ -238,3 +238,118 @@ test.describe('ending a text edit by touch', () => {
     expect(active).not.toContain('mf-text-editor');
   });
 });
+
+test.describe('selecting and dragging by touch', () => {
+  /** The first element's position, for before/after comparisons. */
+  async function positionOf(page: Page) {
+    const doc = await getDocument(page);
+    return { x: doc.elements[0]?.x as number, y: doc.elements[0]?.y as number };
+  }
+
+  test('a tap selects what is under it', async ({ page }) => {
+    await stickyWithMouse(page, [200, 200], [360, 360]);
+    await tap(page, [280, 280]);
+
+    expect(await selectedCount(page)).toBe(1);
+  });
+
+  test('a tap near a thin shape still finds it', async ({ page }) => {
+    // 8px of tolerance is tuned for a cursor one pixel wide. A finger covers
+    // roughly forty and cannot see what is under it.
+    await page.locator('[data-tool="line"]').click();
+    const box = await canvasBox(page);
+    await page.mouse.move(box.x + 200, box.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 500, box.y + 200, { steps: 8 });
+    await page.mouse.up();
+    await page.keyboard.press('Escape');
+
+    // 12px off the line: past the mouse tolerance, inside the touch one.
+    await tap(page, [350, 212]);
+    expect(await selectedCount(page)).toBe(1);
+  });
+
+  test('a shaky tap selects without nudging', async ({ page }) => {
+    // A finger wanders 5-15px during what the user experiences as a stationary
+    // tap. At the mouse threshold of 3px that became a drag, and because a
+    // gesture recomputes from its origin the element jumped the whole way.
+    await stickyWithMouse(page, [200, 200], [360, 360]);
+    const before = await positionOf(page);
+
+    await shakyTap(page, [280, 280], 6);
+
+    expect(await selectedCount(page)).toBe(1);
+    expect(await positionOf(page)).toEqual(before);
+  });
+
+  test('a deliberate drag still moves it', async ({ page }) => {
+    // The other half of the threshold: raising it must not make dragging need a
+    // shove.
+    await stickyWithMouse(page, [200, 200], [360, 360]);
+    const before = await positionOf(page);
+
+    await touchDrag(page, [280, 280], [480, 380]);
+
+    const after = await positionOf(page);
+    expect(after.x - before.x).toBeCloseTo(200, 0);
+    expect(after.y - before.y).toBeCloseTo(100, 0);
+  });
+
+  test('a double tap opens the text editor', async ({ page }) => {
+    // `dblclick` is synthesised from two compatibility click pairs, which a
+    // touchscreen does not reliably produce over a canvas holding a pointer
+    // capture — and it was the only route into editing an existing element.
+    await stickyWithMouse(page, [200, 200], [400, 400]);
+    await doubleTap(page, [300, 300]);
+
+    await expect(page.locator('.mf-text-editor')).toBeVisible();
+    expect(await editingId(page)).not.toBeNull();
+  });
+
+  test('two separate taps do not open the editor', async ({ page }) => {
+    await stickyWithMouse(page, [200, 200], [400, 400]);
+    await tap(page, [300, 300]);
+    await page.waitForTimeout(400);
+    await tap(page, [300, 300]);
+
+    await expect(page.locator('.mf-text-editor')).toBeHidden();
+  });
+
+  test('a long press opens the context menu', async ({ page }) => {
+    // The press has already begun a `move` by the time the browser reports the
+    // long press, and the mid-gesture bail silently swallowed every one of
+    // them. Below the drag threshold nothing has been applied yet, so the
+    // gesture can be abandoned in favour of the menu.
+    await stickyWithMouse(page, [200, 200], [400, 400]);
+
+    const at = await onCanvas(page, [300, 300]);
+    await dispatch(page, 'touchStart', [at]);
+    await page.locator('.mf-canvas').dispatchEvent('contextmenu', {
+      clientX: at.x,
+      clientY: at.y,
+      bubbles: true,
+    });
+
+    await expect(page.locator('.mf-menu')).toBeVisible();
+    await dispatch(page, 'touchEnd', []);
+  });
+
+  test('a cancelled gesture does not break the next one', async ({ page }) => {
+    // pointercancel is rare with a mouse and routine with a finger — the system
+    // takes the pointer for palm rejection or a system gesture. The handler
+    // used to leave the capture and the press state behind, and the symptom
+    // showed up later: the NEXT drag silently did nothing.
+    await stickyWithMouse(page, [200, 200], [360, 360]);
+    const before = await positionOf(page);
+
+    const at = await onCanvas(page, [280, 280]);
+    await dispatch(page, 'touchStart', [at]);
+    await dispatch(page, 'touchMove', [{ x: at.x + 40, y: at.y + 40 }]);
+    await dispatch(page, 'touchCancel', []);
+
+    await touchDrag(page, [280, 280], [430, 280]);
+
+    const after = await positionOf(page);
+    expect(after.x - before.x).toBeCloseTo(150, 0);
+  });
+});

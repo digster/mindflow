@@ -745,3 +745,35 @@ blur-to-commit and closed the editor before a key could be pressed.
 events and keeps the focus. Note it is done **only** where the press takes focus.
 Doing it for every canvas press would stop the board-name field committing when
 you click away from it, which is the same class of bug in the other direction.
+
+## Every input constant in this app was sized for a mouse
+
+Not one of them was wrong; all of them assumed a pointing device whose hot spot
+is a single pixel and whose tremor is measured in ones. Under a finger:
+
+- the 3px drag threshold is below the wander of a tap the user means to be
+  stationary, so taps became drags — and because a gesture recomputes from its
+  origin rather than from the threshold, the element jumped the whole distance;
+- 8px of click tolerance makes a thin shape feel like it is dodging the tap;
+- a 9.5px handle radius is hard to hit, and handles are tested *before*
+  elements, so widening it too far turns "move this" into "resize this".
+
+The fix is per-gesture, not per-device: the controller records
+`event.pointerType` at pointerdown and every threshold reads from that. A media
+query would have been wrong — a tablet driven with a stylus or a trackpad wants
+the precise numbers, and the device having a touchscreen says nothing about what
+is touching it right now.
+
+## `pointercancel` is a real code path once there is a finger involved
+
+It used to abandon the gesture and leave its transient edits in place. Nothing
+had reached the undo stack, so the element sat where the interrupted drag left
+it with no way to undo, and an interrupted *creation* left a shape that could not
+be removed by undo at all. With a mouse this needed the device to be unplugged
+mid-drag; with a finger the system claims the pointer for palm rejection, a
+second touch, or a system gesture, routinely.
+
+Cancelling now rewinds — transforms back to the elements captured at pointerdown,
+creations deleted — and releases the pointer capture, which the handler also used
+to leak. That leak's symptom was the delayed, unrelated-looking one already in
+this file: the *next* drag silently does nothing.

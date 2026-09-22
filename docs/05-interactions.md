@@ -69,9 +69,19 @@ actually let go.
 
 ### Drag threshold
 
-A press becomes a drag only after the pointer travels **3 screen pixels**. Below
-that it is a click. Without this, a one-pixel tremor while clicking would nudge
-the element.
+A press becomes a drag only after the pointer travels **3 screen pixels** — or
+**8** for a touch pointer. Below that it is a click. Without this, a one-pixel
+tremor while clicking would nudge the element; 3px is a mouse-tremor allowance
+and far below what a finger wanders during a tap the user means to be
+stationary.
+
+### If a gesture is cancelled
+
+`pointercancel` — the system reclaiming the pointer, which is rare with a mouse
+and routine with a finger — abandons the gesture and **rewinds** whatever it had
+applied: a transform returns to the state captured at pointerdown, and a
+creation removes the shape being drawn. Nothing had reached the undo stack, so
+leaving the change in place would leave a board that undo cannot restore.
 
 ## Select tool priority
 
@@ -296,6 +306,38 @@ function zoomAbout(viewport, newZoom, screenAnchor) {
 
 **Panning and zooming are not edits.** They never mark the board dirty and never
 land on the undo stack.
+
+## Touch
+
+MindFlow is built for a pointer, and everything below exists so a finger is not
+a second-class one. Each accommodation keys off the *pointer type of the gesture
+in progress*, not off whether the device has a touchscreen — a tablet driven with
+a stylus or a trackpad keeps the precise thresholds.
+
+| Gesture | Behaviour |
+|---|---|
+| Tap | Select, or place the active tool's shape. |
+| Drag | Move, resize, marquee — as with a mouse, past the 8px threshold. |
+| Double tap | Edit text, the touch equivalent of a double click. |
+| Long press | Open the context menu. |
+
+**Targets are larger.** Click tolerance is **16 screen pixels** for a touch
+pointer rather than 8, and a selection handle's hit slop is 11 rather than 5. A
+cursor's hot spot is one pixel; a fingertip covers roughly forty and hides what
+is beneath it.
+
+**Double tap is recognised directly**, from two taps within **320ms** and **24
+screen pixels** that did not become drags. The browser's own `dblclick` is
+synthesised from two compatibility click pairs, which a touchscreen does not
+reliably produce over a canvas that takes a pointer capture — and before this it
+was the only route into editing an existing element.
+
+**A long press opens the context menu.** The press has already begun a move by
+the time the browser reports it, so that gesture is abandoned — which is free,
+because a press that has not crossed the drag threshold has changed nothing.
+
+**Ending a text edit does not depend on focus.** See
+[Text editing](#text-editing).
 
 ## Snapping
 

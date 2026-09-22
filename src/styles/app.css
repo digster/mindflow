@@ -104,6 +104,27 @@ body {
   background: var(--mf-bg);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
+
+  /*
+   * The board is a drawing surface, not a document. Without these, a press and
+   * hold on iOS raises the text-selection magnifier and the share callout over
+   * the canvas, and a drag that starts on a toolbar label selects the label.
+   * Both are the OS being helpful about content that is not there.
+   *
+   * Inputs opt back in below: a field the user cannot select text in is
+   * genuinely broken, not merely unpolished.
+   */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input,
+textarea,
+[contenteditable] {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 button,

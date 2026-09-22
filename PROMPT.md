@@ -185,3 +185,11 @@ the editor actually closed as a side effect of a native focus change, which a
 touch screen does not reliably cause. It now commits explicitly, a window-level
 listener covers presses on the chrome, `commit()` blurs before hiding so the
 soft keyboard goes down, and `open()` focuses inside the gesture so it comes up.
+
+**Commit 3 — selecting and dragging by touch.** Every input constant had been
+sized for a mouse. The drag threshold, the click tolerance and the handle slop
+now read from the pointer type of the gesture in progress. `pointercancel`
+became a real teardown that rewinds what the gesture had applied and releases
+the capture. Double tap opens the text editor, since `dblclick` does not arrive
+reliably from a finger, and a long press opens the context menu instead of being
+swallowed by the move it had already started.

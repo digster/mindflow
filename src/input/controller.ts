@@ -40,6 +40,7 @@ import type { HandleId, SelectionFrame, SnapGuide } from '../render/overlay.ts';
 import { getDefinition } from '../model/registry.ts';
 import {
   HANDLE_HIT_SLOP,
+  TOUCH_HANDLE_HIT_SLOP,
   handleAt,
   handleCursor,
   canRotate,
@@ -65,7 +66,14 @@ import {
   replaceElements,
   topZIndex,
 } from '../store/commands.ts';
-import { boxFromPoints, elementAt, elementsInBox, elementsByIds } from './hitTest.ts';
+import {
+  HIT_TOLERANCE_PX,
+  TOUCH_HIT_TOLERANCE_PX,
+  boxFromPoints,
+  elementAt,
+  elementsInBox,
+  elementsByIds,
+} from './hitTest.ts';
 import { reassignFrames, withFrameMembers } from '../model/frames.ts';
 import { computeSnap } from './snapping.ts';
 import {
@@ -86,6 +94,21 @@ import {
 
 /** Pointer travel, in screen pixels, before a press becomes a drag. */
 const DRAG_THRESHOLD_PX = 3;
+
+/**
+ * The same threshold for a finger.
+ *
+ * 3px is a mouse-tremor allowance. A finger routinely wanders 5-15px during
+ * what the user experiences as a stationary tap, so at 3px nearly every tap
+ * became a drag and nudged whatever it landed on — and because a gesture
+ * recomputes from its origin rather than from the threshold, the element jumped
+ * the whole distance at once.
+ */
+const TOUCH_DRAG_THRESHOLD_PX = 8;
+
+/** Window and slop for recognising a double tap, in ms and screen pixels. */
+const DOUBLE_TAP_MS = 320;
+const DOUBLE_TAP_SLOP_PX = 24;
 
 /** Default size for a shape created by a click rather than a drag. */
 const CLICK_CREATE_SIZE = 120;
@@ -148,6 +171,25 @@ export class InteractionController {
   private spaceHeld = false;
   /** The pointer the canvas most recently captured; see `onContextMenu`. */
   private capturedPointerId: number | null = null;
+  /**
+   * Whether the gesture in progress is being made with a finger.
+   *
+   * Every touch accommodation keys off this rather than off a media query, so a
+   * tablet driven with a stylus or a trackpad keeps the precise thresholds —
+   * the device may have a touchscreen without this particular gesture using it.
+   */
+  private coarsePointer = false;
+  /** The last completed tap, for recognising a double tap. */
+  private lastTap: { at: Point; time: number } | null = null;
+  /**
+   * When a double tap was last handled, suppressing the `dblclick` the browser
+   * may synthesise for the same pair.
+   *
+   * `-Infinity`, not `0`: `performance.now()` is measured from page load, so a
+   * zero would make every double-click in the first third of a second after
+   * load look like an echo of a tap that never happened.
+   */
+  private handledDoubleTapAt = Number.NEGATIVE_INFINITY;
 
   /** Live overlay state, read by the renderer each frame. */
   marquee: ReturnType<typeof boxFromPoints> | null = null;
@@ -188,6 +230,21 @@ export class InteractionController {
   // Coordinates
   // -------------------------------------------------------------------------
 
+  /** Travel before a press becomes a drag, for whatever is doing the pressing. */
+  private dragThreshold(): number {
+    return this.coarsePointer ? TOUCH_DRAG_THRESHOLD_PX : DRAG_THRESHOLD_PX;
+  }
+
+  /** Click tolerance in screen pixels, for whatever is doing the pressing. */
+  private tolerancePx(): number {
+    return this.coarsePointer ? TOUCH_HIT_TOLERANCE_PX : HIT_TOLERANCE_PX;
+  }
+
+  /** Handle slop in screen pixels, for whatever is doing the pressing. */
+  private handleSlop(): number {
+    return this.coarsePointer ? TOUCH_HANDLE_HIT_SLOP : HANDLE_HIT_SLOP;
+  }
+
   private screenPoint(event: PointerEvent | WheelEvent | MouseEvent): Point {
     const rect = this.options.canvas.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -222,7 +279,16 @@ export class InteractionController {
       return;
     }
 
-    this.options.canvas.setPointerCapture(event.pointerId);
+    this.coarsePointer = event.pointerType === 'touch';
+
+    try {
+      this.options.canvas.setPointerCapture(event.pointerId);
+    } catch {
+      // Throws for a pointer the browser no longer knows about — a synthesised
+      // event, or one the OS already reclaimed. Losing the capture degrades the
+      // gesture; letting it throw would abandon `onPointerDown` before any
+      // gesture was set up at all, which looks like the press doing nothing.
+    }
     // Remembered so `onContextMenu` can release it. A `contextmenu` event is a
     // MouseEvent and carries no pointerId of its own.
     this.capturedPointerId = event.pointerId;
@@ -304,7 +370,7 @@ export class InteractionController {
     const frame = canTransform(selected) ? selectionFrame(selected) : null;
 
     if (frame) {
-      const handle = handleAt(frame, scene, zoom, canRotate(selected));
+      const handle = handleAt(frame, scene, zoom, canRotate(selected), this.handleSlop());
       if (handle === 'rotate') {
         this.gesture = {
           kind: 'rotate',
@@ -335,7 +401,7 @@ export class InteractionController {
       return;
     }
 
-    const hit = elementAt(store.document, scene, zoom);
+    const hit = elementAt(store.document, scene, zoom, { tolerancePx: this.tolerancePx() });
     const additive = event.shiftKey;
 
     if (!hit) {
@@ -398,7 +464,7 @@ export class InteractionController {
 
     // The same slop the outer handles use, in screen pixels and divided by zoom
     // so a divider is equally grabbable at any magnification.
-    const tolerance = HANDLE_HIT_SLOP / this.options.store.viewport.zoom;
+    const tolerance = this.handleSlop() / this.options.store.viewport.zoom;
     const local = worldToLocal(element, scene);
     if (
       local.x < -tolerance ||
@@ -537,7 +603,7 @@ export class InteractionController {
       );
       // Below the threshold this is still a click, not a drag. Without this,
       // a one-pixel tremor while clicking would nudge the element.
-      if (travelled < DRAG_THRESHOLD_PX) return;
+      if (travelled < this.dragThreshold()) return;
       this.movedPastThreshold = true;
     }
 
@@ -839,6 +905,13 @@ export class InteractionController {
       }
     }
 
+    // A tap that stayed put may be the second half of a double tap, which is
+    // how a finger opens the text editor. Checked before the state below is
+    // reset, and never for a press that became a drag.
+    if (this.coarsePointer && !this.movedPastThreshold) {
+      this.handleTouchDoubleTap(scene, this.screenPoint(event));
+    }
+
     this.gesture = { kind: 'none' };
     this.pointerDownScreen = null;
     this.movedPastThreshold = false;
@@ -950,9 +1023,33 @@ export class InteractionController {
     store.execute(addElements([finished], 'Draw'));
   }
 
-  private onPointerCancel = (): void => {
-    // The OS took the pointer away mid-gesture. Abandon it; transient edits are
-    // left as-is rather than half-committed to history.
+  private onPointerCancel = (event: PointerEvent): void => {
+    // The OS took the pointer away mid-gesture. Abandon it, and rewind whatever
+    // it had applied.
+    //
+    // This used to leave the transient edits in place. Nothing had been written
+    // to history, so the element sat wherever the interrupted drag left it with
+    // no undo entry to bring it back, and an interrupted *creation* left a
+    // shape on the board that could not be undone at all. That was survivable
+    // when `pointercancel` meant a mouse had been unplugged; it is not now that
+    // a finger triggers it whenever the system claims the pointer.
+    //
+    // This used to stop there, which was survivable with a mouse (where
+    // `pointercancel` is rare) and not with a finger (where the system takes
+    // the pointer for palm rejection, a second touch, or a system gesture). The
+    // leftovers are what bite: a capture the canvas still holds swallows the
+    // next drag entirely — the delayed, unrelated-looking symptom already
+    // recorded in LEARNINGS.md — and a stale `movedPastThreshold` makes the
+    // next press start out believing it is mid-drag.
+    this.releaseCapture(event.pointerId);
+    this.pointerDownScreen = null;
+    this.movedPastThreshold = false;
+    this.lastTap = null;
+    // The abandoned transient edits must not coalesce into whatever comes next,
+    // or one undo would rewind both.
+    this.options.store.history.breakCoalescing();
+
+    this.rewindGesture();
     this.gesture = { kind: 'none' };
     this.marquee = null;
     this.guides = [];
@@ -960,14 +1057,71 @@ export class InteractionController {
     this.options.onOverlayChange();
   };
 
+  /**
+   * Undoes the transient effects of the gesture in flight.
+   *
+   * Transient commands never reach history, so this is the only way back: a
+   * transform rewinds to the elements captured at pointerdown, and a creation
+   * deletes the preview it had been drawing.
+   */
+  private rewindGesture(): void {
+    const { store } = this.options;
+
+    switch (this.gesture.kind) {
+      case 'move':
+      case 'resize':
+      case 'rotate':
+        store.execute(replaceElements(store.document, this.gesture.originals, 'Cancel'), true);
+        break;
+      case 'interiorHandle':
+        store.execute(replaceElements(store.document, [this.gesture.original], 'Cancel'), true);
+        break;
+      case 'createBox':
+      case 'createLinear':
+      case 'freehand':
+        store.execute(deleteElements(store.document, [this.gesture.element.id], 'Cancel'), true);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** Releases a pointer capture if the canvas still holds one. */
+  private releaseCapture(pointerId?: number): void {
+    const { canvas } = this.options;
+    const id = pointerId ?? this.capturedPointerId;
+    if (id === null || id === undefined) return;
+    if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+    if (id === this.capturedPointerId) this.capturedPointerId = null;
+  }
+
   // -------------------------------------------------------------------------
   // Other input
   // -------------------------------------------------------------------------
 
   private onDoubleClick = (event: MouseEvent): void => {
+    // A double tap is handled at pointerup, and the browser may then synthesise
+    // a `dblclick` for the same pair. Opening the editor twice would replace the
+    // element captured at `open`, so the undo rewind would target the wrong
+    // state.
+    if (performance.now() - this.handledDoubleTapAt < DOUBLE_TAP_MS) return;
+    this.editTextAt(this.scenePoint(event));
+  };
+
+  /**
+   * Opens the text editor on whatever is under `scene`, on the region that was
+   * pointed at when the type has regions.
+   *
+   * Split out of the `dblclick` handler so a double TAP can reach it. `dblclick`
+   * is synthesised from two compatibility click pairs, which a touchscreen does
+   * not reliably produce over a canvas that takes a pointer capture — and it was
+   * the only route into editing an existing element.
+   */
+  private editTextAt(scene: Point): void {
     const { store } = this.options;
-    const scene = this.scenePoint(event);
-    const hit = elementAt(store.document, scene, store.viewport.zoom);
+    const hit = elementAt(store.document, scene, store.viewport.zoom, {
+      tolerancePx: this.tolerancePx(),
+    });
     if (!hit) return;
 
     const definition = getDefinition(hit.type);
@@ -980,7 +1134,30 @@ export class InteractionController {
       const region = definition.textRegionAt?.(hit as never, worldToLocal(hit, scene)) ?? null;
       this.options.onEditText(hit, region);
     }
-  };
+  }
+
+  /**
+   * Recognises a double tap at `pointerup`, and opens the text editor.
+   *
+   * Two taps close together in time and place. The slop is generous because the
+   * two touches of a real double tap rarely land within a mouse's few pixels,
+   * and a tap that turned into a drag is excluded outright.
+   */
+  private handleTouchDoubleTap(scene: Point, screen: Point): void {
+    const now = performance.now();
+    const previous = this.lastTap;
+    this.lastTap = { at: screen, time: now };
+
+    if (
+      previous &&
+      now - previous.time < DOUBLE_TAP_MS &&
+      Math.hypot(screen.x - previous.at.x, screen.y - previous.at.y) < DOUBLE_TAP_SLOP_PX
+    ) {
+      this.lastTap = null;
+      this.handledDoubleTapAt = now;
+      this.editTextAt(scene);
+    }
+  }
 
   private onContextMenu = (event: MouseEvent): void => {
     // The app supplies its own menu; suppress the browser's.
@@ -1001,14 +1178,25 @@ export class InteractionController {
 
     // A menu opened mid-gesture would act on a selection that is still moving,
     // and its dismissal would race the pointerup that ends the drag.
-    if (this.gesture.kind !== 'none') return;
+    //
+    // A long press is the touch equivalent of a right-click, and it arrives
+    // exactly this way — but by the time the browser reports it, the press has
+    // already begun a `move` or a `marquee`, so this bail silently swallowed
+    // every long press on a touchscreen. A gesture that has not passed its drag
+    // threshold has applied nothing yet, so abandoning it here costs nothing and
+    // is what the user is asking for.
+    if (this.gesture.kind !== 'none') {
+      if (!this.coarsePointer || this.movedPastThreshold) return;
+      this.gesture = { kind: 'none' };
+      this.marquee = null;
+      this.pointerDownScreen = null;
+      this.options.onOverlayChange();
+    }
 
     // `contextmenu` fires between pointerdown and pointerup, and pointerdown has
     // already captured the pointer (before the right-button bail). Releasing it
     // here stops the canvas swallowing the pointer events the menu needs.
-    if (this.capturedPointerId !== null && this.options.canvas.hasPointerCapture(this.capturedPointerId)) {
-      this.options.canvas.releasePointerCapture(this.capturedPointerId);
-    }
+    this.releaseCapture();
 
     this.options.onContextMenu?.({ scene, screen: { x: event.clientX, y: event.clientY }, hit });
   };
@@ -1092,7 +1280,7 @@ export class InteractionController {
       const selected = store.selectedElements();
       const frame = canTransform(selected) ? selectionFrame(selected) : null;
       if (frame) {
-        const handle = handleAt(frame, scene, store.viewport.zoom, canRotate(selected));
+        const handle = handleAt(frame, scene, store.viewport.zoom, canRotate(selected), this.handleSlop());
         if (handle) {
           canvas.style.cursor = handleCursor(handle, frame.angle);
           return;
