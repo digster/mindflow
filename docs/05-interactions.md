@@ -14,7 +14,8 @@ Reference implementation: [`src/input/controller.ts`](../src/input/controller.ts
 | Pan | `H` | Drag to pan. |
 | Rectangle | `R` | Drag to size, or click for a default 100 × 80. |
 | Ellipse | `O` | Drag to size, or click for a default 100 × 100. |
-| Diamond | `D` | Drag to size, or click for a default 120 × 80. |
+| Diamond | `D` | Drag to size, or click for a default 120 × 80. Shares its toolbar slot with the shape flyout. |
+| Shapes | — | A flyout on the diamond slot, holding every closed shape: rectangle, ellipse, diamond, triangle, pentagon, hexagon, star, parallelogram, and the solids (cube, cylinder, cone, pyramid, sphere, prism, torus, capsule). All behave as above — drag to size, or click for the type's default. |
 | Line | `L` | Drag from start to end. |
 | Arrow | `A` | Drag from start to end; binds to shapes at either end. |
 | Draw | `P` | Drag to draw freehand. |
@@ -28,6 +29,18 @@ Reference implementation: [`src/input/controller.ts`](../src/input/controller.ts
 After creating an element, the tool returns to **Select** and the new element is
 selected. This matches Figma and Freeform: the common case is create-then-adjust,
 not create-many-in-a-row.
+
+### The shape flyout
+
+Sixteen closed shapes cannot each have a toolbar button without turning the strip
+into a wall of icons, so one slot shows the shape last chosen from the flyout and
+a small opener beside it lists them all. The slot remembers its choice between
+sessions, and every shape is also reachable by name from the command palette
+(`Cmd`/`Ctrl` + `K`).
+
+Only the shapes that predate the flyout carry a single-letter shortcut. Giving
+thirteen more types a letter each would exhaust the keyboard for a gain the
+palette already provides.
 
 ## The gesture lifecycle
 

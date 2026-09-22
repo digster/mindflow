@@ -31,6 +31,19 @@ a connector can attach.
 | `sticky` | | | ✓ | ✓ | ✓ | ✓ |
 | `table` | | | ✓ | ✓ | ✓ | ✓ |
 | `image` | ✓ | | | ✓ | ✓ | ✓ |
+| `triangle` | ✓ | | | ✓ | ✓ | ✓ |
+| `pentagon` | ✓ | | | ✓ | ✓ | ✓ |
+| `hexagon` | ✓ | | | ✓ | ✓ | ✓ |
+| `star` | ✓ | | | ✓ | ✓ | ✓ |
+| `parallelogram` | ✓ | | | ✓ | ✓ | ✓ |
+| `cube` | ✓ | | | ✓ | ✓ | ✓ |
+| `cylinder` | ✓ | | | ✓ | ✓ | ✓ |
+| `cone` | ✓ | | | ✓ | ✓ | ✓ |
+| `pyramid` | ✓ | | | ✓ | ✓ | ✓ |
+| `sphere` | ✓ | | | ✓ | ✓ | ✓ |
+| `prism` | ✓ | | | ✓ | ✓ | ✓ |
+| `torus` | ✓ | | | ✓ | ✓ | ✓ |
+| `capsule` | ✓ | | | ✓ | ✓ | ✓ |
 
 - **`label`** — can carry text inside it via the `label` object.
 - **`path`** — geometry is a `points` list rather than a plain box.
@@ -476,6 +489,301 @@ and rasterising it would destroy the reason to use it.
 
 A `fileId` that does not resolve renders as a crossed placeholder and is reported
 by validation. The element is never deleted.
+
+---
+
+## triangle
+
+An isosceles triangle inscribed in the element's box.
+
+Adds no fields.
+
+**Geometry:** three vertices, as fractions of `width` and `height`:
+`(0.5, 0)`, `(1, 1)`, `(0, 1)`.
+
+**Hit-testing and anchoring:** as for every flat polygon below — see
+[Flat polygons](#flat-polygons).
+
+---
+
+## pentagon
+
+A five-sided polygon inscribed in the element's box.
+
+Adds no fields.
+
+**Geometry:** the vertices are generated on the unit circle starting at the top
+and running clockwise, one every `360/5` degrees, and the resulting polygon is
+then scaled and translated so its bounding box is exactly the element's box.
+That normalisation is what makes a pentagon *fill* the box you drag out instead
+of floating inside its circumscribed circle. As fractions of `width` and
+`height`:
+
+```
+(0.5, 0)  (1, 0.382)  (0.809, 1)  (0.191, 1)  (0, 0.382)
+```
+
+**Not regular.** A pentagon in a 300x80 box is wide and flat, exactly as an
+ellipse would be. Preserving regularity would mean either ignoring one of
+`width`/`height` or refusing a free resize, and both make the stored box a lie.
+
+---
+
+## hexagon
+
+A six-sided polygon inscribed in the element's box, generated exactly as
+[`pentagon`](#pentagon) is, with six vertices:
+
+```
+(0.5, 0)  (1, 0.25)  (1, 0.75)  (0.5, 1)  (0, 0.75)  (0, 0.25)
+```
+
+Adds no fields.
+
+---
+
+## star
+
+A five-pointed star inscribed in the element's box.
+
+Adds no fields.
+
+**Geometry:** generated as [`pentagon`](#pentagon) is, but with ten vertices
+alternating between the outer radius and **0.382** of it — `1/phi^2`, the ratio a
+regular pentagram produces. After the same fit-to-box normalisation:
+
+```
+(0.5, 0)      (0.618, 0.382)  (1, 0.382)      (0.691, 0.618)  (0.809, 1)
+(0.5, 0.764)  (0.191, 1)      (0.309, 0.618)  (0, 0.382)      (0.382, 0.382)
+```
+
+The outline is **not convex**, which matters for connector anchoring: see
+[Flat polygons](#flat-polygons).
+
+---
+
+## parallelogram
+
+A parallelogram leaning right, the flowchart input/output shape.
+
+Adds no fields.
+
+**Geometry:** the top edge is inset from the left and the bottom edge from the
+right by the same fraction of the width, **0.25**:
+
+```
+(0.25, 0)  (1, 0)  (0.75, 1)  (0, 1)
+```
+
+---
+
+## Flat polygons
+
+`triangle`, `pentagon`, `hexagon`, `star` and `parallelogram` share everything
+except their vertex lists.
+
+**Hit-testing:** as for every closed shape — a filled polygon (or one carrying
+non-empty label text) is hit anywhere inside its outline, and an unfilled one
+only near its edges, so a click passes through the hollow middle.
+
+**Connector anchoring:** an `auto`-bound connector attaches to the polygon, not
+to its bounding box. The crossing is found by intersecting the ray from the
+element's centre with each edge in turn and taking the **largest** valid
+parameter, so a star anchors to the tip of a point rather than to the notch
+between two of them. The algorithm is specified in
+[07-rendering.md](07-rendering.md#binding-resolution).
+
+**Hand-drawn rendering:** the outline is the polygon's own vertices, displaced by
+the rule in [07-rendering.md](07-rendering.md#hand-drawn-rendering).
+
+**Labels** are centred in the element's box, as for a rectangle.
+
+---
+
+## cube
+
+A cube in oblique projection.
+
+Adds no fields. Depth is computed — see [Solids](#solids).
+
+**Geometry**, with `d` the projection offset:
+
+| Face | Vertices |
+|---|---|
+| top (lit) | `(0, d)`, `(d, 0)`, `(w, 0)`, `(w-d, d)` |
+| right (shaded) | `(w-d, d)`, `(w, 0)`, `(w, h-d)`, `(w-d, h)` |
+| front (base) | `(0, d)`, `(w-d, d)`, `(w-d, h)`, `(0, h)` |
+
+Painted in that order. The silhouette is the hexagon
+`(0, d)`, `(d, 0)`, `(w, 0)`, `(w, h-d)`, `(w-d, h)`, `(0, h)`.
+
+**Label box:** the front face — `(0, d)` to `(w-d, h)`.
+
+---
+
+## cylinder
+
+A cylinder in oblique projection, standing upright.
+
+Adds no fields.
+
+**Geometry:** two ellipses of radii `w/2` and `d/2`, centred at `(w/2, d/2)` and
+`(w/2, h - d/2)`. The body is the closed region bounded by the left side
+(`x = 0`), the **near** half of the lower ellipse, the right side (`x = w`) and
+the **far** half of the upper one; the full upper ellipse is then drawn over it
+in the lit tone as the visible top face. The far half of the lower ellipse is
+hidden, as it would be on a solid object.
+
+**Label box:** `(0, d/2)` to `(w, h - d/2)` — the body between the two caps.
+
+---
+
+## cone
+
+A cone in oblique projection, apex up.
+
+Adds no fields.
+
+**Geometry:** apex at `(w/2, 0)`; base ellipse of radii `w/2` and `d/2` centred
+at `(w/2, h - d/2)`. The outline runs apex to `(w, h - d/2)`, along the **near**
+half of the base ellipse, and back to the apex. A cone has no second visible
+face, so it is painted in the base tone alone.
+
+**Label box:** `(w/4, h/2)`, `w/2` wide and `h/2 - d/2` tall.
+
+---
+
+## pyramid
+
+A square pyramid in oblique projection, apex up.
+
+Adds no fields.
+
+**Geometry:** apex at `(w/2, 0)`. The base is a rhombus with corners
+`(0, h - d/2)`, `(w/2, h)`, `(w, h - d/2)` and `(w/2, h - d)`, of which only the
+two faces meeting at the near corner are visible:
+
+| Face | Vertices |
+|---|---|
+| left (base) | apex, `(0, h-d/2)`, `(w/2, h)` |
+| right (shaded) | apex, `(w/2, h)`, `(w, h-d/2)` |
+
+**Label box:** as [`cone`](#cone).
+
+---
+
+## sphere
+
+A sphere inscribed in the element's box.
+
+Adds no fields.
+
+**Geometry:** the ellipse inscribed in the box, painted in the base tone, plus
+the lens between the **near** half of the equator — an ellipse of radii `w/2` and
+`d/2` centred at `(w/2, h/2)` — and the lower half of the outline, painted in the
+shaded tone. The equator needs no separate stroke: it is the boundary between the
+two faces.
+
+**Label box:** `(0.15w, 0.15h)`, `0.7w` wide and `0.35h` tall — above the
+equator, which would otherwise strike through the text.
+
+---
+
+## prism
+
+A triangular prism resting on its rectangular face.
+
+Adds no fields.
+
+**Geometry:** the front triangle has apex `((w-d)/2, d)` and base corners
+`(0, h)` and `(w-d, h)`. The back triangle is the front one translated by
+`(+d, -d)`. Only two faces survive the projection:
+
+| Face | Vertices |
+|---|---|
+| right roof (lit) | `((w-d)/2, d)`, `((w+d)/2, 0)`, `(w, h-d)`, `(w-d, h)` |
+| front (base) | `((w-d)/2, d)`, `(w-d, h)`, `(0, h)` |
+
+The back-left corner `(d, h-d)` falls inside the silhouette and is never drawn.
+
+**Label box:** the lower half of the front triangle — `((w-d)/4, d + (h-d)/2)`,
+`(w-d)/2` wide and `(h-d)/2` tall.
+
+---
+
+## torus
+
+A torus — a ring — inscribed in the element's box.
+
+Adds no fields.
+
+**Geometry:** the ellipse inscribed in the box, with a second ellipse of radii
+`0.42 x w/2` and `0.30 x h/2` at the same centre. Both belong to **one path**
+filled under the **even-odd** rule, so the inner ellipse is a genuine hole: the
+board shows through it, and a click there passes to whatever is behind.
+
+The flatter hole is what reads as a ring seen at an angle rather than as a flat
+annulus.
+
+**Label box:** the whole box. Text sits across the hole, which is legible
+because the hole is empty.
+
+---
+
+## capsule
+
+A capsule — a cylinder with hemispherical ends — lying along the box's longer
+axis.
+
+Adds no fields.
+
+**Geometry:** a stadium with cap radius `r = min(width, height) / 2`, oriented
+vertically when `height >= width` and horizontally otherwise. A seam one cap in
+from the near end — the near half of an ellipse of radii `w/2` and `d/2` for a
+vertical capsule, `d/2` and `h/2` for a horizontal one — separates the dome,
+painted in the lit tone, from the body in the base tone.
+
+**Label box:** the whole box.
+
+---
+
+## Solids
+
+`cube`, `cylinder`, `cone`, `pyramid`, `sphere`, `prism`, `torus` and `capsule`
+are 2.5D: a fixed oblique projection drawn on the 2D canvas. They are ordinary
+elements in every other respect — they resize, rotate, snap, group, bind
+connectors and round-trip exactly as a rectangle does.
+
+**Depth is computed, never stored:**
+
+```
+d = 0.25 x min(width, height)
+```
+
+A stored depth would be a second description of how big the shape is, and would
+have to be kept in step with `width`/`height` on every resize. Computed, a
+solid's geometry is a pure function of its box, and a solid's JSON is
+indistinguishable from a rectangle's apart from `type`.
+
+**All geometry is inscribed in the box.** The projection runs up and to the
+right, and no part of a solid is ever drawn outside `(0, 0)`–`(width, height)`,
+so `x`/`y`/`width`/`height` remain a truthful bounding box.
+
+**Three tones from one fill.** A solid has a single `style.fill`, like every
+other element. Its lit and shaded faces are *derived* from that colour by the
+formula in [07-rendering.md](07-rendering.md#solids), which a reader needs in
+order to reproduce a rendered solid.
+
+**Hit-testing:** as for every closed shape, against the silhouette rather than
+the bounding box. A `torus` additionally excludes its hole.
+
+**Connector anchoring:** to the silhouette, by the same ray-polygon algorithm the
+[flat polygons](#flat-polygons) use.
+
+**Hand-drawn rendering: none.** A hand-drawn outline is a single closed polygon,
+which cannot express a cube's three faces without losing the edges between them,
+so solids render cleanly whatever `style.roughness` says — as `frame`, `table`
+and `image` already do. The value is still stored and preserved.
 
 ---
 

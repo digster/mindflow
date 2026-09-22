@@ -663,3 +663,47 @@ eight alignment icons are named this way and picking them by name gets half of
 them wrong. `test/unit/icons.test.ts` asserts against the geometry instead — that
 `alignLeft` contains a rule at `x=2`, `alignBottom` one at `y=22`, and so on — so
 a future icon swap cannot silently transpose them.
+
+## A sampled arc misses the tangent points unless you make it land on them
+
+**Symptom:** a cylinder's silhouette was `0.1` scene units short of its own
+bounding box, so the top of the shape did not quite touch the top of its
+selection frame.
+
+**Cause:** arcs are sampled to polylines so the canvas and the SVG exporter
+consume identical geometry. The sample count came from a spacing rule, which
+meant the angular step rarely divided the arc evenly at the points where the
+curve is tangent to the box — the very points that define the extent.
+
+**Fix:** round the segment count up to a multiple of four. That puts a sample on
+the arc's midpoint and, for a full ellipse, on all four quadrant points.
+
+The general rule: **when sampling a curve whose bounding box matters, force
+samples onto the extremes.** Spacing alone describes smoothness, not extent, and
+here the extent is what culling, marquee selection and snapping all read.
+
+## `roughOutline` is one closed polygon, so a multi-face shape cannot have one
+
+The hand-drawn renderer displaces a single closed polygon, and `export.ts`
+short-circuits a rough element to a single `<polygon>`. Both are fine for a
+rectangle or a hexagon and impossible for a cube: its three faces share edges
+that a single silhouette does not contain, so roughening would erase exactly the
+lines that make it read as a solid.
+
+The solids therefore omit `roughOutline` entirely, and get the correct UI for
+free — `stylePanel.ts` gates the sketch control on `Boolean(definition.roughOutline)`.
+Anything drawn from more than one contour should do the same rather than trying
+to make one polygon stand in for several.
+
+## Three renderers read a label's box, not two
+
+`drawLabel` on the canvas, the DOM `<textarea>` overlay, and `labelToSvg` in the
+exporter each place the same text independently. A solid wants its label on its
+front face rather than in the centre of its bounding box, and doing that with a
+`ctx.translate` inside `draw` moves only the first of the three — which shows up
+as text jumping the moment editing starts, the failure mode this project has
+already paid for once.
+
+`labelBox` on the registry definition, read through `labelBoxOf`, is why all
+three agree. Any future per-type text placement belongs there for the same
+reason.

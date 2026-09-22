@@ -384,6 +384,60 @@ export function rectOutlineIntersect(
   return { x: cx + direction.x * t, y: cy + direction.y * t };
 }
 
+/**
+ * Where a ray from the element's centre crosses a closed polygon, in the LOCAL
+ * frame. The shared implementation of `outlineIntersect` for every type whose
+ * silhouette is a polygon — the flat shapes and the solids alike.
+ *
+ * Each edge is solved analytically rather than by marching along the ray: with
+ * the centre at `c` and the edge running `a -> b`, the crossing satisfies
+ *
+ *     c + t*direction = a + u*(b - a),    t >= 0,  0 <= u <= 1
+ *
+ * which is a 2x2 system whose determinant is the 2D cross product of the two
+ * directions. A determinant of zero means the edge is parallel to the ray and is
+ * skipped. The LARGEST valid `t` is returned, so a non-convex outline (a star)
+ * anchors to its outermost crossing rather than to a notch the arrow would
+ * appear to stop short of.
+ *
+ * Falls back to the polygon's bounding rectangle if nothing is crossed, which
+ * can only happen for a degenerate polygon.
+ */
+export function polygonOutlineIntersect(
+  polygon: readonly Point[],
+  center: Point,
+  direction: Point,
+): Point {
+  let best = -Infinity;
+
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i]!;
+    const b = polygon[(i + 1) % polygon.length]!;
+    const ex = b.x - a.x;
+    const ey = b.y - a.y;
+
+    const determinant = direction.x * -ey - direction.y * -ex;
+    if (determinant === 0) continue;
+
+    const rx = a.x - center.x;
+    const ry = a.y - center.y;
+    const t = (rx * -ey - ry * -ex) / determinant;
+    const u = (direction.x * ry - direction.y * rx) / determinant;
+
+    if (t >= 0 && u >= 0 && u <= 1 && t > best) best = t;
+  }
+
+  if (best === -Infinity) {
+    const box = aabbFromPoints(polygon);
+    return rectOutlineIntersect(
+      { width: box.maxX - box.minX, height: box.maxY - box.minY },
+      direction,
+    );
+  }
+
+  return { x: center.x + direction.x * best, y: center.y + direction.y * best };
+}
+
 // ---------------------------------------------------------------------------
 // Path elements
 // ---------------------------------------------------------------------------

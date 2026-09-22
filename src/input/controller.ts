@@ -34,7 +34,8 @@ import type {
   PointTuple,
   Viewport,
 } from '../model/types.ts';
-import type { Store, ToolId } from '../store/store.ts';
+import type { ShapeToolId, Store, ToolId } from '../store/store.ts';
+import { isShapeTool } from '../store/store.ts';
 import type { HandleId, SelectionFrame, SnapGuide } from '../render/overlay.ts';
 import { getDefinition } from '../model/registry.ts';
 import {
@@ -227,14 +228,19 @@ export class InteractionController {
 
     if (event.button === 2) return; // Right-click is handled by the context menu.
 
+    // Every shape-family tool creates the same way, so they are matched by
+    // membership rather than by a case list that would have to grow with each
+    // new type. See `SHAPE_TOOLS` in the store.
+    if (isShapeTool(tool)) {
+      this.beginBoxCreate(tool, scene);
+      return;
+    }
+
     switch (tool) {
       case 'select':
         this.beginSelectGesture(event, scene);
         break;
-      case 'rectangle':
-      case 'ellipse':
       case 'sticky':
-      case 'diamond':
       case 'frame':
       case 'table':
         this.beginBoxCreate(tool, scene);
@@ -420,7 +426,7 @@ export class InteractionController {
   }
 
   private beginBoxCreate(
-    tool: 'rectangle' | 'ellipse' | 'sticky' | 'diamond' | 'frame' | 'table',
+    tool: ShapeToolId | 'sticky' | 'frame' | 'table',
     scene: Point,
   ): void {
     const { store } = this.options;

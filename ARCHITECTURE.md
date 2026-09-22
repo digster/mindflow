@@ -65,7 +65,11 @@ main.ts
 ## The element registry — the keystone
 
 [`src/model/registry.ts`](src/model/registry.ts) holds one definition per element
-type: `create`, `normalize`, `draw`, `hitTest`, and a capability descriptor.
+type: `create`, `normalize`, `draw`, `hitTest`, and a capability descriptor. A
+handful of optional members carry the cases the capability flags cannot express —
+`outlineIntersect`, `roughOutline`, `labelBox`, `textRegions`, `interiorHandles`
+and `palette`. Each exists because the alternative was a `type === '…'` branch in
+code that is not allowed to have one, and each costs existing types nothing.
 
 **The rule: no code outside `render/shapes/` may branch on `element.type`.**
 

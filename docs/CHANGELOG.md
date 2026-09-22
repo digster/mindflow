@@ -257,6 +257,95 @@ rather than to breakage.
 
 ---
 
+## 1.4.0 — 2026-09-22
+
+Additive. A 1.3.0 file is a valid 1.4.0 file containing none of the new types.
+
+### Added
+
+**Five flat polygon types** — `triangle`, `pentagon`, `hexagon`, `star` and
+`parallelogram`.
+
+**Eight solid types** — `cube`, `cylinder`, `cone`, `pyramid`, `sphere`,
+`prism`, `torus` and `capsule`, drawn in a fixed oblique projection.
+
+Full reference in [03-elements.md](03-elements.md#triangle); the projection, the
+face geometry and the tone derivation are specified in
+[07-rendering.md](07-rendering.md#solids).
+
+None of the thirteen adds a field. Every one of them is a `baseElement` with a
+different `type`, which is the whole point of what follows.
+
+### The design decisions
+
+**Depth is computed, not stored.** `d = 0.25 × min(width, height)`. A stored
+`depth` was the obvious alternative and is the same mistake absolute table track
+lengths would have been: a second description of how big the shape is, which then
+has to be kept in step with `width`/`height` on every resize. That means a
+type-specific resize rule in every writer, and a file carrying an invariant that
+a hand-authored board can break silently. Computed, a solid's geometry is a pure
+function of its box — a cube's JSON is a rectangle's JSON with a different
+`type`, and resizing one is the ordinary base-geometry change every element gets.
+
+The cost is that a solid's proportions cannot be art-directed independently of
+its box. That is the right trade for a whiteboard, and `meta` remains available
+to a tool that needs to record something else.
+
+**All geometry is inscribed in the box.** A cube's front face is inset by `d` and
+its top face rises to `y = 0`, rather than the front face filling the box with
+the projection hanging outside it. The alternative would leave `width`/`height`
+describing something smaller than what is drawn, and every reader that culls by
+bounding box, hit-tests, marquee-selects or computes a board's extent would
+inherit the discrepancy.
+
+**One fill, three tones.** A solid carries a single `style.fill` like every other
+element; its lit and shaded faces are derived from it, per sRGB channel:
+
+```
+lit    = round(c + (255 - c) × 0.15)
+shaded = round(c × (1 - 0.15))
+```
+
+Storing three colours would have put two more colour fields in the format and two
+more pickers in the UI, to describe what is conceptually one object in one colour
+with light falling on it. A fill the renderer cannot parse as hex — a CSS
+keyword, `transparent`, anything added later — is used unchanged on every face,
+and the stroke carries the form. That fallback is part of the specification, not
+an implementation detail: guessing a tone for an unknown colour space is how two
+renderers come to disagree.
+
+**A polygon is fitted to its box, not kept regular.** A `pentagon` in a 300×80
+box is wide and flat, exactly as an `ellipse` is. Keeping the angles regular
+would mean either ignoring one dimension or refusing a free resize, and both make
+the stored box a lie about what is drawn.
+
+**Thirteen types rather than one type with a `shape` field.** The same reasoning
+that made `sticky` its own type rather than a rectangle carrying a label: a
+program can answer "what are the cylinders on this board?" from the data instead
+of from a secondary field, and an unknown `type` is already specified to be
+preserved verbatim, whereas an unknown *value* of a field is not.
+
+### Known limitations
+
+**Solids have no hand-drawn form.** `style.roughness` is stored and preserved but
+not rendered for them. A hand-drawn outline is one closed polygon — that is what
+the displacement rule in [07-rendering.md](07-rendering.md#hand-drawn-rendering)
+is defined on — and a cube is three faces whose shared edges would be lost. The
+flat polygons do roughen.
+
+**No per-face styling.** Deliberate, for the reason given above. `meta` is the
+escape hatch.
+
+### Notes for implementers
+
+A reader that does not know these types should preserve them verbatim, as
+[06-persistence.md](06-persistence.md#unknown-element-types) already requires.
+Because they add no fields, a reader that merely wants to *place* them can treat
+any of the thirteen as its bounding box and be exactly right about position,
+size, rotation and z-order — only the outline will differ.
+
+---
+
 ## Unreleased
 
 Candidates under consideration, in rough priority order:

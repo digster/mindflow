@@ -25,8 +25,11 @@ drift apart.
 
 **Canvas** — infinite pan and zoom, grid with snapping, alignment guides.
 
-**Tools** — select, pan, rectangle, ellipse, diamond, line, arrow, freehand, text,
-table, sticky note, frame, image, eraser. Shapes can render clean or hand-drawn.
+**Tools** — select, pan, line, arrow, freehand, text, table, sticky note, frame,
+image, eraser, and sixteen closed shapes in a flyout: rectangle, ellipse,
+diamond, triangle, pentagon, hexagon, star, parallelogram, and the solids — cube,
+cylinder, cone, pyramid, sphere, prism, torus and capsule. Flat shapes can render
+clean or hand-drawn.
 
 **Editing** — move, resize and rotate (including correct rotated resizing),
 multi-select, marquee, grouping, frames that clip and move their contents, align

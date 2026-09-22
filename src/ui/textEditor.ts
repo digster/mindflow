@@ -46,7 +46,7 @@
 import type { MindflowElement, StickyElement, TextElement } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
 import type { TextRegion } from '../model/registry.ts';
-import { getDefinition } from '../model/registry.ts';
+import { getDefinition, labelBoxOf } from '../model/registry.ts';
 import { BASELINE_RATIO, FONT_STACKS, layoutText } from '../render/shapes/shared.ts';
 import { measureTextElement } from '../render/shapes/text.ts';
 import { defaultLabel } from '../model/defaults.ts';
@@ -116,14 +116,21 @@ function editingStyleOf(element: MindflowElement, regionKey: string | null): Edi
   return null;
 }
 
-/** The local-frame box the editor covers: a region's, or the whole element's. */
+/**
+ * The local-frame box the editor covers: a region's, or the element's label box.
+ *
+ * `labelBoxOf` rather than the element's own box, because a solid draws its
+ * label on its front face. The canvas and this overlay are two independent
+ * layout engines and reading the box from one function is what stops the text
+ * jumping the moment editing starts.
+ */
 function editBox(
   element: MindflowElement,
   regionKey: string | null,
 ): { x: number; y: number; width: number; height: number } {
   const region = regionOf(element, regionKey);
   if (region) return region.box;
-  return { x: 0, y: 0, width: element.width, height: element.height };
+  return labelBoxOf(element);
 }
 
 /**

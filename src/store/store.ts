@@ -34,18 +34,58 @@ import type { Command } from './commands.ts';
 import { applyCommand, expandSelectionToGroups, needsReindex, reindexZ } from './commands.ts';
 import { History } from './history.ts';
 
+/**
+ * The shape family: creation tools that drag out a box and produce a plain
+ * closed shape.
+ *
+ * Every id is also an element type, which is what lets `beginBoxCreate` pass a
+ * tool straight to `getDefinition`. Declaring the family ONCE matters more now
+ * than it did with three shapes: the toolbar's flyout, the command palette and
+ * the controller all derive from this array, so adding a type cannot leave one
+ * of them behind. `app/commands.ts` carries a comment about exactly that drift —
+ * `diamond` and `frame` were in the toolbar and the keyboard map but missing
+ * from the palette for two releases.
+ *
+ * Order is the order the flyout presents them: flat shapes, then solids.
+ */
+export const SHAPE_TOOLS = [
+  'rectangle',
+  'ellipse',
+  'diamond',
+  'triangle',
+  'pentagon',
+  'hexagon',
+  'star',
+  'parallelogram',
+  'cube',
+  'cylinder',
+  'cone',
+  'pyramid',
+  'sphere',
+  'prism',
+  'torus',
+  'capsule',
+] as const;
+
+export type ShapeToolId = (typeof SHAPE_TOOLS)[number];
+
+/** How many of {@link SHAPE_TOOLS} are flat; the rest are solids. */
+export const FLAT_SHAPE_COUNT = 8;
+
+export function isShapeTool(tool: string): tool is ShapeToolId {
+  return (SHAPE_TOOLS as readonly string[]).includes(tool);
+}
+
 export type ToolId =
   | 'select'
   | 'pan'
-  | 'rectangle'
-  | 'ellipse'
+  | ShapeToolId
   | 'line'
   | 'arrow'
   | 'draw'
   | 'text'
   | 'sticky'
   | 'image'
-  | 'diamond'
   | 'frame'
   | 'table'
   | 'eraser';

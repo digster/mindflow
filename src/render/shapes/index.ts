@@ -20,6 +20,8 @@ import './image.ts';
 import './diamond.ts';
 import './frame.ts';
 import './table.ts';
+import './polygons.ts';
+import './solids.ts';
 
 export { rectangleDefinition } from './rectangle.ts';
 export { ellipseDefinition } from './ellipse.ts';
@@ -46,3 +48,32 @@ export {
   trackSizes,
   TABLE_HEADER_FONT_WEIGHT,
 } from './table.ts';
+export {
+  triangleDefinition,
+  pentagonDefinition,
+  hexagonDefinition,
+  starDefinition,
+  parallelogramDefinition,
+  polygonVertices,
+  isPolygonType,
+  PARALLELOGRAM_SLANT,
+  STAR_INNER_RATIO,
+} from './polygons.ts';
+export {
+  cubeDefinition,
+  cylinderDefinition,
+  coneDefinition,
+  pyramidDefinition,
+  sphereDefinition,
+  prismDefinition,
+  torusDefinition,
+  capsuleDefinition,
+  depthOf,
+  isSolidType,
+  solidFaces,
+  solidLabelBox,
+  solidSilhouette,
+  toneColor,
+  DEPTH_RATIO,
+  TORUS_HOLE,
+} from './solids.ts';

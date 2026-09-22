@@ -156,3 +156,25 @@ rather than a single path's `d`, because real icons need several elements.
 Building the extractor's whitelist test caught a silent bug in the extractor
 itself: attribute names containing digits (`x1`, `y1`) matched nothing and were
 dropped, so the frame icon had been generated as four empty `<line />` elements.
+
+> - add some basic 3d shapes
+> - while working with a touch device like an ipad, if the cursor in the text box
+>   is active and i click elsewhere or select something else, the cursor is still
+>   active.
+> - Also, the text box selecting and dragging does not seem to work well(on touch
+>   devices).
+> - do the 3 changes in different commits
+
+Scoped in conversation to thirteen new element types (five flat polygons, eight
+solids), reached through a new shape flyout rather than thirteen more toolbar
+buttons, plus a fourth commit adding the two-finger pan and pinch-to-zoom a
+touchscreen otherwise has no way to reach.
+
+**Commit 1 — shapes.** Schema 1.4.0. `triangle`, `pentagon`, `hexagon`, `star`,
+`parallelogram`, `cube`, `cylinder`, `cone`, `pyramid`, `sphere`, `prism`,
+`torus`, `capsule`. None adds a field: a polygon's vertices are fractions of the
+box, and a solid's depth is computed (`0.25 × min(w, h)`) rather than stored, so
+resizing one is the ordinary base-geometry change every other type gets. Faces
+derive lit and shaded tones from the element's single `fill`. One new optional
+registry member, `labelBox`, puts a solid's label on its front face in all three
+renderers at once.

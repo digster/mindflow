@@ -366,6 +366,86 @@ textarea {
   background: var(--mf-accent-soft);
 }
 
+/*
+ * The shape slot: one tool button plus a small opener for the flyout.
+ *
+ * The opener overlaps the button's bottom-right corner rather than sitting
+ * beside it, so a sixteen-shape family costs the palette no extra width — the
+ * strip stays one column, which is the whole reason the flyout exists.
+ */
+.mf-tool-slot {
+  position: relative;
+  display: flex;
+}
+
+.mf-tool-more {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  color: var(--mf-text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+}
+
+.mf-tool-more:hover {
+  color: var(--mf-accent);
+}
+
+/* A caret drawn from a border, so it needs no icon and inherits `color`. */
+.mf-caret {
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-left: 4px solid currentcolor;
+  transform: rotate(45deg);
+}
+
+.mf-shape-flyout {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+
+.mf-shape-heading {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mf-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mf-shape-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 34px);
+  gap: 2px;
+}
+
+.mf-shape-option {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--mf-text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: var(--mf-radius-sm);
+  transition: background var(--mf-transition), color var(--mf-transition);
+}
+
+.mf-shape-option:hover {
+  color: var(--mf-text);
+  background: var(--mf-surface-hover);
+}
+
 .mf-tool-divider {
   flex: 0 0 auto;
   height: 1px;
