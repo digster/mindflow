@@ -52,7 +52,7 @@ import {
   newBoardId,
   newElementId,
 } from './defaults.ts';
-import { findDefinition, isConnector, isPathElement } from './registry.ts';
+import { findDefinition, getDefinition, hasFile, isConnector, isPathElement } from './registry.ts';
 import { danglingFrameRefs } from './frames.ts';
 import { clamp, normalizeAngle, roundCoord } from './geometry.ts';
 import { migrateDocument, needsMigration } from './migrate.ts';
@@ -465,15 +465,18 @@ export function validateDocument(document: MindflowDocument): LoadWarning[] {
       }
     }
 
-    if (el.type === 'draw' && el.points.length < 1) {
-      issues.push({ level: 'error', path, message: 'A freehand stroke needs at least one point.' });
+    // Rules only the type can state, such as a freehand stroke's minimum of one
+    // point. Looked up leniently, like everything else in this loop.
+    for (const message of findDefinition(el.type)?.validate?.(el as never) ?? []) {
+      issues.push({ level: 'error', path, message });
     }
 
-    if (el.type === 'image' && !document.files[el.fileId]) {
+    // `hasFile` implies a registered type, so the title lookup cannot throw.
+    if (hasFile(el) && !document.files[el.fileId]) {
       issues.push({
         level: 'error',
         path: `${path}.fileId`,
-        message: `Image references file "${el.fileId}", which is not present in the files map.`,
+        message: `${getDefinition(el.type).title} references file "${el.fileId}", which is not present in the files map.`,
       });
     }
 
@@ -493,7 +496,7 @@ export function validateDocument(document: MindflowDocument): LoadWarning[] {
   }
 
   const referencedFiles = new Set(
-    document.elements.filter((el) => el.type === 'image').map((el) => el.fileId),
+    document.elements.filter(hasFile).map((el) => el.fileId),
   );
   for (const fileId of Object.keys(document.files)) {
     if (!referencedFiles.has(fileId)) {

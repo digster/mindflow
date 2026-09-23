@@ -17,7 +17,7 @@ import type { MindflowElement, TableElement } from '../model/types.ts';
 import { ARROWHEADS, CURVE_STYLES, FILL_STYLES, FONT_FAMILIES, STROKE_STYLES } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
 import type { Actions } from '../app/actions.ts';
-import { capabilitiesOf, getDefinition, isConnector } from '../model/registry.ts';
+import { capabilitiesOf, getDefinition, isConnector, isFrame } from '../model/registry.ts';
 import { DEFAULT_TEXT_COLOR, PALETTE } from '../model/defaults.ts';
 import { updateElements } from '../store/commands.ts';
 import { insertColumn, insertRow, removeColumn, removeRow } from '../render/shapes/table.ts';
@@ -193,16 +193,13 @@ export class StylePanel {
     const anyText = capabilities.some((capability) => capability.text || capability.label);
     // The first connector, whose curve and arrowheads the controls report.
     const linear = selected.find(isConnector);
-    const anyFillable = selected.some(
-      (element) => element.type !== 'draw' && element.type !== 'line' && element.type !== 'arrow' && element.type !== 'text',
-    );
+    const anyFillable = capabilities.some((capability) => capability.fillable);
 
     // A frame's name is edited here rather than on the canvas: the name is drawn
     // outside the frame's box, so it cannot be part of the hit region without
     // putting hitTest at odds with the AABB pre-rejection every caller relies on.
-    const frames = selected.filter((element) => element.type === 'frame');
-    if (frames.length === 1 && selected.length === 1) {
-      this.body.append(this.nameRow(frames[0] as MindflowElement & { name: string }));
+    if (selected.length === 1 && isFrame(first)) {
+      this.body.append(this.nameRow(first));
     }
 
     // Structure controls for a single table, alongside the frame name row above

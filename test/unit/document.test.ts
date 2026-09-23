@@ -234,7 +234,32 @@ describe('validation', () => {
         elements: [{ id: 'img', type: 'image', x: 0, y: 0, width: 10, height: 10, fileId: 'absent' }],
       }),
     );
-    expect(validateDocument(document).some((issue) => issue.level === 'error' && issue.message.includes('absent'))).toBe(true);
+    // Exact, because the noun now comes from the definition's title rather than
+    // a literal: `hasFile` replaced a `type === 'image'` branch.
+    expect(validateDocument(document)).toContainEqual({
+      level: 'error',
+      path: 'elements[0].fileId',
+      message: 'Image references file "absent", which is not present in the files map.',
+    });
+  });
+
+  it("reports a freehand stroke with no points, through draw's own validate", () => {
+    const stroke = (points: [number, number][]) =>
+      ({ ...getDefinition('draw').create({ x: 0, y: 0, zIndex: 1000 }), points }) as MindflowElement;
+    const pointless = { ...getDefinition('line').create({ x: 0, y: 0, zIndex: 2000 }), points: [] } as MindflowElement;
+    const document = { ...createDocument(), elements: [stroke([]), stroke([[0, 0]]), pointless] };
+
+    const issues = validateDocument(document);
+    expect(issues.filter((issue) => issue.path === 'elements[0]')).toEqual([
+      { level: 'error', path: 'elements[0]', message: 'A freehand stroke needs at least one point.' },
+    ]);
+    // One point is a dot, which is a valid stroke.
+    expect(issues.filter((issue) => issue.path === 'elements[1]')).toEqual([]);
+    // The rule is draw's alone: a connector with no points gets its own
+    // stricter message, never the freehand one as well.
+    expect(issues.filter((issue) => issue.path === 'elements[2]').map((issue) => issue.message)).toEqual([
+      'A connector needs at least two points.',
+    ]);
   });
 
   it('reports a one-member group', () => {

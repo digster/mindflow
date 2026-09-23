@@ -20,10 +20,11 @@
 
 import type { ElementId, MindflowDocument, MindflowElement } from './types.ts';
 import { elementCenter, elementWorldAABB, pointInAABB } from './geometry.ts';
+import { isFrame } from './registry.ts';
 
 /** Every frame in the document, topmost first. */
 export function framesInDocument(document: MindflowDocument): MindflowElement[] {
-  return document.elements.filter((element) => element.type === 'frame').reverse();
+  return document.elements.filter(isFrame).reverse();
 }
 
 /**
@@ -36,7 +37,7 @@ export function frameFor(
   document: MindflowDocument,
   element: MindflowElement,
 ): MindflowElement | null {
-  if (element.type === 'frame') return null;
+  if (isFrame(element)) return null;
   const centre = elementCenter(element);
   for (const frame of framesInDocument(document)) {
     if (!frame.visible) continue;
@@ -65,7 +66,7 @@ export function withFrameMembers(
   const result = new Set(ids);
   for (const id of [...result]) {
     const element = document.elements.find((candidate) => candidate.id === id);
-    if (element?.type !== 'frame') continue;
+    if (!element || !isFrame(element)) continue;
     for (const member of membersOf(document, id)) result.add(member.id);
   }
   return result;
@@ -87,7 +88,7 @@ export function reassignFrames(
   const changed: MindflowElement[] = [];
   for (const element of document.elements) {
     if (!movedIds.has(element.id)) continue;
-    if (element.type === 'frame') continue;
+    if (isFrame(element)) continue;
     const frame = frameFor(document, element);
     const next = frame?.id ?? null;
     if (next !== element.frameId) changed.push({ ...element, frameId: next });
@@ -105,7 +106,7 @@ export function reassignFrames(
  */
 export function danglingFrameRefs(document: MindflowDocument): MindflowElement[] {
   const frameIds = new Set(
-    document.elements.filter((element) => element.type === 'frame').map((element) => element.id),
+    document.elements.filter(isFrame).map((element) => element.id),
   );
   return document.elements
     .filter((element) => element.frameId !== null && !frameIds.has(element.frameId))

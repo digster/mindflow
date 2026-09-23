@@ -54,6 +54,9 @@ export const textDefinition: ElementDefinition<TextElement> = {
     rotatable: true,
     bindable: true,
     connector: false,
+    frame: false,
+    file: false,
+    fillable: false,
   },
 
   create(init: ElementInit): TextElement {
@@ -137,6 +140,18 @@ export const textDefinition: ElementDefinition<TextElement> = {
       local.x <= el.width + tolerance &&
       local.y <= el.height + tolerance
     );
+  },
+
+  /** A text element's box is derived from its content, so every edit re-measures it. */
+  withText(el: TextElement, text: string): TextElement {
+    const next = { ...el, text };
+    const { width, height } = measureTextElement(next);
+    return { ...next, width: Math.max(width, 1), height: Math.max(height, 1) };
+  },
+
+  /** The same rule `draw` and `measureTextElement` apply: `maxWidth: 0` with `autoWidth`. */
+  wrapsText(el: TextElement): boolean {
+    return !el.autoWidth;
   },
 };
 

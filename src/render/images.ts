@@ -12,6 +12,7 @@
  */
 
 import type { MindflowDocument } from '../model/types.ts';
+import { hasFile } from '../model/registry.ts';
 
 export class ImageCache {
   private decoded = new Map<string, CanvasImageSource>();
@@ -33,7 +34,7 @@ export class ImageCache {
    */
   sync(document: MindflowDocument): void {
     for (const element of document.elements) {
-      if (element.type !== 'image') continue;
+      if (!hasFile(element)) continue;
       const { fileId } = element;
       if (this.decoded.has(fileId) || this.pending.has(fileId) || this.failed.has(fileId)) continue;
 
@@ -74,7 +75,7 @@ export class ImageCache {
   /** Drops bitmaps no longer referenced, releasing their memory. */
   prune(document: MindflowDocument): void {
     const live = new Set(
-      document.elements.filter((el) => el.type === 'image').map((el) => el.fileId),
+      document.elements.filter(hasFile).map((el) => el.fileId),
     );
     for (const [fileId, image] of this.decoded) {
       if (live.has(fileId)) continue;

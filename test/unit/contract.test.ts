@@ -22,7 +22,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
 import '../../src/render/shapes/index.ts';
-import { allDefinitions, registeredTypes } from '../../src/model/registry.ts';
+import { allDefinitions, registeredTypes, type ElementCapabilities } from '../../src/model/registry.ts';
 import { CURRENT_SCHEMA_VERSION, ELEMENT_TYPES } from '../../src/model/types.ts';
 import { SCHEMA_URL } from '../../src/model/defaults.ts';
 import { registeredMigrations } from '../../src/model/migrate.ts';
@@ -124,6 +124,44 @@ describe('registry ↔ documentation', () => {
     }
   });
 
+  /**
+   * The two checks above compare rows only, so a tick in the wrong cell (or a
+   * capability with no column at all) went unnoticed. The matrix is edited by
+   * hand and grows a column with every capability, so it is compared cell by
+   * cell here.
+   */
+  it('the capability matrix agrees with every definition, cell by cell', () => {
+    const markdown = readFileSync(join(DOCS, '03-elements.md'), 'utf8');
+    const start = markdown.indexOf('## Capability matrix');
+    const matrix = markdown.slice(start, markdown.indexOf('\n## ', start + 1));
+    const cells = (line: string) => line.split('|').slice(1, -1).map((cell) => cell.trim());
+
+    const lines = matrix.split('\n');
+    const header = lines.find((line) => line.startsWith('| Type |'));
+    if (!header) throw new Error('docs/03-elements.md capability matrix has no header row');
+    const columns = cells(header)
+      .slice(1)
+      .map((cell) => cell.replaceAll('`', '') as keyof ElementCapabilities);
+
+    for (const definition of allDefinitions()) {
+      const { type, capabilities } = definition;
+      expect(
+        [...columns].sort(),
+        `docs/03-elements.md capability matrix columns differ from ${type}'s capabilities`,
+      ).toEqual(Object.keys(capabilities).sort());
+
+      const row = lines.find((line) => line.startsWith(`| \`${type}\` |`));
+      if (!row) throw new Error(`docs/03-elements.md capability matrix has no row for "${type}"`);
+      const ticks = cells(row).slice(1);
+      columns.forEach((flag, index) => {
+        expect(
+          ticks[index] === '✓',
+          `docs/03-elements.md: ${type} / ${flag} should be ${capabilities[flag] ? '✓' : 'blank'}`,
+        ).toBe(capabilities[flag]);
+      });
+    }
+  });
+
   it('the schema version is recorded in the changelog', () => {
     const changelog = readFileSync(join(DOCS, 'CHANGELOG.md'), 'utf8');
     expect(
@@ -166,7 +204,18 @@ describe('registry ↔ documentation', () => {
   });
 
   it('every definition declares a complete capability set', () => {
-    const required = ['label', 'path', 'text', 'resizable', 'rotatable', 'bindable', 'connector'];
+    const required = [
+      'label',
+      'path',
+      'text',
+      'resizable',
+      'rotatable',
+      'bindable',
+      'connector',
+      'frame',
+      'file',
+      'fillable',
+    ];
     for (const definition of allDefinitions()) {
       for (const flag of required) {
         expect(
@@ -189,28 +238,52 @@ describe('registry ↔ documentation', () => {
     }
   });
 
+  it('frames are never rotatable', () => {
+    // A frame clips its members to its box, and both renderers draw that clip
+    // as a plain axis-aligned rectangle (the SVG exporter's `clipPath` is a
+    // bare `<rect>`). A rotated frame would clip to the wrong region.
+    for (const definition of allDefinitions()) {
+      if (definition.capabilities.frame) {
+        expect(definition.capabilities.rotatable, `${definition.type} must not be rotatable`).toBe(false);
+      }
+    }
+  });
+
   /**
-   * `isConnector` and `isPathElement` narrow to `LinearElement` and
-   * `PathElement` because of a flag, and TypeScript cannot check that a flag
-   * matches the fields. This test does: a definition sets each flag exactly
-   * when what it creates has the fields the narrowing promises. In the other
-   * direction, it also catches the flag being dropped from `linear.ts`, which
-   * would quietly stop arrows re-routing when their shapes move.
+   * The type guards in `registry.ts` (`isConnector`, `isPathElement`,
+   * `isFrame`, `hasFile`) narrow the union because of a flag, and TypeScript
+   * cannot check that a flag matches the fields. This test does, on what each
+   * definition's `create()` returns.
+   *
+   * Most flags are checked in both directions. A flag must never be set on a
+   * type without the fields, which would make the narrowing unsound, and the
+   * fields must never appear without the flag, which catches a flag dropped
+   * from its module: arrows would quietly stop re-routing, images would stop
+   * decoding. `frame` is one-way, because `name` is not a frame-specific idea;
+   * a future type may carry one without being a frame.
    */
-  it('the connector and path flags match the fields they promise', () => {
+  it('the narrowing flags match the fields they promise', () => {
     for (const definition of allDefinitions()) {
       const element = definition.create({ x: 0, y: 0, width: 120, height: 80, zIndex: 0 }) as unknown as
         Record<string, unknown>;
-      const { connector, path } = definition.capabilities;
+      const { connector, path, frame, file } = definition.capabilities;
+      const type = definition.type;
 
       expect(
         Array.isArray(element.points),
-        `${definition.type}: path is ${path}, so points must be ${path ? 'present' : 'absent'}`,
+        `${type}: path is ${path}, so points must be ${path ? 'present' : 'absent'}`,
       ).toBe(path);
       expect(
         'startBinding' in element && 'endBinding' in element,
-        `${definition.type}: connector is ${connector}, so the binding fields must be ${connector ? 'present' : 'absent'}`,
+        `${type}: connector is ${connector}, so the binding fields must be ${connector ? 'present' : 'absent'}`,
       ).toBe(connector);
+      expect(
+        typeof element.fileId === 'string',
+        `${type}: file is ${file}, so fileId must be ${file ? 'present' : 'absent'}`,
+      ).toBe(file);
+      if (frame) {
+        expect(typeof element.name, `${type}: frame is true, so name must be a string`).toBe('string');
+      }
     }
   });
 });

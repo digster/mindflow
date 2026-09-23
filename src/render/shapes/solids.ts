@@ -352,6 +352,9 @@ function defineSolid<T extends SolidElement>(type: T['type'], title: string): El
       rotatable: true,
       bindable: true,
       connector: false,
+      frame: false,
+      file: false,
+      fillable: true,
     },
 
     create(init: ElementInit): T {

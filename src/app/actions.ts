@@ -13,7 +13,7 @@
 
 import type { AABB, ElementId, MindflowElement, Point, Viewport } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
-import { getDefinition, isConnector } from '../model/registry.ts';
+import { getDefinition, hasFile, isConnector } from '../model/registry.ts';
 import {
   MAX_ZOOM,
   MIN_ZOOM,
@@ -189,7 +189,7 @@ export class Actions {
     try {
       const files: Record<string, unknown> = {};
       for (const element of selected) {
-        if (element.type === 'image') {
+        if (hasFile(element)) {
           const file = this.store.document.files[element.fileId];
           if (file) files[element.fileId] = file;
         }

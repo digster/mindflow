@@ -97,6 +97,13 @@ export const imageDefinition: ElementDefinition<ImageElement> = {
     rotatable: true,
     bindable: true,
     connector: false,
+    frame: false,
+    // The only module that sets this. Decoding, copying with the file, and the
+    // "must resolve" validation all ask `hasFile`.
+    file: true,
+    // The panel offers fill controls, although `draw` never paints `style.fill`.
+    // Kept so the flag changed nothing; see `ElementCapabilities.fillable`.
+    fillable: true,
   },
 
   create(init: ElementInit): ImageElement {

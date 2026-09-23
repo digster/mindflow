@@ -67,17 +67,33 @@ main.ts
 [`src/model/registry.ts`](src/model/registry.ts) holds one definition per element
 type: `create`, `normalize`, `draw`, `hitTest`, and a capability descriptor. A
 handful of optional members carry the cases the capability flags cannot express —
-`outlineIntersect`, `roughOutline`, `labelBox`, `textRegions`, `interiorHandles`
-and `palette`. Each exists because the alternative was a `type === '…'` branch in
-code that is not allowed to have one, and each costs existing types nothing.
+`outlineIntersect`, `roughOutline`, `labelBox`, `textRegions`, `withText`,
+`wrapsText`, `interiorHandles`, `validate` and `palette`. Each exists because the
+alternative was a `type === '…'` branch in code that is not allowed to have one,
+and each costs existing types nothing. The dividing line: a fact that is the
+same for every element of a type is a flag, and one that depends on the
+element's fields (whether a `text` element wraps depends on `autoWidth`) or that
+carries type-specific logic or wording is a hook.
 
 When code outside `render/shapes/` needs a narrowed type rather than just a flag,
-it uses the capability type guards next to `capabilitiesOf`: `isConnector(el):
-el is LinearElement` and `isPathElement(el): el is PathElement`. These are how
-re-routing, delete clean-up, paste, validation, resize and the style panel reach
-`points` and `startBinding` without naming `line`, `arrow` or `draw`. A flag
-cannot prove its type's fields, so `contract.test.ts` creates one element per
-definition and checks that the fields match the flags.
+it uses the capability type guards next to `capabilitiesOf`:
+
+| Guard | Narrows to | Used by |
+|---|---|---|
+| `isConnector(el)` | `LinearElement` | re-routing, delete clean-up, paste remapping, validation, style panel |
+| `isPathElement(el)` | `PathElement` | resize, coordinate rounding |
+| `isFrame(el)` | `FrameElement` | `model/frames.ts`, SVG clip paths, the style panel's name row |
+| `hasFile(el)` | `ImageElement` | the image cache, copy, file-reference validation |
+
+A flag cannot prove its type's fields, so `contract.test.ts` creates one element
+per definition and checks that the fields match the flags. It also compares the
+capability matrix in `docs/03-elements.md` against the registry cell by cell.
+The guards look definitions up with `findDefinition` and answer `false` for an
+unregistered type rather than throwing.
+
+Three `type` branches remain outside `render/shapes/`, each a larger refactor
+than a guard: the SVG exporter's per-type `switch` in `render/export.ts`, and the
+table-specific rows in `ui/contextMenu.ts` and `ui/stylePanel.ts`.
 
 **The rule: no code outside `render/shapes/` may branch on `element.type`.**
 

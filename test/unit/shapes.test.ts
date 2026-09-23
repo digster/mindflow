@@ -18,9 +18,18 @@ import { describe, expect, it } from 'vitest';
 import '../../src/render/shapes/index.ts';
 import { createDocument } from '../../src/model/defaults.ts';
 import { loadDocument, serializeDocument } from '../../src/model/document.ts';
-import { getDefinition, isRegistered, labelBoxOf } from '../../src/model/registry.ts';
+import {
+  getDefinition,
+  hasFile,
+  isConnector,
+  isFrame,
+  isPathElement,
+  isRegistered,
+  labelBoxOf,
+} from '../../src/model/registry.ts';
 import { polygonOutlineIntersect } from '../../src/model/geometry.ts';
-import type { MindflowElement, Point } from '../../src/model/types.ts';
+import type { MindflowElement, Point, TextElement } from '../../src/model/types.ts';
+import { measureTextElement } from '../../src/render/shapes/text.ts';
 import {
   PARALLELOGRAM_SLANT,
   STAR_INNER_RATIO,
@@ -423,5 +432,72 @@ describe('the document format', () => {
     // An unfilled cube is three outlines with nothing to tell the faces apart.
     expect(make('cube', 10, 10).style.fillStyle).toBe('solid');
     expect(make('hexagon', 10, 10).style.fillStyle).toBe('none');
+  });
+});
+
+describe('text that sizes itself', () => {
+  const text = getDefinition<TextElement>('text');
+  const content = 'a considerably longer line\nand a second one';
+
+  it('withText re-derives an autoWidth box exactly as measureTextElement does', () => {
+    const before = text.create({ x: 0, y: 0, zIndex: 1000 });
+    expect(before.autoWidth).toBe(true);
+
+    const after = text.withText!(before, content);
+    const measured = measureTextElement({ ...before, text: content });
+    expect(after).toEqual({
+      ...before,
+      text: content,
+      width: Math.max(measured.width, 1),
+      height: Math.max(measured.height, 1),
+    });
+    expect(after.width).toBeGreaterThan(before.width);
+  });
+
+  it('withText keeps a fixed width and grows only the height', () => {
+    const before = text.create({ x: 0, y: 0, width: 80, zIndex: 1000, autoWidth: false });
+    const after = text.withText!(before, content);
+    expect(after.width).toBe(80);
+    expect(after.height).toBeGreaterThan(before.height);
+  });
+
+  it('wrapsText is false exactly when autoWidth is on', () => {
+    const grows = text.create({ x: 0, y: 0, zIndex: 1000 });
+    expect(text.wrapsText!(grows)).toBe(false);
+    expect(text.wrapsText!({ ...grows, autoWidth: false })).toBe(true);
+  });
+
+  it("a sticky note has neither hook, so its text wraps inside the box it was given", () => {
+    const sticky = getDefinition('sticky');
+    expect(sticky.withText).toBeUndefined();
+    expect(sticky.wrapsText).toBeUndefined();
+  });
+});
+
+describe('capability guards', () => {
+  it('recognise exactly the types that declare the capability', () => {
+    expect(isFrame(make('frame', 100, 100))).toBe(true);
+    expect(hasFile(make('image', 100, 100))).toBe(true);
+    for (const type of ['rectangle', 'sticky', 'arrow', 'draw', 'text']) {
+      expect(isFrame(make(type, 100, 100)), type).toBe(false);
+      expect(hasFile(make(type, 100, 100)), type).toBe(false);
+    }
+  });
+
+  it('answer false for an unregistered type instead of throwing', () => {
+    // As the `type ===` comparisons they replaced did. `capabilitiesOf` would throw.
+    const unknown = { ...make('rectangle', 10, 10), type: 'hologram' } as unknown as MindflowElement;
+    for (const guard of [isConnector, isPathElement, isFrame, hasFile]) {
+      expect(guard(unknown), guard.name).toBe(false);
+    }
+  });
+
+  it('ignore stray fields a pasted element may carry', () => {
+    // System-clipboard paste does not normalise, so fields can appear on types
+    // that do not have them. The guards read the registry, not the element.
+    const rectangle = { ...make('rectangle', 10, 10), fileId: 'file_x', name: 'Frame', points: [[0, 0]] };
+    expect(hasFile(rectangle as MindflowElement)).toBe(false);
+    expect(isFrame(rectangle as MindflowElement)).toBe(false);
+    expect(isPathElement(rectangle as MindflowElement)).toBe(false);
   });
 });

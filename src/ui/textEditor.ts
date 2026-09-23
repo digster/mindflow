@@ -48,7 +48,6 @@ import type { Store } from '../store/store.ts';
 import type { TextRegion } from '../model/registry.ts';
 import { getDefinition, labelBoxOf } from '../model/registry.ts';
 import { BASELINE_RATIO, FONT_STACKS, layoutText } from '../render/shapes/shared.ts';
-import { measureTextElement } from '../render/shapes/text.ts';
 import { defaultLabel } from '../model/defaults.ts';
 import { localToWorld, sceneToScreen } from '../model/geometry.ts';
 import { replaceElements } from '../store/commands.ts';
@@ -76,6 +75,19 @@ interface EditingStyle {
 function paddingOf(element: MindflowElement): number {
   const value = (element as unknown as { padding?: unknown }).padding;
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * Whether the element's text wraps to its box, as the canvas decides it: the
+ * definition's `wrapsText`, defaulting to true. The editor needs the same
+ * answer twice, for its CSS wrapping and for the line count its baseline
+ * offset is derived from.
+ *
+ * A hook rather than a structural read like {@link paddingOf}: `autoWidth` is
+ * one type's field, and whether it means "never wraps" is that type's rule.
+ */
+function wrapsText(element: MindflowElement): boolean {
+  return getDefinition(element.type).wrapsText?.(element as never) ?? true;
 }
 
 /** The region being edited, when the element has addressable regions. */
@@ -355,9 +367,10 @@ export class TextEditor {
     css.textAlign = style.textAlign;
     css.padding = `${style.padding}px`;
 
-    // A `text` element with autoWidth never wraps; everything else wraps to the
-    // element's width, matching `wrapText`'s `maxWidth` argument on the canvas.
-    const noWrap = element.type === 'text' && (element as TextElement).autoWidth;
+    // Text that does not wrap (a `text` element with autoWidth) keeps each line
+    // whole; everything else wraps to the element's width, matching `wrapText`'s
+    // `maxWidth` argument on the canvas.
+    const noWrap = !wrapsText(element);
     css.whiteSpace = noWrap ? 'pre' : 'pre-wrap';
     css.overflowWrap = noWrap ? 'normal' : 'break-word';
   }
@@ -427,10 +440,10 @@ export class TextEditor {
     const style = editingStyleOf(element, this.regionKey);
     if (!style) return 0;
 
-    // Mirror the canvas: an autoWidth text element never wraps, so it must be
-    // measured unwrapped here too or the line count — and with it the block
-    // height this offset is derived from — comes out different.
-    const noWrap = element.type === 'text' && (element as TextElement).autoWidth;
+    // Mirror the canvas: text that does not wrap must be measured unwrapped here
+    // too or the line count — and with it the block height this offset is
+    // derived from — comes out different.
+    const noWrap = !wrapsText(element);
     const metrics = layoutText(this.element.value, {
       maxWidth: noWrap ? 0 : Math.max(box.width - style.padding * 2, 1),
       fontFamily: style.fontFamily,
@@ -482,14 +495,11 @@ export class TextEditor {
       return definition.withRegionText(element as never, regionKey, text) as MindflowElement;
     }
 
+    // A type sized by its content (a `text` element) re-derives its box in its
+    // own `withText`. Without the hook the box is left alone, which is right for
+    // a sticky note: its text wraps inside the box the user sized.
     if (capabilities.text) {
-      const next = { ...element, text } as TextElement | StickyElement;
-      if (next.type === 'text') {
-        // A text element's box is derived from its content.
-        const { width, height } = measureTextElement(next);
-        return { ...next, width: Math.max(width, 1), height: Math.max(height, 1) };
-      }
-      return next;
+      return definition.withText?.(element as never, text) ?? ({ ...element, text } as MindflowElement);
     }
 
     const label = element.label ?? defaultLabel();

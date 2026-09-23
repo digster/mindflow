@@ -46,6 +46,11 @@ export const frameDefinition: ElementDefinition<FrameElement> = {
     rotatable: false,
     bindable: true,
     connector: false,
+    // The only module that sets this. Membership, clipping, moving and deleting
+    // with members, and the name row in the style panel all ask `isFrame`.
+    frame: true,
+    file: false,
+    fillable: true,
   },
 
   create(init: ElementInit): FrameElement {

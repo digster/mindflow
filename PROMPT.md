@@ -369,3 +369,52 @@ confirmed with the user: connector + path sites only. They became a new
 `connector` capability, with `isConnector` / `isPathElement` guards in
 `registry.ts`. Frame, image, fillable, text autoWidth, draw validation, table UI
 and the SVG exporter's switch were left as follow-ups.
+
+---
+
+## 2026-09-23 — The remaining predicate-shaped type branches
+
+> In /Users/ishan/lab/mindflow, CLAUDE.md invariant #1 says no code outside
+> `src/render/shapes/` may branch on `element.type`. A previous session added a
+> `connector` capability and two type guards in `src/model/registry.ts`
+> (`isConnector(el): el is LinearElement`, `isPathElement(el): el is PathElement`,
+> both using `findDefinition(...)?.capabilities.X === true` so unregistered types
+> answer false instead of throwing). `test/unit/contract.test.ts` has a test, "the
+> connector and path flags match the fields they promise", that creates one
+> element per definition and checks the flags against the fields, which backs the
+> guards' narrowing. Read LEARNINGS.md's entry "Swapping a `type ===` branch for a
+> capability can quietly change two things" first.
+>
+> Convert the remaining PREDICATE-SHAPED violations the same way, with no
+> behaviour change:
+> - Frame: `src/model/frames.ts` (5 sites), `src/ui/stylePanel.ts:203` (name row),
+>   `src/render/export.ts:575,584` (clip paths).
+> - Image: `src/render/images.ts:36,77`, `src/app/actions.ts:192`,
+>   `src/model/document.ts:472,496`.
+> - Fillable: `src/ui/stylePanel.ts:197` (`!draw && !line && !arrow && !text`). No
+>   existing flag combination matches; sticky and table have `text: true` but are
+>   fillable.
+> - Text autoWidth: `src/ui/textEditor.ts:360,433,487`.
+> - Draw validation: `src/model/document.ts:468`.
+> For each, decide between a new capability flag (update `ElementCapabilities`,
+> every capability block in `src/render/shapes/`, the `required` list in the
+> contract test, and the capability matrix plus bullets in `docs/03-elements.md`
+> and the flag table in `docs/09-extending.md`), a type guard, or an optional
+> definition hook. Explain the choice in a comment. Add a contract assertion for
+> any new narrowing guard.
+>
+> Out of scope (larger refactors; ask before touching): the SVG exporter's
+> `switch (element.type)` at `src/render/export.ts:393` and the table UI in
+> `src/ui/contextMenu.ts:67` / `src/ui/stylePanel.ts:212`.
+>
+> Run `npm run typecheck`, `npm test`, `npm run build` (index.html is a committed
+> artifact), and `npm run test:e2e`; delete `test-results/` and
+> `playwright-report/`. Do not run `npm run serve`/`dev` without rebuilding
+> afterwards (they overwrite index.html). Append the prompt to PROMPT.md and a
+> summary to memory/YYYY-MM-DD.md, update ARCHITECTURE.md's registry section if a
+> new guard is added, and generate a commit message without committing (never
+> list Claude as author).
+
+Result: three flags (`frame`, `file`, `fillable`), two guards (`isFrame`,
+`hasFile`) and three hooks (`withText`, `wrapsText`, `validate`). Only the three
+out-of-scope branches remain.

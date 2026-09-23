@@ -1011,10 +1011,25 @@ spelling, `capabilitiesOf(el).flag`, differs from `el.type === '…'` in two way
   `startBinding`. A type-predicate guard (`el is LinearElement`) restores the
   narrowing, but TypeScript cannot check it: a flag in a definition says
   nothing about the fields its elements carry. `contract.test.ts` ("the
-  connector and path flags match the fields they promise") creates one element
-  per definition and checks the fields against the flags. A new guard needs a
+  narrowing flags match the fields they promise") creates one element per
+  definition and checks the fields against the flags. A new guard needs a
   matching assertion there.
 
 Also, do not identify a type family by combining unrelated flags. `path &&
 !bindable` looks like "connector" but also matches `draw`, which has points and
 no bindings. Give the concept its own flag.
+
+A structural check (`'fileId' in el`) looks like a cheaper substitute, but it
+only equals `type === 'image'` on normalised input. The loader rebuilds every
+element field by field, while **system-clipboard paste takes elements verbatim**
+(`Actions.paste`), so a pasted element can carry fields its type does not have.
+A registry lookup cannot see stray fields; a structural check can. (`paddingOf`
+in `ui/textEditor.ts` is structural on purpose: every type that has `padding`
+means the same thing by it.)
+
+Flag or hook? A fact that is the same for every element of a type is a flag
+(`frame`, `file`, `fillable`). One that depends on the element's own fields is a
+hook. Whether a `text` element wraps depends on `autoWidth`, so `wrapsText(el)`
+cannot be a flag. So is logic or wording only the type can state: `withText`
+re-measures a content-sized box, and `validate` returns draw's "a freehand
+stroke needs at least one point".

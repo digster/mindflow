@@ -18,28 +18,28 @@ Capabilities are declared per type in the registry and drive the UI — which
 controls the style panel shows, whether double-click opens a text editor, whether
 a connector can attach.
 
-| Type | `label` | `path` | `text` | `resizable` | `rotatable` | `bindable` | `connector` |
-|---|---|---|---|---|---|---|---|
-| `rectangle` | ✓ | | | ✓ | ✓ | ✓ | |
-| `ellipse` | ✓ | | | ✓ | ✓ | ✓ | |
-| `diamond` | ✓ | | | ✓ | ✓ | ✓ | |
-| `frame` | | | | ✓ | | ✓ | |
-| `line` | ✓ | ✓ | | ✓ | ✓ | | ✓ |
-| `arrow` | ✓ | ✓ | | ✓ | ✓ | | ✓ |
-| `draw` | | ✓ | | ✓ | ✓ | | |
-| `text` | | | ✓ | ✓ | ✓ | ✓ | |
-| `sticky` | | | ✓ | ✓ | ✓ | ✓ | |
-| `table` | | | ✓ | ✓ | ✓ | ✓ | |
-| `image` | ✓ | | | ✓ | ✓ | ✓ | |
-| `triangle` | ✓ | | | ✓ | ✓ | ✓ | |
-| `pentagon` | ✓ | | | ✓ | ✓ | ✓ | |
-| `hexagon` | ✓ | | | ✓ | ✓ | ✓ | |
-| `star` | ✓ | | | ✓ | ✓ | ✓ | |
-| `parallelogram` | ✓ | | | ✓ | ✓ | ✓ | |
-| `cube` | ✓ | | | ✓ | ✓ | ✓ | |
-| `cylinder` | ✓ | | | ✓ | ✓ | ✓ | |
-| `cone` | ✓ | | | ✓ | ✓ | ✓ | |
-| `pyramid` | ✓ | | | ✓ | ✓ | ✓ | |
+| Type | `label` | `path` | `text` | `resizable` | `rotatable` | `bindable` | `connector` | `frame` | `file` | `fillable` |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `rectangle` | ✓ | | | ✓ | ✓ | ✓ | | | | ✓ |
+| `ellipse` | ✓ | | | ✓ | ✓ | ✓ | | | | ✓ |
+| `diamond` | ✓ | | | ✓ | ✓ | ✓ | | | | ✓ |
+| `frame` | | | | ✓ | | ✓ | | ✓ | | ✓ |
+| `line` | ✓ | ✓ | | ✓ | ✓ | | ✓ | | | |
+| `arrow` | ✓ | ✓ | | ✓ | ✓ | | ✓ | | | |
+| `draw` | | ✓ | | ✓ | ✓ | | | | | |
+| `text` | | | ✓ | ✓ | ✓ | ✓ | | | | |
+| `sticky` | | | ✓ | ✓ | ✓ | ✓ | | | | ✓ |
+| `table` | | | ✓ | ✓ | ✓ | ✓ | | | | ✓ |
+| `image` | ✓ | | | ✓ | ✓ | ✓ | | | ✓ | ✓ |
+| `triangle` | ✓ | | | ✓ | ✓ | ✓ | | | | ✓ |
+| `pentagon` | ✓ | | | ✓ | ✓ | ✓ | | | | ✓ |
+| `hexagon` | ✓ | | | ✓ | ✓ | ✓ | | | | ✓ |
+| `star` | ✓ | | | ✓ | ✓ | ✓ | | | | ✓ |
+| `parallelogram` | ✓ | | | ✓ | ✓ | ✓ | | | | ✓ |
+| `cube` | ✓ | | | ✓ | ✓ | ✓ | | | | ✓ |
+| `cylinder` | ✓ | | | ✓ | ✓ | ✓ | | | | ✓ |
+| `cone` | ✓ | | | ✓ | ✓ | ✓ | | | | ✓ |
+| `pyramid` | ✓ | | | ✓ | ✓ | ✓ | | | | ✓ |
 
 - **`label`** — can carry text inside it via the `label` object.
 - **`path`** — geometry is a `points` list rather than a plain box.
@@ -51,10 +51,19 @@ a connector can attach.
   is re-routed when an element it is bound to moves (see
   [07-rendering.md](07-rendering.md#when-to-re-route)), and gets the line-shape
   and arrowhead controls. A connector is also always a `path`.
+- **`frame`** — acts as a frame. Other elements join it through their `frameId`,
+  and it clips them, carries them when it moves and deletes them with it (see
+  [`frame`](#frame)).
+- **`file`** — shows a binary from the document's `files` map, named by its
+  `fileId`, which must resolve (see [`image`](#image)).
+- **`fillable`** — the style panel offers fill colour and fill style. This
+  describes the controls, not rendering. The types without it never paint
+  `style.fill`, and neither does `image`, which is offered the controls anyway.
 
 Connectors are deliberately **not** bindable. Binding arrows to arrows creates
-dependency chains with no stable layout fixed point. The contract test enforces
-this for every type flagged `connector`.
+dependency chains with no stable layout fixed point. Frames are never
+`rotatable`, which keeps their clip region a plain rectangle in every renderer.
+The contract test enforces both for every type carrying the flag.
 
 ---
 

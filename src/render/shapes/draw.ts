@@ -94,6 +94,9 @@ export const drawDefinition: ElementDefinition<DrawElement> = {
     rotatable: true,
     bindable: false,
     connector: false,
+    frame: false,
+    file: false,
+    fillable: false,
   },
 
   create(init: ElementInit): DrawElement {
@@ -157,6 +160,11 @@ export const drawDefinition: ElementDefinition<DrawElement> = {
       return Math.hypot(local.x - only.x, local.y - only.y) <= tolerance + el.style.strokeWidth;
     }
     return distanceToPolyline(local, points) <= tolerance + el.style.strokeWidth / 2;
+  },
+
+  /** A single point is a dot; zero points is nothing to draw. The schema's `minItems: 1`. */
+  validate(el: DrawElement): string[] {
+    return el.points.length < 1 ? ['A freehand stroke needs at least one point.'] : [];
   },
 };
 

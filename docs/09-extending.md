@@ -66,7 +66,8 @@ export const diamondDefinition: ElementDefinition<DiamondElement> = {
 
   capabilities: {
     label: true, path: false, text: false,
-    resizable: true, rotatable: true, bindable: true, connector: false,
+    resizable: true, rotatable: true, bindable: true,
+    connector: false, frame: false, file: false, fillable: true,
   },
 
   create(init: ElementInit): DiamondElement {
@@ -227,13 +228,26 @@ Declared per type, they drive the UI so it need not know about your type.
 | `rotatable` | Selection shows the rotate handle. |
 | `bindable` | Connector endpoints can attach to it. |
 | `connector` | It is a connector. Code outside `render/shapes/` finds it through `isConnector()`: it is re-routed when its targets move, its bindings are cleared when a target is deleted, and the style panel offers line-shape and arrowhead controls. |
+| `frame` | It is a frame, found through `isFrame()`. Elements join it through `frameId`; it clips them, carries them when it moves, deletes them with it, and gets a name row in the style panel. |
+| `file` | It shows a file from `document.files`, found through `hasFile()`. The file is decoded for drawing, copied with the element, and must resolve for validation to pass. |
+| `fillable` | Style panel offers fill colour and fill style. A UI flag only: whether `style.fill` is painted is up to `draw`. |
 
 A `connector` must also set `bindable: false`, since binding connectors to
-connectors creates dependency chains with no stable layout fixed point. It must
-create elements with the `LinearElement` fields (`points`, `startBinding`,
-`endBinding`), because `isConnector()` narrows to that type. The contract test
-enforces both, and in the same way checks that `path: true` types create a
-`points` list, which `isPathElement()` relies on.
+connectors creates dependency chains with no stable layout fixed point. A
+`frame` must set `rotatable: false`, since both renderers clip its members to a
+plain axis-aligned rectangle.
+
+The four guards narrow the element union, so each flag promises fields:
+
+| Flag | Guard | Narrows to | Must create |
+|---|---|---|---|
+| `path` | `isPathElement()` | `PathElement` | `points` |
+| `connector` | `isConnector()` | `LinearElement` | `startBinding`, `endBinding` |
+| `frame` | `isFrame()` | `FrameElement` | `name` |
+| `file` | `hasFile()` | `ImageElement` | `fileId` |
+
+The contract test enforces all of this, and checks the capability matrix in
+`03-elements.md` cell by cell against the registry.
 
 `text: true` does **not** have to mean one `text` field. A type that owns many
 independent blocks — `table` and its cells — sets the same flag and implements the
@@ -276,6 +290,23 @@ callers this API exists to keep ignorant of them.
 rest (a table's header row): the DOM overlay has to match the canvas exactly, or
 the text visibly changes weight the moment editing starts.
 
+### Text that sizes itself
+
+A type that owns one block of text (`capabilities.text` without regions) may
+implement two optional members:
+
+```ts
+withText(el, text)   // a copy carrying `text`, with its box re-derived if the type is content-sized
+wrapsText(el)        // false when this element's text never wraps; omitted means it does
+```
+
+Omitting `withText` leaves the box alone, which is right for a sticky note. A
+`text` element implements both: its box follows its content, and with
+`autoWidth` its lines never wrap. The DOM text editor asks these instead of
+checking the type, and it has to agree with the canvas exactly, or the text
+visibly reflows as editing starts. So `wrapsText` must give the same answer
+`draw` uses for its `maxWidth`.
+
 ### Label placement
 
 A type whose text does not belong in the centre of its box implements one
@@ -312,6 +343,19 @@ The controller offers the drag whenever a single unlocked element declares
 handles, with the same hit slop and the same zoom division the outer resize
 handles use, and sets a `col-resize`/`row-resize` cursor. It never learns that the
 thing being dragged is a column boundary.
+
+### Type-specific validation
+
+A type with structural rules of its own implements:
+
+```ts
+validate(el)   // messages, one per problem; [] when the element is sound
+```
+
+`validateDocument` reports each message as an `error` at the element's path,
+after the checks every element gets. `draw` uses it for "a freehand stroke needs
+at least one point". Keep these rules in step with the schema (that one is the
+schema's `minItems: 1`), and write messages for a person reading a load report.
 
 `dragInteriorHandle` always receives the element **as it was at pointerdown**, in
 line with the rule that every gesture recomputes from its origin rather than

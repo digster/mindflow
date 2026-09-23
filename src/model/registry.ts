@@ -20,6 +20,8 @@
 import type {
   BaseElement,
   ElementType,
+  FrameElement,
+  ImageElement,
   LinearElement,
   MindflowDocument,
   MindflowElement,
@@ -80,6 +82,27 @@ export interface ElementCapabilities {
    * describes a freehand `draw` stroke, which has points but no bindings.
    */
   connector: boolean;
+  /**
+   * Acts as a frame: other elements join it through their `frameId`, and it
+   * clips them, carries them when it moves and deletes them with it. Frames
+   * never contain frames. Declaring it promises the `FrameElement` fields
+   * (`name`); see {@link isFrame}.
+   */
+  frame: boolean;
+  /**
+   * Displays a binary from the document's `files` map, referenced by
+   * `fileId`. The file is decoded for drawing, travels with the element on
+   * copy, and must resolve for the document to validate. Declaring it
+   * promises the `ImageElement` fields; see {@link hasFile}.
+   */
+  file: boolean;
+  /**
+   * The style panel offers fill colour and fill style. This is a UI flag, not
+   * a rendering one: every element stores `style.fill`, and whether it is
+   * painted is up to the type. `image` has the controls but never paints the
+   * fill, which is how the panel behaved before the flag existed.
+   */
+  fillable: boolean;
 }
 
 /**
@@ -204,6 +227,30 @@ export interface ElementDefinition<T extends MindflowElement = MindflowElement> 
   withRegionText?(el: T, key: string, text: string): T;
 
   /**
+   * A copy of `el` carrying `text`, for a type that owns one block of text
+   * (`capabilities.text` without regions). Optional. Omitting it means
+   * `{ ...el, text }` with the box unchanged, which is right for a sticky
+   * note, whose text wraps inside a box the user sized.
+   *
+   * It exists for types whose box is derived from their content: a `text`
+   * element re-measures itself on every keystroke. That was previously a
+   * `type === 'text'` branch in the DOM text editor.
+   */
+  withText?(el: T, text: string): T;
+
+  /**
+   * Whether `el`'s text wraps to its box. Optional; omitting it means it does.
+   *
+   * Per element rather than a capability flag because the answer depends on
+   * a field: a `text` element with `autoWidth` never wraps, and its box grows
+   * to the widest line instead. The DOM text editor must lay text out the way
+   * the canvas does, or its line count and the baseline offset derived from
+   * it disagree with what is drawn. Before this member existed, the editor
+   * asked with a `type === 'text'` branch.
+   */
+  wrapsText?(el: T): boolean;
+
+  /**
    * Draggable dividers *inside* the element, for types whose box is subdivided.
    *
    * Deliberately not modelled as extra selection handles: those describe the
@@ -221,6 +268,20 @@ export interface ElementDefinition<T extends MindflowElement = MindflowElement> 
    * recomputed from the gesture origin rather than accumulated frame to frame.
    */
   dragInteriorHandle?(el: T, id: string, local: Point): T;
+
+  /**
+   * Problems with `el` that only its type can recognise, as human-readable
+   * messages. `validateDocument` reports each as an `error` at the element's
+   * path, after the checks every element gets. Optional; most types have
+   * nothing to add.
+   *
+   * A hook rather than a flag because the rule and its wording belong to the
+   * type: a freehand stroke needs a point to be drawn at all. Expressing that
+   * outside `render/shapes/` would mean identifying `draw` as
+   * `path && !connector`, which is exactly the flag arithmetic that breaks
+   * when a new path type arrives.
+   */
+  validate?(el: T): string[];
 
   /**
    * Colour palettes this type offers in the style panel, overriding the
@@ -319,11 +380,15 @@ export function capabilitiesOf(el: MindflowElement): ElementCapabilities {
 /*
  * Capability type guards.
  *
- * These are how code outside `render/shapes/` asks "is this a connector?" or
- * "does this have points?" without naming types, which it may not do. They
- * return type predicates rather than plain booleans because the `type ===`
- * comparisons they replace narrowed the union for free. Without the narrowing,
- * every caller would need a cast to reach `points` or `startBinding`.
+ * These are how code outside `render/shapes/` asks "is this a connector?",
+ * "does this have points?", "is this a frame?" or "does this show a file?"
+ * without naming types, which it may not do. They return type predicates
+ * rather than plain booleans because the `type ===` comparisons they replace
+ * narrowed the union for free. Without the narrowing, every caller would need
+ * a cast to reach `points`, `startBinding`, `name` or `fileId`.
+ *
+ * A capability with no fields behind it (`fillable`) needs no guard, so
+ * callers read it through `capabilitiesOf`.
  *
  * TypeScript cannot check that the narrowing is sound: a flag in a definition
  * says nothing about the fields its elements carry. `contract.test.ts` checks
@@ -354,6 +419,30 @@ export function isConnector(el: MindflowElement): el is LinearElement {
 /** True for elements whose geometry is a `points` list (`capabilities.path`). */
 export function isPathElement(el: MindflowElement): el is PathElement {
   return findDefinition(el.type)?.capabilities.path === true;
+}
+
+/**
+ * True for frames (`capabilities.frame`), the elements other elements join
+ * through `frameId`. Narrows to `FrameElement` for its `name`.
+ */
+export function isFrame(el: MindflowElement): el is FrameElement {
+  return findDefinition(el.type)?.capabilities.frame === true;
+}
+
+/**
+ * True for elements that display a file from `document.files`
+ * (`capabilities.file`). Narrows to `ImageElement` for its `fileId`.
+ *
+ * Why a capability rather than the structural test `'fileId' in el`: every
+ * caller reads `fileId` straight away, so the structural test would ask the
+ * right question. But it would not match the `type === 'image'` comparisons it
+ * replaced on every input. The loader rebuilds each element field by field,
+ * while system-clipboard paste takes elements verbatim. A pasted rectangle
+ * carrying a stray `fileId` would then be decoded, copied with a file, and
+ * validated. A registry lookup cannot see stray fields.
+ */
+export function hasFile(el: MindflowElement): el is ImageElement {
+  return findDefinition(el.type)?.capabilities.file === true;
 }
 
 export function drawElement(el: MindflowElement, render: RenderContext): void {

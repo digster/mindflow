@@ -247,6 +247,9 @@ export const linearDefinition = (type: 'line' | 'arrow'): ElementDefinition<Line
     // remapping and the arrowhead controls all ask `isConnector` rather than
     // naming `line` and `arrow`.
     connector: true,
+    frame: false,
+    file: false,
+    fillable: false,
   },
 
   create(init: ElementInit): LinearElement {

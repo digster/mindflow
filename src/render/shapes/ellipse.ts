@@ -25,6 +25,9 @@ export const ellipseDefinition: ElementDefinition<EllipseElement> = {
     rotatable: true,
     bindable: true,
     connector: false,
+    frame: false,
+    file: false,
+    fillable: true,
   },
 
   create(init: ElementInit): EllipseElement {

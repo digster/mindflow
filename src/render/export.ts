@@ -32,7 +32,7 @@ import type {
   TextElement,
 } from '../model/types.ts';
 import type { RenderContext } from '../model/registry.ts';
-import { drawElement, labelBoxOf } from '../model/registry.ts';
+import { drawElement, isFrame, labelBoxOf } from '../model/registry.ts';
 import { clamp, degToRad, unionAABB } from '../model/geometry.ts';
 import { roughOutlineFor } from './rough.ts';
 import { FRAME_NAME_GAP, FRAME_NAME_SIZE } from './shapes/frame.ts';
@@ -572,7 +572,7 @@ export function exportToSVG(document: MindflowDocument, options: ExportOptions =
   // so each is a plain rect in scene coordinates — the same clip the canvas
   // renderer applies before the element's own transform.
   const clipDefs = elements
-    .filter((element) => element.type === 'frame')
+    .filter(isFrame)
     .map(
       (frame) =>
         `<clipPath id="frame-${escapeXml(frame.id)}" clipPathUnits="userSpaceOnUse">` +
@@ -581,7 +581,7 @@ export function exportToSVG(document: MindflowDocument, options: ExportOptions =
     )
     .join('\n    ');
 
-  const frameIds = new Set(elements.filter((element) => element.type === 'frame').map((el) => el.id));
+  const frameIds = new Set(elements.filter(isFrame).map((el) => el.id));
 
   const body = elements
     .filter((element) => element.visible)

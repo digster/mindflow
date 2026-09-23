@@ -306,6 +306,25 @@ test.describe('selection and editing', () => {
     await expect(page.locator('.mf-style-panel')).toBeHidden();
   });
 
+  test('offers fill controls only when a selected element is fillable', async ({ page }) => {
+    // Decided by `capabilities.fillable`, as a union like every other control.
+    // A connector, a freehand stroke and a text element never paint a fill.
+    const panel = page.locator('.mf-style-panel');
+    const fillRows = panel.locator('.mf-style-label').filter({ hasText: /^Fill( style)?$/ });
+
+    await page.locator('[data-tool="arrow"]').click();
+    await drag(page, [300, 400], [500, 450]);
+    await expect(panel).toBeVisible();
+    await expect(fillRows).toHaveCount(0);
+
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [200, 200]);
+    await expect(fillRows).toHaveText(['Fill', 'Fill style']);
+
+    await page.keyboard.press('ControlOrMeta+a');
+    await expect(fillRows).toHaveText(['Fill', 'Fill style']);
+  });
+
   test('groups and ungroups', async ({ page }) => {
     await page.locator('[data-tool="rectangle"]').click();
     await drag(page, [100, 100], [200, 200]);
