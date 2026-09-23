@@ -178,6 +178,16 @@ nothing about what is touching it right now. The pinch arithmetic lives in
 can only drive two simultaneous contacts through raw CDP and the numbers deserve
 a unit test.
 
+**Paste has two entry points and one owner.** The Cmd/Ctrl+V keydown
+(`input/keyboard.ts`) and the native `paste` event (`app/app.ts`) can both fire
+for one press, and pasting is not idempotent. Neither calls `actions.paste()`
+directly: both report to [`src/input/pasteGate.ts`](src/input/pasteGate.ts),
+created in `app.ts`. The native event takes the press, because it alone carries
+image data. The keydown pastes only if no native event arrives within a grace
+period, which is what keeps Cmd+V working in WebKit. The gate is DOM-free for the
+same reason as the pinch code: Playwright's Chromium only produces one of the
+possible arrival orders.
+
 ## Text editing
 
 The highest-risk code in the app: two independent text layout engines — Canvas 2D

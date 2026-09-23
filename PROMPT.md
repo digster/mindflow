@@ -260,3 +260,13 @@ selection. On a coarse pointer the toggle grows to 40px.
 
 Replaced the sentence with one paragraph, worded to match `CLAUDE.md`'s
 workflow note and the README's Credits section. Documentation only.
+
+---
+
+## 2026-09-23 — Copy and paste produced two copies
+
+> Selecting, copying and then pasting a selected object creates two copies of it.
+
+Cmd/Ctrl+V pasted from the keydown and again from the native `paste` event the
+same chord fires. The two now report to a small gate (`src/input/pasteGate.ts`)
+that lets exactly one of them paste per press.

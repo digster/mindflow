@@ -810,3 +810,32 @@ none of which the existing tests caught on their own:
   `style.roughness`; every shape they convert to does. Carrying the value across
   verbatim would have made converted shapes turn sketchy on upgrade, so the
   migration zeroes it.
+
+## "Harmless duplicate" handlers are only harmless if the action is idempotent
+
+Cmd/Ctrl+V was handled twice from day one: the keyboard shortcut called
+`actions.paste()`, and so did the native `paste` event the same chord fires. A
+comment called the pair "harmless duplicates". That holds for copy, which writes
+the same payload twice, and for cut, whose second run finds an empty selection.
+It is false for paste, which adds elements every time it runs. Every paste made
+two copies at the **same offset**, stacked exactly, so it looked like one copy
+until the top one was dragged away.
+
+The same double dispatch hid a second bug. The keydown route has no clipboard
+payload, so while the native event inserted a pasted screenshot, the keydown
+pasted whatever was last copied on the board.
+
+The keydown route cannot simply be deleted, and this was the trap. WebKit's
+`enabledPaste` for a key binding is `canDHTMLPaste() || canEdit()`, and
+`canDHTMLPaste` is true only when a `beforepaste` listener cancels the event. So
+Safari, and an iPad with a hardware keyboard, can deliver the keydown with no
+`paste` event after it. Chromium does the opposite, which is why no test caught
+either failure.
+
+At keydown time nothing says whether a native event will follow. On macOS Chrome
+it arrives as a separate message after the menu handles the key equivalent. So
+one side has to wait: `input/pasteGate.ts` gives the native event a 100 ms grace
+period, and discards one that arrives after the fallback has already pasted.
+Testing the "no native event" path in Playwright means swallowing `paste` in a
+capture-phase listener on `window`, the same move as the touch suite's focus
+suppression: stop the test browser doing the thing the real one does not.

@@ -2045,6 +2045,85 @@ test.describe('frames', () => {
   });
 });
 
+test.describe('element clipboard', () => {
+  /**
+   * Comfortably longer than the grace period `input/pasteGate.ts` gives a native
+   * `paste` event to arrive. Asserting that a second copy did *not* appear
+   * means waiting out the one path that could still produce it.
+   */
+  const PAST_GRACE_MS = 500;
+
+  /** One rectangle on the board, selected and copied. */
+  async function copyOneRectangle(page: Page) {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('ControlOrMeta+c');
+  }
+
+  test('pastes exactly one copy per Cmd+V', async ({ page }) => {
+    // Regression: the Cmd+V keydown pasted, and then the native `paste` event
+    // the same chord fires pasted again — two copies from one keypress.
+    await copyOneRectangle(page);
+
+    await page.keyboard.press('ControlOrMeta+v');
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(2);
+    await page.waitForTimeout(PAST_GRACE_MS);
+    expect((await getDocument(page)).elements).toHaveLength(2);
+
+    await page.keyboard.press('ControlOrMeta+v');
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(3);
+    await page.waitForTimeout(PAST_GRACE_MS);
+    expect((await getDocument(page)).elements).toHaveLength(3);
+  });
+
+  test('still pastes when the browser fires no native paste event', async ({ page }) => {
+    // WebKit only enables Paste outside an editable field when a `beforepaste`
+    // listener cancels it, so Safari — and an iPad with a hardware keyboard —
+    // can deliver the Cmd+V keydown with no `paste` event after it. Swallowing
+    // the event before the app sees it reproduces that; the keydown alone must
+    // still paste, once.
+    await page.evaluate(() => {
+      window.addEventListener('paste', (event) => event.stopImmediatePropagation(), true);
+    });
+    await copyOneRectangle(page);
+
+    await page.keyboard.press('ControlOrMeta+v');
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(2);
+    await page.waitForTimeout(PAST_GRACE_MS);
+    expect((await getDocument(page)).elements).toHaveLength(2);
+  });
+
+  test('pasting a screenshot does not also paste the copied elements', async ({ page }) => {
+    // The same double dispatch, with different payloads: the keydown path
+    // cannot see an image, so it pasted the board clipboard while the native
+    // event inserted the image. Synthetic events, because Playwright cannot put
+    // an image on the system clipboard — a synthetic keydown also has no
+    // default action, so the paste below is the only native one.
+    await copyOneRectangle(page);
+
+    await page.evaluate((base64) => {
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true, cancelable: true }),
+      );
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const data = new DataTransfer();
+      data.items.add(new File([bytes], 'shot.png', { type: 'image/png' }));
+      document.body.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+      );
+    }, 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+
+    await expect
+      .poll(async () => (await getDocument(page)).elements.some((element) => element.type === 'image'))
+      .toBe(true);
+    await page.waitForTimeout(PAST_GRACE_MS);
+    const types = (await getDocument(page)).elements.map((element) => element.type).sort();
+    expect(types).toEqual(['image', 'rectangle']);
+  });
+});
+
 test.describe('pasting into chrome inputs', () => {
   /**
    * Copies `value` to the real system clipboard by typing it into an input and

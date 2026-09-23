@@ -18,6 +18,7 @@ import { roughOutlineFor } from '../render/rough.ts';
 import { labelBoxOf } from '../model/registry.ts';
 import { InteractionController } from '../input/controller.ts';
 import { installKeyboardShortcuts, isTypingTarget } from '../input/keyboard.ts';
+import { createPasteGate } from '../input/pasteGate.ts';
 import { screenToScene } from '../model/geometry.ts';
 import { PALETTE } from '../model/defaults.ts';
 import { serializeDocument, type LoadResult } from '../model/document.ts';
@@ -202,6 +203,11 @@ export class MindflowApp {
     this.disposers.push(() => resizeObserver.disconnect());
 
     // ---- Keyboard --------------------------------------------------------
+    // Shared by the Cmd+V shortcut and the native `paste` listener below, which
+    // can both fire for one keypress; the gate lets exactly one of them paste.
+    const pasteGate = createPasteGate({ fallback: () => void this.actions.paste() });
+    this.disposers.push(() => pasteGate.dispose());
+
     this.disposers.push(
       installKeyboardShortcuts({
         store: this.store,
@@ -216,6 +222,7 @@ export class MindflowApp {
         onFind: () => showFindBar(this.store, this.actions),
         onToggleStylePanel: () => this.stylePanel.toggleCollapsed(),
         onCommitText: () => this.textEditor.commit(),
+        onPasteShortcut: () => pasteGate.shortcut(),
       }),
     );
 
@@ -231,16 +238,18 @@ export class MindflowApp {
     // claiming them would leave a field that can be typed into but not pasted
     // into, and would drop a stray copy of the board clipboard on the canvas
     // besides.
+    //
+    // When this event arrives it takes the press from the keyboard fallback,
+    // which is what stops Cmd+V pasting twice. One that arrives after the
+    // fallback has already pasted is claimed and discarded instead.
     const onPaste = (event: ClipboardEvent) => {
       if (isTypingTarget(event.target) || this.textEditor.isEditing) return;
-      const image = findImageFile(event.clipboardData?.items ?? null);
-      if (image) {
-        event.preventDefault();
-        void this.insertImageFile(image, this.viewportCenter());
-        return;
-      }
       event.preventDefault();
-      void this.actions.paste();
+      if (!pasteGate.native()) return;
+
+      const image = findImageFile(event.clipboardData?.items ?? null);
+      if (image) void this.insertImageFile(image, this.viewportCenter());
+      else void this.actions.paste();
     };
     window.addEventListener('paste', onPaste);
     this.disposers.push(() => window.removeEventListener('paste', onPaste));

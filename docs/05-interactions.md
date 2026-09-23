@@ -591,6 +591,15 @@ entirely to the browser. Claiming them would call `preventDefault` on the
 browser's own text insertion, producing a field that can be typed into but not
 pasted into.
 
+**One press pastes once.** `Cmd`/`Ctrl` + `V` on the board can arrive twice, as
+the `keydown` and then as the native `paste` event the browser fires for it.
+Chrome and Firefox send both; WebKit enables Paste outside an editable field only
+when a `beforepaste` listener cancels it, so Safari and an iPad with a hardware
+keyboard may send the keydown alone. The native event is preferred, since only it
+carries image data. The keydown waits up to 100 ms for it and pastes by itself
+only if nothing arrives. A native event that turns up after that fallback has
+pasted (within one second) is treated as the same press and discarded.
+
 ### The style clipboard
 
 `Cmd`/`Ctrl` + `Alt` + `C` and `V` copy and paste **appearance** rather than

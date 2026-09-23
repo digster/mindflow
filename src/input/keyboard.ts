@@ -49,6 +49,12 @@ export interface KeyboardOptions {
   onToggleStylePanel: () => void;
   /** Closes the text editor, writing whatever was typed. */
   onCommitText: () => void;
+  /**
+   * Cmd/Ctrl+V on the board. Not `actions.paste()` directly: the browser may
+   * also fire a native `paste` event for the same press, and `app.ts` owns the
+   * decision of which one pastes — see `input/pasteGate.ts`.
+   */
+  onPasteShortcut: () => void;
 }
 
 /**
@@ -170,9 +176,11 @@ export function installKeyboardShortcuts(options: KeyboardOptions): () => void {
     }
 
     // ---- Clipboard --------------------------------------------------------
-    // Note: copy/cut/paste are ALSO wired to the native clipboard events in
-    // `main.ts`. These handlers cover browsers that do not deliver those events
-    // to a canvas, and are harmless duplicates where they do.
+    // Copy and cut are handled here alone. Paste also arrives as a native
+    // `paste` event in most browsers, and paste is not idempotent, so this
+    // branch only reports the press and lets the gate in `app.ts` make sure it
+    // pastes once. No `preventDefault` on any of them: cancelling Cmd+V would
+    // suppress the native event, and with it the only route to pasted images.
     if (primary && !event.altKey && key === 'c') {
       void actions.copy();
       return;
@@ -182,7 +190,7 @@ export function installKeyboardShortcuts(options: KeyboardOptions): () => void {
       return;
     }
     if (primary && !event.altKey && key === 'v') {
-      void actions.paste();
+      options.onPasteShortcut();
       return;
     }
     if (primary && key === 'd') {
