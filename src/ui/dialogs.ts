@@ -117,6 +117,8 @@ export function confirmDialog(options: {
   title: string;
   message: string;
   confirmLabel?: string;
+  /** Label for the button that declines. Escape and the backdrop decline too. */
+  cancelLabel?: string;
   destructive?: boolean;
 }): Promise<boolean> {
   return new Promise((resolve) => {
@@ -147,7 +149,7 @@ export function confirmDialog(options: {
         el('button', {
           class: 'mf-button',
           type: 'button',
-          text: 'Cancel',
+          text: options.cancelLabel ?? 'Cancel',
           onclick: () => dialog.close(),
         }),
         confirmButton,
@@ -514,14 +516,23 @@ export function showDriveConnectDialog(folderName: string): Promise<boolean> {
   });
 }
 
-/** Offered on startup when an autosave from a previous session is found. */
+/**
+ * Offered on startup when the board open at the end of the last session was
+ * left with unsaved changes.
+ *
+ * Declining is not destructive: the board stays in the recent-boards menu, and
+ * the message says where to find it. Escape and the backdrop decline too, which
+ * is exactly why declining must never delete anything.
+ */
 export function showRecoveryDialog(name: string, savedAt: string): Promise<boolean> {
   return confirmDialog({
     title: 'Recover unsaved work?',
     message:
-      `A board called "${name}" was left unsaved on ${new Date(savedAt).toLocaleString()}.\n\n` +
-      'Recover it, or discard it and start with a blank board?',
+      `"${name}" was left with unsaved changes on ${new Date(savedAt).toLocaleString()}.\n\n` +
+      'Recover it now, or start with a blank board? Either way it stays under Recent boards — ' +
+      'click the logo at the top left.',
     confirmLabel: 'Recover',
+    cancelLabel: 'Start blank',
   });
 }
 

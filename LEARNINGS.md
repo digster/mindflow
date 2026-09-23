@@ -295,18 +295,21 @@ Autosave uses **IndexedDB**. It also disables itself after a failure rather than
 erroring on every subsequent edit — a full quota or private browsing should
 degrade quietly, not nag.
 
-### …and IndexedDB is blocked on `file://` anyway
+### …and IndexedDB on `file://` depends on the browser
 
-Browsers refuse IndexedDB to `file://` pages: the origin is opaque, so there is no
-meaningful boundary to scope a database to.
+A `file://` page has an opaque origin, and whether a browser still grants it
+IndexedDB is browser policy. **Chromium does**: the e2e suite runs over
+`file://` and its recovery and recent-boards tests depend on it. Other browsers
+may refuse. This entry used to say every browser blocks it, which the suite had
+been quietly contradicting.
 
-So on the double-click path — the one this project specifically supports —
-autosave never works. The app reports it once and carries on; explicit `Cmd+S`
-saving is unaffected.
+Where it is refused, the app reports it once at startup and carries on. Explicit
+`Cmd+S` saving is unaffected, and the recent-boards menu says it is unavailable.
 
 Worth knowing before "fixing" the warning: it is browser policy, not a bug. It is
 also a good example of why the failure path had to degrade quietly rather than
-throw — the unsupported case is a *first-class* use case here, not an edge case.
+throw. On the double-click path the unsupported case is a *first-class* use
+case, not an edge case.
 
 ---
 
@@ -839,3 +842,57 @@ period, and discards one that arrives after the fallback has already pasted.
 Testing the "no native event" path in Playwright means swallowing `paste` in a
 capture-phase listener on `window`, the same move as the touch suite's focus
 suppression: stop the test browser doing the thing the real one does not.
+
+---
+
+## Clearing a debounced writer has to disarm its timer
+
+**Symptom:** after New board, or right after saving, the next launch asked to
+*"Recover unsaved work?"* about a board that was blank or already saved.
+
+**Cause:** the single-record autosave's `clear()` deleted the record but left the
+1.2 s debounce timer armed. `store.reset()` and `store.load()` emit `load`,
+which *schedules* a write, and the `clear()` that followed deleted a record the
+timer then recreated. The write landed after the clear every time.
+
+**Rule:** any "clear" or "reset" on a debounced writer must cancel the timer
+**and** drop the pending payload, or the write simply happens later.
+`io/autosave.ts` no longer deletes on save or New board at all. A save flips
+the copy's `unsaved` flag, so there is nothing for a late write to undo.
+
+Relatedly, a debounced writer shared by several subjects (boards, here) must
+**flush** a pending write when a different subject arrives, not replace it.
+Replacing it silently drops the last second of edits to the board being left.
+`Autosave.schedule` flushes on a board-id change. The e2e test *"keeps the last
+edits of a board left before the debounce fires"* pins this.
+
+---
+
+## `preventDefault` in a popover does not stop the app's shortcuts
+
+**Symptom:** arrowing through a menu also moves the selected shape behind it, 1px
+per press.
+
+**Cause:** `installListNavigation` calls `preventDefault()` on the keys it
+handles, but the app's shortcut handler (`input/keyboard.ts`) listens on
+`window`, further along the bubble path, and never checks `defaultPrevented`.
+It skips only typing targets, and a menu's buttons are not typing targets, so it
+nudges on arrows, deletes on Backspace and switches tools on letters. Space is
+worse. Space-to-pan cancels the keydown, so Space stops activating the focused
+button at all.
+
+**Fix, as the recent-boards menu does it:** a keydown listener on the popover
+element stops propagation of **unmodified** keys, so `Cmd+S` and other chords
+still reach the app. Escape is unaffected: `Popover` takes it in the capture
+phase, before any of this. The context menu still has the bug as of this entry.
+
+---
+
+## Opening a stored board is asynchronous — poll, do not read
+
+Recovery used to hold the whole record in memory before the prompt, so the board
+was on screen the instant *Recover* was clicked. Now only the small summary is
+read up front, and the contents come from a second IndexedDB read after the
+click. A test that clicks and immediately reads the document, or presses
+`Cmd+A`, sees the previous board. Use `expect.poll` on the document, as the
+recent-boards tests do.

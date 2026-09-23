@@ -270,3 +270,19 @@ workflow note and the README's Credits section. Documentation only.
 Cmd/Ctrl+V pasted from the keydown and again from the native `paste` event the
 same chord fires. The two now report to a small gate (`src/input/pasteGate.ts`)
 that lets exactly one of them paste per press.
+
+---
+
+## 2026-09-23 — Recent boards from the logo
+
+> When clicking on the icon beside the board name(top left), we should be able to
+> select any of the recent boards if they still persist in the local storage
+> (similar to when we open mindflow for the first time and if there is a board in
+> the local storage, we give an option to recover it).
+
+Autosave kept one record in total and deleted it on every save, New board and
+Open, so there was never more than one board to list. It now keeps a copy per
+board (capped at ten), and the logo opens a menu of them. Decisions confirmed
+with the user: list every recent board, not only unsaved ones; leaving a board
+keeps its copy; declining startup recovery ("Start blank") keeps it too, and
+only the board on screen at the end of the last session is ever offered.

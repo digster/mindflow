@@ -53,11 +53,11 @@ Dependencies point downward only. Nothing in `model/` imports from `ui/`.
 ```
 main.ts
   └── app/            application shell and actions — the only file that knows about everything
-       ├── ui/        DOM: toolbar, style panel, text editor, dialogs
+       ├── ui/        DOM: toolbar, style panel, text editor, dialogs, menus
        ├── input/     pointer gestures, keyboard, hit-testing, snapping, binding, transforms
        ├── render/    canvas renderer, overlay, image cache, PNG/SVG export
        │    └── shapes/   one module per element type ← the ONLY place that knows about types
-       ├── io/        local files, autosave, image import, Google Drive
+       ├── io/        local files, autosave + recent boards, image import, Google Drive
        ├── store/     state, commands, undo/redo
        └── model/     types, registry, geometry, document load/save/validate/migrate
 ```
@@ -152,6 +152,30 @@ dirty or landing on the undo stack.
 The viewport is the interesting case: it is *stored* in the file (so a board
 reopens where you left it) but is not *document state*. It lives in the store and
 is folded into the document only at save time.
+
+### Autosave and recent boards
+
+[`src/io/autosave.ts`](src/io/autosave.ts) keeps a copy of **every** board in
+IndexedDB, one per board id, and those copies are the recent-boards menu. It
+observes the same store seam as everything else. `app.ts` passes it a snapshot
+on `document` and `load` (debounced), and on `saved` (immediate, since only the
+copy's `unsaved` flag changes). Nothing in the board lifecycle deletes a copy.
+New board, Open and switching boards simply load something else.
+
+Three decisions carry the design:
+
+- **Contents and summaries live in separate stores.** The menu reads small
+  summaries only, so opening it never deserialises embedded images.
+- **One cached database connection, and a write queue.** IndexedDB orders
+  transactions reliably only within a connection. The flush that saves the board
+  being left must not be overtaken by the read of the board being opened.
+- **A snapshot of a different board flushes the pending one.** Switching boards
+  inside the debounce would otherwise drop the last second of edits.
+
+Startup recovery asks about one board only: the one a `session` marker says was
+on screen, and only if its copy is unsaved. The marker is written on every
+`load`, and once startup has decided. See
+[`docs/06-persistence.md`](docs/06-persistence.md#autosave-and-recent-boards).
 
 ## Interaction
 

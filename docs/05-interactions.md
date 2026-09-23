@@ -695,6 +695,27 @@ discard the app and any unsaved work with it. Both listeners therefore sit on
 - A drag carrying **no files** is left untouched, so text can still be dragged
   into the board-name field. Same rule as the keyboard and clipboard handlers.
 
+## Recent boards
+
+The **logo** at the left of the top bar opens a menu of every board that has a
+copy in this browser, newest first. *Recent boards…* in the command palette
+opens the same menu. How copies are stored, capped and recovered is specified
+in [06-persistence.md](06-persistence.md#autosave-and-recent-boards).
+
+- Each row shows the board's name, element count and when it last changed.
+  **Unsaved** marks a board with changes that were never saved to a file or to
+  Drive.
+- The board on screen is listed and tagged **Open**, but cannot be reopened or
+  removed from here.
+- Choosing a board asks first if the current one has unsaved changes, the same
+  as New board and Open.
+- The trash button removes a board's copy from this browser. It asks first only
+  for a board marked unsaved. It appears on hover or focus where there is a
+  mouse, and is always visible on touch.
+- The arrow keys move between boards and Enter opens the focused one. With
+  focus in the menu, unmodified keys stay in the menu: an arrow key does not
+  also nudge the selection behind it. Chords such as `Cmd+S` still work.
+
 ## Undo
 
 Undo is command-based rather than snapshot-based. Each command records `before`

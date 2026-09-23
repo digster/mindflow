@@ -19,7 +19,7 @@ a format.
 | 3 | [03-elements.md](03-elements.md) | Every element type, every field, every default. The reference table. |
 | 4 | [04-coordinates.md](04-coordinates.md) | Scene vs screen space, rotation, bounding boxes, hit-testing. |
 | 5 | [05-interactions.md](05-interactions.md) | Tools, gestures, keyboard shortcuts, selection and snapping behaviour. |
-| 6 | [06-persistence.md](06-persistence.md) | Saving, loading, autosave, validation and schema migration. |
+| 6 | [06-persistence.md](06-persistence.md) | Saving, loading, autosave, recent boards, validation and schema migration. |
 | 7 | [07-rendering.md](07-rendering.md) | Paint order, style semantics, and the computed-geometry algorithms. |
 | 8 | [08-google-drive.md](08-google-drive.md) | The Drive integration, its permission model, and its limits. |
 | 9 | [09-extending.md](09-extending.md) | Adding an element type end to end. |

@@ -64,11 +64,15 @@ export interface ToolbarCallbacks {
   /** Opens the board background picker, anchored to the button that was clicked. */
   onBackground: (at: { x: number; y: number }) => void;
   onRename: (name: string) => void;
+  /** Opens the recent-boards menu, anchored to the logo. */
+  onRecentBoards: () => void;
 }
 
 export class Toolbar {
   readonly toolbarElement: HTMLElement;
   readonly topBarElement: HTMLElement;
+  /** The logo, which opens the recent-boards menu. Exposed as that menu's anchor. */
+  readonly brandButton: HTMLButtonElement;
 
   private toolButtons = new Map<ToolId, HTMLButtonElement>();
   private nameInput!: HTMLInputElement;
@@ -86,6 +90,21 @@ export class Toolbar {
     private readonly callbacks: ToolbarCallbacks,
   ) {
     this.toolbarElement = this.buildToolPalette();
+    // The logo doubles as the recent-boards trigger: it sits beside the board
+    // name, which is exactly where "which board am I on" is asked, and every
+    // pixel of the top bar is already spoken for.
+    this.brandButton = el(
+      'button',
+      {
+        class: 'mf-brand',
+        type: 'button',
+        title: 'Recent boards',
+        'aria-label': 'Recent boards',
+        'aria-haspopup': 'dialog',
+        onclick: () => this.callbacks.onRecentBoards(),
+      },
+      icon(ICONS.sticky, 20),
+    ) as HTMLButtonElement;
     this.topBarElement = this.buildTopBar();
     this.sync();
   }
@@ -285,7 +304,7 @@ export class Toolbar {
       el(
         'div',
         { class: 'mf-topbar-group' },
-        el('div', { class: 'mf-brand', title: 'MindFlow' }, icon(ICONS.sticky, 20)),
+        this.brandButton,
         this.nameInput,
         this.dirtyDot,
       ),

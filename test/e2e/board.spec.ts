@@ -9,6 +9,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 const APP_URL = pathToFileURL(join(import.meta.dirname, '..', '..', 'index.html')).href;
 
@@ -64,6 +65,48 @@ async function isDirty(page: Page) {
   return page.evaluate(
     () => (window as unknown as { mindflow: { store: { getState(): { dirty: boolean } } } }).mindflow.store.getState().dirty,
   );
+}
+
+/** A row of the recent-boards store, as `io/autosave.ts` writes it. */
+interface StoredBoard {
+  boardId: string;
+  name: string;
+  unsaved: boolean;
+  elementCount: number;
+}
+
+/**
+ * Reads one object store of the app's IndexedDB database directly, bypassing the
+ * app, so a test can check what actually reached storage.
+ */
+async function readStore<T>(page: Page, store: string): Promise<T[]> {
+  return page.evaluate(
+    (name) =>
+      new Promise<T[]>((resolve) => {
+        const open = indexedDB.open('mindflow');
+        // Never create the database from here: a store-less version 1 would
+        // stop the app's own upgrade from ever running.
+        open.onupgradeneeded = () => open.transaction?.abort();
+        open.onerror = () => resolve([]);
+        open.onsuccess = () => {
+          const db = open.result;
+          const finish = (rows: T[]) => {
+            db.close();
+            resolve(rows);
+          };
+          if (!db.objectStoreNames.contains(name)) return finish([]);
+          const all = db.transaction(name).objectStore(name).getAll();
+          all.onsuccess = () => finish(all.result as T[]);
+          all.onerror = () => finish([]);
+        };
+      }),
+    store,
+  );
+}
+
+/** Summaries in the recent-boards store. */
+function storedBoards(page: Page): Promise<StoredBoard[]> {
+  return readStore<StoredBoard>(page, 'recent');
 }
 
 /**
@@ -764,7 +807,7 @@ test.describe('new board', () => {
     await expect(page.getByRole('button', { name: 'New board' })).toBeVisible();
   });
 
-  test('resets a dirty board once the discard is confirmed', async ({ page }) => {
+  test('resets a dirty board once leaving it is confirmed', async ({ page }) => {
     const before = await boardId(page);
 
     await page.locator('[data-tool="rectangle"]').click();
@@ -774,7 +817,10 @@ test.describe('new board', () => {
     await input.press('Enter');
 
     await page.getByRole('button', { name: 'New board' }).click();
-    await page.getByRole('button', { name: 'Discard' }).click();
+    // Local storage works here, so the board keeps a copy in the recent-boards
+    // menu and the prompt offers to continue rather than to discard.
+    await expect(page.getByRole('dialog', { name: 'Leave unsaved changes?' })).toBeVisible();
+    await page.getByRole('button', { name: 'Continue' }).click();
 
     const doc = await getDocument(page);
     expect(doc.elements).toHaveLength(0);
@@ -1056,7 +1102,7 @@ test.describe('command palette', () => {
     await page.keyboard.press('ControlOrMeta+k');
     await page.keyboard.type('new board');
     await page.keyboard.press('Enter');
-    await page.getByRole('button', { name: 'Discard' }).click();
+    await page.getByRole('button', { name: 'Continue' }).click();
 
     expect((await getDocument(page)).elements).toHaveLength(0);
   });
@@ -1619,35 +1665,13 @@ test.describe('collapsing the style panel', () => {
 
     // Let the autosave land first, so the reload deterministically offers the
     // board back rather than racing the save's debounce.
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            new Promise<boolean>((resolve) => {
-              const open = indexedDB.open('mindflow');
-              // Never create the database from here: a store-less version 1
-              // would stop the app's own upgrade from ever running.
-              open.onupgradeneeded = () => open.transaction?.abort();
-              open.onerror = () => resolve(false);
-              open.onsuccess = () => {
-                const db = open.result;
-                const finish = (found: boolean) => {
-                  db.close();
-                  resolve(found);
-                };
-                if (!db.objectStoreNames.contains('autosave')) return finish(false);
-                const get = db.transaction('autosave').objectStore('autosave').get('current');
-                get.onsuccess = () => finish(get.result !== undefined);
-                get.onerror = () => finish(false);
-              };
-            }),
-        ),
-      )
-      .toBe(true);
+    await expect.poll(async () => (await storedBoards(page)).some((board) => board.elementCount === 2)).toBe(true);
 
     await page.reload();
     await page.waitForFunction(() => 'mindflow' in window);
     await page.getByRole('button', { name: 'Recover' }).click();
+    // Recovery reads the board back from storage, so it lands a moment later.
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(2);
     await page.keyboard.press('ControlOrMeta+a');
     await expect(panel(page)).toBeVisible();
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
@@ -2376,6 +2400,354 @@ test.describe('dropping files', () => {
     });
 
     expect(prevented).toBe(false);
+  });
+});
+
+test.describe('recent boards', () => {
+  const menu = (page: Page) => page.locator('.mf-recent');
+  // Matched on the exact name: a substring match would find "Saved" inside the
+  // "Unsaved" tag of some other row.
+  const row = (page: Page, name: string) =>
+    menu(page)
+      .locator('.mf-recent-item')
+      .filter({ has: page.locator('.mf-recent-name').getByText(name, { exact: true }) });
+  const openMenu = (page: Page) => page.getByRole('button', { name: 'Recent boards' }).click();
+
+  /** Draws `count` rectangles and names the board, so it has something to list. */
+  async function makeBoard(page: Page, name: string, count = 1) {
+    for (let index = 0; index < count; index++) {
+      const x = 80 + index * 160;
+      await page.locator('[data-tool="rectangle"]').click();
+      await drag(page, [x, 100], [x + 120, 200]);
+    }
+    const input = page.locator('.mf-board-name');
+    await input.fill(name);
+    await input.press('Enter');
+    await page.keyboard.press('Escape');
+  }
+
+  /** Waits until autosave has written `name` with the expected element count. */
+  async function waitForStored(page: Page, name: string, elementCount: number) {
+    await expect
+      .poll(async () => (await storedBoards(page)).find((board) => board.name === name)?.elementCount)
+      .toBe(elementCount);
+  }
+
+  async function newBoard(page: Page) {
+    const dirty = await isDirty(page);
+    await page.getByRole('button', { name: 'New board' }).click();
+    // Only a dirty board asks. It offers "Continue" when the board keeps a copy,
+    // and "Discard" when it does not — an emptied board is not kept.
+    if (dirty) await page.getByRole('dialog').getByRole('button', { name: /^(Continue|Discard)$/ }).click();
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(0);
+  }
+
+  /** The id startup records as "on screen", once it has finished deciding. */
+  async function lastOpenBoardId(page: Page) {
+    const rows = await readStore<{ key: string; boardId: string }>(page, 'session');
+    return rows.find((entry) => entry.key === 'lastOpen')?.boardId ?? null;
+  }
+
+  /**
+   * Reloads, and resolves once startup has settled WITHOUT a recovery prompt.
+   *
+   * Startup writes the "on screen" marker only after any prompt is answered, so
+   * the marker naming the fresh board proves no prompt is pending — which a
+   * plain "no dialog visible" check could not, since the prompt is async.
+   */
+  async function reloadExpectingNoPrompt(page: Page) {
+    await page.reload();
+    await page.waitForFunction(() => 'mindflow' in window);
+    const current = await page.evaluate(
+      () => (window as unknown as { mindflow: { store: { document: { id: string } } } }).mindflow.store.document.id,
+    );
+    await expect.poll(() => lastOpenBoardId(page)).toBe(current);
+    await expect(page.getByRole('dialog', { name: 'Recover unsaved work?' })).toHaveCount(0);
+  }
+
+  test('the logo opens the menu, which starts empty', async ({ page }) => {
+    await openMenu(page);
+    await expect(menu(page)).toBeVisible();
+    await expect(menu(page)).toContainText('No recent boards yet');
+
+    // Escape closes it, like every other popover.
+    await page.keyboard.press('Escape');
+    await expect(menu(page)).toHaveCount(0);
+  });
+
+  test('lists boards worked on in this browser and reopens one', async ({ page }) => {
+    await makeBoard(page, 'Alpha');
+    await waitForStored(page, 'Alpha', 1);
+    await newBoard(page);
+    await makeBoard(page, 'Beta', 2);
+
+    await openMenu(page);
+    await expect(menu(page).locator('.mf-recent-item')).toHaveCount(2);
+    // Newest first, and the board on screen is marked and inert.
+    await expect(menu(page).locator('.mf-recent-name')).toHaveText(['Beta', 'Alpha']);
+    await expect(row(page, 'Beta').locator('.mf-recent-tag--current')).toBeVisible();
+    await expect(row(page, 'Beta').locator('.mf-recent-open')).toBeDisabled();
+    await expect(row(page, 'Beta').locator('.mf-recent-remove')).toHaveCount(0);
+    await expect(row(page, 'Alpha').locator('.mf-recent-tag--unsaved')).toBeVisible();
+    await expect(row(page, 'Alpha')).toContainText('1 element');
+
+    await row(page, 'Alpha').locator('.mf-recent-open').click();
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    // The board is read back from storage, so it lands a moment after the click.
+    await expect.poll(async () => (await getDocument(page)).meta.name).toBe('Alpha');
+    const doc = await getDocument(page);
+    expect(doc.elements).toHaveLength(1);
+    // Never saved anywhere else, so it comes back as unsaved work.
+    expect(await isDirty(page)).toBe(true);
+
+    // Beta kept its copy on the way out.
+    await openMenu(page);
+    await expect(row(page, 'Beta')).toContainText('2 elements');
+    await expect(row(page, 'Alpha').locator('.mf-recent-tag--current')).toBeVisible();
+  });
+
+  test('keeps the last edits of a board left before the debounce fires', async ({ page }) => {
+    // The edit and the switch land inside the 1.2 s debounce. The pending write
+    // for the board being left must be flushed, not replaced by the new board's.
+    await makeBoard(page, 'Quick');
+    await newBoard(page);
+    await waitForStored(page, 'Quick', 1);
+  });
+
+  test('marks a board clean once it is saved, and reopens it clean', async ({ page }) => {
+    await makeBoard(page, 'Saved one');
+    // The same call a real save makes once the file or Drive write succeeds.
+    await page.evaluate(() =>
+      (window as unknown as { mindflow: { store: { markSaved(): void } } }).mindflow.store.markSaved(),
+    );
+    await expect
+      .poll(async () => (await storedBoards(page)).find((board) => board.name === 'Saved one')?.unsaved)
+      .toBe(false);
+
+    await newBoard(page);
+    await openMenu(page);
+    await expect(row(page, 'Saved one').locator('.mf-recent-tag--unsaved')).toHaveCount(0);
+    await row(page, 'Saved one').locator('.mf-recent-open').click();
+
+    await expect.poll(async () => (await getDocument(page)).meta.name).toBe('Saved one');
+    expect(await isDirty(page)).toBe(false);
+  });
+
+  test('never lists a blank board, and drops a board emptied of everything', async ({ page }) => {
+    await makeBoard(page, 'Emptied');
+    await waitForStored(page, 'Emptied', 1);
+
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('Delete');
+    await expect.poll(async () => (await storedBoards(page)).length).toBe(0);
+
+    await newBoard(page);
+    await openMenu(page);
+    await expect(menu(page)).toContainText('No recent boards yet');
+  });
+
+  test('removes a saved board without asking, and an unsaved one only once confirmed', async ({ page }) => {
+    await makeBoard(page, 'Keep me');
+    await waitForStored(page, 'Keep me', 1);
+    await newBoard(page);
+    await makeBoard(page, 'Saved');
+    await page.evaluate(() =>
+      (window as unknown as { mindflow: { store: { markSaved(): void } } }).mindflow.store.markSaved(),
+    );
+    await newBoard(page);
+    await makeBoard(page, 'Current');
+
+    // A board saved elsewhere loses nothing but a shortcut: no question asked.
+    await openMenu(page);
+    await row(page, 'Saved').locator('.mf-recent-remove').click();
+    await expect(row(page, 'Saved')).toHaveCount(0);
+    await expect(menu(page)).toBeVisible();
+
+    // Unsaved work is the copy's only home, so removing it asks — and declining
+    // brings the menu back with the board still in it.
+    await row(page, 'Keep me').locator('.mf-recent-remove').click();
+    await expect(page.getByRole('dialog', { name: 'Remove unsaved board?' })).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(row(page, 'Keep me')).toBeVisible();
+
+    await row(page, 'Keep me').locator('.mf-recent-remove').click();
+    await page.getByRole('button', { name: 'Remove' }).click();
+    await expect(menu(page)).toBeVisible();
+    await expect(row(page, 'Keep me')).toHaveCount(0);
+
+    expect((await storedBoards(page)).map((board) => board.name)).toEqual(['Current']);
+  });
+
+  test('is reachable from the command palette and the keyboard', async ({ page }) => {
+    await makeBoard(page, 'First');
+    await waitForStored(page, 'First', 1);
+    await newBoard(page);
+    await makeBoard(page, 'Second');
+
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.type('recent');
+    await page.keyboard.press('Enter');
+    await expect(menu(page)).toBeVisible();
+
+    // Focus lands on the first board that can be opened, not on the current one.
+    await expect(row(page, 'First').locator('.mf-recent-open')).toBeFocused();
+    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect.poll(async () => (await getDocument(page)).meta.name).toBe('First');
+  });
+
+  test('keeps arrow keys to itself instead of nudging the selection behind it', async ({ page }) => {
+    await makeBoard(page, 'Older');
+    await waitForStored(page, 'Older', 1);
+    await newBoard(page);
+    await makeBoard(page, 'Newer');
+    await waitForStored(page, 'Newer', 1);
+    await page.keyboard.press('ControlOrMeta+a');
+    const before = (await getDocument(page)).elements[0];
+
+    await openMenu(page);
+    await expect(row(page, 'Older').locator('.mf-recent-open')).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Delete');
+    await page.keyboard.press('Escape');
+
+    const after = (await getDocument(page)).elements;
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ x: before!.x, y: before!.y });
+  });
+
+  test.describe('on startup', () => {
+    test('offers back unsaved work, and declining keeps it listed without asking again', async ({ page }) => {
+      await makeBoard(page, 'Left open');
+      await waitForStored(page, 'Left open', 1);
+
+      await page.reload();
+      await page.waitForFunction(() => 'mindflow' in window);
+      await expect(page.getByRole('dialog', { name: 'Recover unsaved work?' })).toBeVisible();
+      await page.getByRole('button', { name: 'Start blank' }).click();
+      expect((await getDocument(page)).elements).toHaveLength(0);
+
+      await openMenu(page);
+      await expect(row(page, 'Left open').locator('.mf-recent-tag--unsaved')).toBeVisible();
+      await page.keyboard.press('Escape');
+
+      // Declined once is enough: the next launch does not ask again.
+      await reloadExpectingNoPrompt(page);
+    });
+
+    test('recovers unsaved work as unsaved', async ({ page }) => {
+      await makeBoard(page, 'Crashed', 2);
+      await waitForStored(page, 'Crashed', 2);
+
+      await page.reload();
+      await page.waitForFunction(() => 'mindflow' in window);
+      await page.getByRole('button', { name: 'Recover' }).click();
+
+      await expect.poll(async () => (await getDocument(page)).meta.name).toBe('Crashed');
+      expect((await getDocument(page)).elements).toHaveLength(2);
+      expect(await isDirty(page)).toBe(true);
+    });
+
+    test('does not ask about a board that was saved', async ({ page }) => {
+      await makeBoard(page, 'Saved and closed');
+      await page.evaluate(() =>
+        (window as unknown as { mindflow: { store: { markSaved(): void } } }).mindflow.store.markSaved(),
+      );
+      await expect
+        .poll(async () => (await storedBoards(page)).find((board) => board.name === 'Saved and closed')?.unsaved)
+        .toBe(false);
+
+      await reloadExpectingNoPrompt(page);
+    });
+
+    test('does not ask about a board the user already moved away from', async ({ page }) => {
+      // The old single-record autosave offered back whatever it held, which
+      // after New board was the blank board itself. Only the board on screen
+      // at the end of the session is worth asking about.
+      await makeBoard(page, 'Moved away from');
+      await newBoard(page);
+      await waitForStored(page, 'Moved away from', 1);
+
+      await reloadExpectingNoPrompt(page);
+      await openMenu(page);
+      await expect(row(page, 'Moved away from')).toBeVisible();
+    });
+
+    test('carries the single record of the previous storage version forward', async ({ page }) => {
+      const contents = readFileSync(
+        join(import.meta.dirname, '..', '..', 'docs', 'schema', 'examples', 'shapes.mindflow.json'),
+        'utf8',
+      );
+
+      // Rebuild the database exactly as version 1 left it: one store, one record
+      // under the fixed key `current`.
+      await page.evaluate(
+        (legacy) =>
+          new Promise<void>((resolve, reject) => {
+            const remove = indexedDB.deleteDatabase('mindflow');
+            remove.onerror = () => reject(remove.error);
+            remove.onsuccess = () => {
+              const open = indexedDB.open('mindflow', 1);
+              open.onupgradeneeded = () => {
+                open.result.createObjectStore('autosave', { keyPath: 'key' }).put({
+                  key: 'current',
+                  contents: legacy,
+                  boardId: 'brd_ShapesEx14',
+                  name: 'Polygons and solids',
+                  savedAt: '2026-09-20T09:00:00.000Z',
+                });
+              };
+              open.onerror = () => reject(open.error);
+              open.onsuccess = () => {
+                open.result.close();
+                resolve();
+              };
+            };
+          }),
+        contents,
+      );
+
+      await page.reload();
+      await page.waitForFunction(() => 'mindflow' in window);
+      await expect(page.getByRole('dialog', { name: 'Recover unsaved work?' })).toContainText('Polygons and solids');
+      await page.getByRole('button', { name: 'Recover' }).click();
+      await expect.poll(async () => (await getDocument(page)).elements.length).toBe(10);
+
+      // Re-keyed under its board id, with nothing left under the old key.
+      const rows = await readStore<{ key: string }>(page, 'autosave');
+      expect(rows.map((entry) => entry.key)).toEqual(['brd_ShapesEx14']);
+      expect((await storedBoards(page)).map((board) => board.elementCount)).toEqual([10]);
+    });
+  });
+
+  test.describe('when the browser refuses local storage', () => {
+    test.beforeEach(async ({ page }) => {
+      await page.addInitScript(() => {
+        Object.defineProperty(window, 'indexedDB', {
+          get() {
+            throw new DOMException('Blocked by the test', 'SecurityError');
+          },
+        });
+      });
+      await page.reload();
+      await page.waitForFunction(() => 'mindflow' in window);
+    });
+
+    test('says so in the menu, and warns that leaving discards changes', async ({ page }) => {
+      await expect(page.locator('.mf-toast', { hasText: 'Autosave is unavailable' })).toBeVisible();
+
+      await openMenu(page);
+      await expect(menu(page)).toContainText('unavailable');
+      await page.keyboard.press('Escape');
+
+      // Nothing is kept, so the prompt must not promise a copy.
+      await makeBoard(page, 'Nowhere to go');
+      await page.getByRole('button', { name: 'New board' }).click();
+      await expect(page.getByRole('dialog', { name: 'Discard unsaved changes?' })).toBeVisible();
+      await page.getByRole('button', { name: 'Discard' }).click();
+      expect((await getDocument(page)).elements).toHaveLength(0);
+    });
   });
 });
 

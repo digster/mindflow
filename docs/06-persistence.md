@@ -1,6 +1,6 @@
 # 6. Persistence
 
-Saving, loading, validation, autosave and schema migration.
+Saving, loading, validation, autosave, recent boards and schema migration.
 
 Reference implementation: [`src/io/`](../src/io/),
 [`src/model/document.ts`](../src/model/document.ts),
@@ -49,15 +49,73 @@ collapsed, then suffixed `.mindflow.json`. An empty name becomes `board`.
 
 `meta.name` itself is **not** a filename and may contain any character.
 
-## Autosave
+## Autosave and recent boards
 
-Crash recovery, backed by **IndexedDB**.
+Every board you work on keeps a copy in the browser, backed by **IndexedDB**.
+Those copies are what the **recent-boards menu** lists — click the logo at the
+left of the top bar, or run *Recent boards…* from the command palette.
 
-- Debounced 1200 ms after the last edit.
-- Stores one record — the current board, serialised.
-- Identical writes are skipped, so undo/redo round trips do not rewrite megabytes.
-- Cleared after any explicit save.
-- On startup, an existing record prompts *"Recover unsaved work?"*.
+- Debounced 1200 ms after the last edit. A board is also written when it is
+  opened, so a board opened from a file or from Drive appears in the menu too.
+- **One copy per board**, keyed by the board's `id`. Identical writes are skipped,
+  so undo/redo round trips do not rewrite megabytes.
+- Each copy carries an **`unsaved`** flag: true while it holds changes that were
+  never saved to a file or to Drive. An explicit save **clears the flag rather
+  than deleting the copy**, and writes it at once rather than after the debounce.
+- **Leaving a board never deletes its copy.** New board, Open, opening another
+  recent board and declining startup recovery all leave it in the menu.
+- A board with **no elements is not kept**, and a board emptied of every element
+  is dropped. A blank board is not worth a row.
+- The list is capped at **10 boards**. Past that, boards already saved elsewhere
+  are evicted first, oldest first. The oldest board with unsaved work goes only
+  once no saved board is left to drop. The board being written is never evicted.
+- Removing a board from the menu deletes only this browser's copy. It asks first
+  only when the copy is marked unsaved, since only then is it the sole home of
+  some work.
+
+### Reopening a board
+
+A copy reopens as a board **with no file behind it**: `Cmd+S` asks where to save
+it, as for a new board. Linking it back to the file or Drive entry it came from
+would risk quietly overwriting a newer version saved from elsewhere since the
+copy was made. A copy marked unsaved reopens with unsaved changes. Any other
+copy reopens clean.
+
+### Startup recovery
+
+On startup MindFlow asks *"Recover unsaved work?"* about **one** board: the
+board that was on screen when the previous session ended, and only if it had
+unsaved changes. Older unsaved boards wait in the menu rather than prompting.
+Every board keeps a copy now, so asking about all unsaved work on every launch
+would turn a recovery prompt into a nag.
+
+**Start blank** declines without deleting anything: the board stays in the menu,
+and the next launch does not ask again. The board on screen is recorded
+whenever one is loaded, and once startup has finished deciding.
+
+### Leaving a board with unsaved changes
+
+The prompt depends on whether anything is actually lost:
+
+| Situation | Prompt |
+|---|---|
+| Storage works and the board has elements | *"Leave unsaved changes?"* — a copy stays in the menu. |
+| Storage refused, or the board is empty | *"Discard unsaved changes?"* — the changes really are lost. |
+
+### Storage layout
+
+Database `mindflow`, version 2:
+
+| Store | Key | Holds |
+|---|---|---|
+| `autosave` | board id | `{ key, contents }`: the serialised board, exactly as Save writes it. Read only when a board is opened. |
+| `recent` | `boardId` | `{ boardId, name, savedAt, elementCount, unsaved }`. The menu reads only this, so opening it never deserialises image data. |
+| `session` | `lastOpen` | `{ key, boardId }`: the board on screen, for startup recovery. |
+
+A version-1 database held a single record under the key `current`. The upgrade
+re-keys it under its board id, marks it unsaved and records it as the last open
+board, so the first launch after upgrading offers it back exactly as version 1
+would have.
 
 **Why IndexedDB, not localStorage?** localStorage caps out around 5 MB and writes
 synchronously on the main thread. A board with two pasted photos exceeds that
@@ -65,25 +123,25 @@ immediately, and the write would jank the canvas every time it fired.
 
 If storage fails — quota exhausted, private browsing, a blocked upgrade — autosave
 disables itself and says so once, rather than erroring on every subsequent edit.
+The menu then says the list is unavailable.
 
-> **Autosave does not work from `file://`.**
+> **From `file://`, it depends on the browser.**
 >
-> Chrome and most other browsers block IndexedDB on `file://` pages, because such
-> a page has an opaque origin and there is no meaningful security boundary to
-> scope the database to. A double-clicked MindFlow page therefore shows
-> *"Autosave is unavailable"* once, and everything else continues to work
-> normally.
->
-> This is a browser policy, not something MindFlow can work around. If crash
-> recovery matters to you, use the hosted version or `npm run serve` — both have
-> a real origin. Explicit saving with `Cmd+S` works from `file://` regardless.
+> A page opened from disk has an opaque origin. Chromium still grants it
+> IndexedDB (the end-to-end suite runs over `file://` and relies on this). Other
+> browsers may refuse, in which case the page shows *"Autosave is unavailable"*
+> once, at startup, and everything else works normally. Explicit saving with
+> `Cmd+S` works from `file://` regardless. If recovery matters to you, use the
+> hosted version or `npm run serve`, which have a real origin.
 
-> **Autosave is not a substitute for saving a file.** It exists so a crashed tab
-> or a closed laptop does not lose work. The UI describes it as recovery, never as
-> a save.
+> **This is not a substitute for saving a file.** The browser can evict site
+> data, the user can clear it, and it never leaves this machine. The menu says
+> so in its footer.
 
-The browser's "unsaved changes" prompt is also wired to the dirty flag, and a
-final autosave is flushed before the page unloads.
+The browser's "unsaved changes" prompt is also wired to the dirty flag. Pending
+writes are flushed before the page unloads and also whenever it is hidden,
+because a mobile browser discarding a background tab never fires
+`beforeunload`.
 
 ## Loading
 

@@ -100,6 +100,14 @@ export function buildCommands(
       enabled: () => true,
     },
     { id: 'file.open', title: 'Open board…', group: 'File', shortcut: `${MOD_KEY}O`, run: callbacks.onOpen, enabled: () => true },
+    {
+      id: 'file.recent',
+      title: 'Recent boards…',
+      group: 'File',
+      keywords: 'history reopen recover switch local',
+      run: callbacks.onRecentBoards,
+      enabled: () => true,
+    },
     { id: 'file.save', title: 'Save board', group: 'File', shortcut: `${MOD_KEY}S`, run: callbacks.onSave, enabled: () => true },
     {
       id: 'file.export',

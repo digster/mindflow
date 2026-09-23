@@ -21,10 +21,11 @@ import { installKeyboardShortcuts, isTypingTarget } from '../input/keyboard.ts';
 import { createPasteGate } from '../input/pasteGate.ts';
 import { screenToScene } from '../model/geometry.ts';
 import { PALETTE } from '../model/defaults.ts';
-import { serializeDocument, type LoadResult } from '../model/document.ts';
+import { loadDocument, serializeDocument, type LoadResult } from '../model/document.ts';
 import { Actions } from './actions.ts';
 import { Toolbar, type ToolbarCallbacks } from '../ui/toolbar.ts';
 import { showCommandPalette } from '../ui/commandPalette.ts';
+import { showRecentBoardsMenu } from '../ui/recentBoards.ts';
 import { showFindBar } from '../ui/findBar.ts';
 import { buildCommands } from './commands.ts';
 import { StylePanel } from '../ui/stylePanel.ts';
@@ -53,7 +54,7 @@ import {
   supportsFileSystemAccess,
   toFileName,
 } from '../io/localFile.ts';
-import { Autosave } from '../io/autosave.ts';
+import { Autosave, type BoardSnapshot, type RecentBoard } from '../io/autosave.ts';
 import { findImageFile, prepareImageImport } from '../io/imageImport.ts';
 import { getClientId, isOriginSupported, disconnect, setClientId } from '../io/drive/auth.ts';
 import {
@@ -138,6 +139,7 @@ export class MindflowApp {
       onToggleGrid: () => this.toggleGrid(),
       onBackground: (at) => this.openBackgroundPicker(at),
       onRename: (name) => this.store.execute(renameBoard(this.store.document, name)),
+      onRecentBoards: () => void this.openRecentBoards(),
     };
 
     this.toolbar = new Toolbar(this.store, this.actions, this.appCallbacks);
@@ -178,10 +180,19 @@ export class MindflowApp {
       this.store.subscribe((state, reason) => {
         if (reason === 'document' || reason === 'load') {
           this.images.sync(state.document);
-          this.autosave.schedule(state.document, state.preserved);
+          // A load is written too, not only an edit: that is what puts a board
+          // opened from a file or from Drive into the recent-boards menu.
+          this.autosave.schedule(this.snapshot());
+        }
+        if (reason === 'saved') {
+          // Immediately rather than debounced. The only change is the copy's
+          // `unsaved` flag, and a tab closed within the debounce would otherwise
+          // offer a board that was just saved as unsaved work on next launch.
+          void this.autosave.saveNow(this.snapshot());
         }
         if (reason === 'load') {
           this.images.prune(state.document);
+          void this.autosave.markOpen(state.document.id);
         }
         if (reason === 'viewport' || reason === 'load') {
           this.textEditor.reposition();
@@ -315,15 +326,24 @@ export class MindflowApp {
 
     // ---- Unsaved-work guard ----------------------------------------------
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      // Flushed whether or not the board is dirty: a save a moment ago may
+      // still be waiting to record itself, and the menu should see it.
+      void this.autosave.flush();
       if (!this.store.getState().dirty) return;
-      // Flush the autosave synchronously-ish so a confirmed navigation still
-      // leaves a recovery record behind.
-      void this.autosave.saveNow(this.store.document, this.store.getState().preserved);
       event.preventDefault();
       event.returnValue = '';
     };
     window.addEventListener('beforeunload', onBeforeUnload);
     this.disposers.push(() => window.removeEventListener('beforeunload', onBeforeUnload));
+
+    // `beforeunload` never fires when a mobile browser discards a backgrounded
+    // tab, or when an iPad's app switcher closes it. Becoming hidden is the last
+    // moment a page is reliably given, so pending edits are written then too.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') void this.autosave.flush();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    this.disposers.push(() => document.removeEventListener('visibilitychange', onVisibilityChange));
   }
 
   private pushScene(): void {
@@ -335,27 +355,27 @@ export class MindflowApp {
     return screenToScene({ x: width / 2, y: height / 2 }, this.store.viewport);
   }
 
-  /** Offers to restore an autosave left behind by a previous session. */
+  /**
+   * Offers back the board that was open when the last session ended, if it was
+   * left with unsaved changes.
+   *
+   * Only that board, never an older one. Every board keeps a copy now, so "is
+   * there unsaved work anywhere" is almost always yes. Asking about all of it on
+   * every launch would turn a recovery prompt into a nag. Older boards wait in
+   * the recent-boards menu instead.
+   */
   private async startup(): Promise<void> {
-    const record = await this.autosave.recover();
-    if (!record) return;
-
     try {
-      const recovered = await confirmRecovery(record.name, record.savedAt);
-      if (!recovered) {
-        await this.autosave.clear();
-        return;
-      }
-      const { loadDocument } = await import('../model/document.ts');
-      const result = loadDocument(record.contents);
-      this.applyLoad(result, { kind: 'new' });
-      // The recovered board is unsaved by definition.
-      this.store.markDirty();
-      toast('Recovered your unsaved board.');
-    } catch (error) {
-      console.error('[mindflow] recovery failed', error);
-      toast('Could not recover the previous board.', 'error');
-      await this.autosave.clear();
+      const board = await this.autosave.unsavedFromLastSession();
+      if (!board) return;
+      // Declining leaves the board where it is. See `showRecoveryDialog`.
+      if (!(await showRecoveryDialog(board.name, board.savedAt))) return;
+      if (await this.loadRecent(board)) toast('Recovered your unsaved board.');
+    } finally {
+      // Whatever is on screen now is the board a crash would interrupt. Without
+      // this, declining would leave the marker on the old board and the same
+      // prompt would come back on every launch.
+      void this.autosave.markOpen(this.store.document.id);
     }
   }
 
@@ -395,8 +415,30 @@ export class MindflowApp {
     );
   }
 
+  /**
+   * Asks before leaving a board with unsaved changes.
+   *
+   * Two wordings, because whether anything is actually lost depends on local
+   * storage. Normally the board keeps its copy in the recent-boards menu, so
+   * the prompt says so rather than threatening a loss that will not happen.
+   * Where storage is refused, or the board is empty and so not kept, the
+   * changes really are discarded and the prompt says that instead.
+   */
   private async confirmDiscard(): Promise<boolean> {
-    if (!this.store.getState().dirty) return true;
+    const state = this.store.getState();
+    if (!state.dirty) return true;
+
+    const kept =
+      this.autosave.available && state.document.elements.length + state.preserved.length > 0;
+    if (kept) {
+      return confirmDialog({
+        title: 'Leave unsaved changes?',
+        message:
+          'This board has changes that have not been saved to a file. A copy stays under Recent boards ' +
+          'in this browser — click the logo at the top left to reopen it.',
+        confirmLabel: 'Continue',
+      });
+    }
     return confirmDialog({
       title: 'Discard unsaved changes?',
       message: 'This board has changes that have not been saved. Continue and lose them?',
@@ -414,7 +456,6 @@ export class MindflowApp {
     if (!(await this.confirmDiscard())) return;
     this.images.clear();
     this.store.reset();
-    void this.autosave.clear();
   }
 
   private async openBoardFile(): Promise<void> {
@@ -427,7 +468,6 @@ export class MindflowApp {
         name: opened.name,
         handle: opened.handle,
       });
-      void this.autosave.clear();
       toast(`Opened ${opened.name}`);
     } catch (error) {
       toast(errorMessage(error, 'Could not open that file.'), 'error');
@@ -460,7 +500,6 @@ export class MindflowApp {
       const result = await saveToFile(document, state.preserved, { existingHandle, saveAs });
 
       this.store.markSaved({ kind: 'local', name: result.name, handle: result.handle });
-      void this.autosave.clear();
 
       toast(
         result.viaDownload
@@ -501,6 +540,104 @@ export class MindflowApp {
     } catch (error) {
       toast(errorMessage(error, 'Export failed.'), 'error');
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Recent boards
+  // -------------------------------------------------------------------------
+
+  /** What autosave writes: the board as it would be saved, plus its dirty flag. */
+  private snapshot(): BoardSnapshot {
+    const state = this.store.getState();
+    return {
+      // With the live viewport folded in, so a reopened board comes back
+      // looking at the same spot.
+      document: this.store.documentForSave(),
+      preserved: state.preserved,
+      unsaved: state.dirty,
+    };
+  }
+
+  private async openRecentBoards(): Promise<void> {
+    const boards = await this.autosave.recentBoards();
+    showRecentBoardsMenu({
+      anchor: this.toolbar.brandButton,
+      boards,
+      currentId: this.store.document.id,
+      onOpen: (board) => void this.openRecent(board),
+      onRemove: (board) => void this.removeRecent(board),
+    });
+  }
+
+  private async openRecent(board: RecentBoard): Promise<void> {
+    // Same order as `newBoard`, and for the same reason: a pending text edit is
+    // part of the board being left, so it lands before the user is asked.
+    this.textEditor.commit();
+    closePopover();
+    if (!(await this.confirmDiscard())) return;
+    if (await this.loadRecent(board)) toast(`Opened ${board.name}`);
+  }
+
+  /**
+   * Replaces the board with a stored copy. Shared by the menu and startup
+   * recovery, which differ only in what they ask first and what they report.
+   *
+   * The copy reopens as a board with no file: Save asks where to put it, like a
+   * new board. Linking it back to its file or Drive entry would risk quietly
+   * overwriting a newer version saved from elsewhere since the copy was made.
+   */
+  private async loadRecent(board: RecentBoard): Promise<boolean> {
+    try {
+      const contents = await this.autosave.readBoard(board.boardId);
+      if (contents === null) {
+        // Listed but gone — evicted by the browser, or removed in another tab.
+        // Drop the row so the menu stops offering it.
+        await this.autosave.remove(board.boardId);
+        toast(`"${board.name}" is no longer stored in this browser.`, 'error');
+        return false;
+      }
+      this.applyLoad(loadDocument(contents), { kind: 'new' });
+      // A copy that was never saved elsewhere comes back as exactly that.
+      if (board.unsaved) this.store.markDirty();
+      return true;
+    } catch (error) {
+      console.error('[mindflow] could not open a recent board', error);
+      toast(errorMessage(error, 'Could not open that board.'), 'error');
+      return false;
+    }
+  }
+
+  /**
+   * Deletes a board's copy from this browser, then shows the menu again.
+   *
+   * Asks first only when the copy is the sole home of some work. A board saved
+   * to a file loses nothing but a shortcut. The menu is closed for the question
+   * because a popover and a modal cannot share the screen: the popover claims
+   * Escape and closes on any click inside the dialog.
+   */
+  private async removeRecent(board: RecentBoard): Promise<void> {
+    if (board.unsaved) {
+      closePopover();
+      const confirmed = await confirmDialog({
+        title: 'Remove unsaved board?',
+        message:
+          `"${board.name}" has changes that were never saved to a file or to Drive. ` +
+          'Removing it from this browser deletes them permanently.',
+        confirmLabel: 'Remove',
+        destructive: true,
+      });
+      if (!confirmed) {
+        void this.openRecentBoards();
+        return;
+      }
+    }
+
+    try {
+      await this.autosave.remove(board.boardId);
+    } catch (error) {
+      toast(errorMessage(error, 'Could not remove that board.'), 'error');
+    }
+    void this.openRecentBoards();
   }
 
   // -------------------------------------------------------------------------
@@ -635,7 +772,6 @@ export class MindflowApp {
     try {
       const opened = await openBoard(board.id, board.name);
       this.applyLoad(opened.result, { kind: 'drive', fileId: opened.fileId, name: opened.name });
-      void this.autosave.clear();
       toast(`Opened ${board.name} from Drive.`);
     } catch (error) {
       toast(errorMessage(error, 'Could not open that board from Drive.'), 'error');
@@ -657,7 +793,6 @@ export class MindflowApp {
       });
 
       this.store.markSaved({ kind: 'drive', fileId: saved.fileId, name: saved.name });
-      void this.autosave.clear();
       toast(saved.created ? `Saved ${saved.name} to Drive.` : `Updated ${saved.name} in Drive.`);
     } catch (error) {
       toast(errorMessage(error, 'Could not save to Drive.'), 'error');
@@ -726,10 +861,6 @@ export class MindflowApp {
       labelBoxOf,
     };
   }
-}
-
-function confirmRecovery(name: string, savedAt: string): Promise<boolean> {
-  return showRecoveryDialog(name, savedAt);
 }
 
 function errorMessage(error: unknown, fallback: string): string {

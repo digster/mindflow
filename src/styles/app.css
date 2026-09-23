@@ -170,16 +170,29 @@ textarea {
   min-width: 0;
 }
 
+/* The logo, which is also the recent-boards trigger. */
 .mf-brand {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
   width: 30px;
   height: 30px;
+  padding: 0;
   margin-right: 4px;
   color: var(--mf-accent-text);
+  cursor: pointer;
   background: var(--mf-accent);
+  border: none;
   border-radius: var(--mf-radius-sm);
+  transition: background var(--mf-transition), transform var(--mf-transition);
+}
+
+.mf-brand:hover {
+  background: var(--mf-accent-hover);
+}
+
+.mf-brand:active {
+  transform: scale(0.94);
 }
 
 .mf-board-name {
@@ -1095,6 +1108,138 @@ kbd {
   height: 1px;
   margin: 5px 4px;
   background: var(--mf-border);
+}
+
+/* Recent boards — the logo's menu */
+
+.mf-recent {
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100vw - 16px));
+  padding: 6px;
+}
+
+.mf-recent-heading {
+  padding: 6px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--mf-text-faint);
+  text-transform: uppercase;
+}
+
+.mf-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: min(360px, 60vh);
+  overflow-y: auto;
+}
+
+.mf-recent-item {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  padding-right: 4px;
+  border-radius: var(--mf-radius-sm);
+  transition: background var(--mf-transition);
+}
+
+.mf-recent-item:hover:not(.is-current),
+.mf-recent-item:focus-within:not(.is-current) {
+  background: var(--mf-surface-hover);
+}
+
+.mf-recent-open {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 9px;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--mf-radius-sm);
+}
+
+.mf-recent-open:disabled {
+  cursor: default;
+}
+
+.mf-recent-title {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.mf-recent-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-recent-tag {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+  border-radius: 999px;
+}
+
+.mf-recent-tag--current {
+  color: var(--mf-accent);
+  background: var(--mf-accent-soft);
+}
+
+.mf-recent-tag--unsaved {
+  color: var(--mf-warning);
+  background: color-mix(in srgb, var(--mf-warning) 14%, transparent);
+}
+
+.mf-recent-meta {
+  font-size: 11px;
+  color: var(--mf-text-faint);
+}
+
+/* Revealed on hover where there is hover. A touch screen has none, so there
+   the button simply stays visible. */
+@media (hover: hover) {
+  .mf-recent-remove {
+    opacity: 0;
+  }
+
+  .mf-recent-item:hover .mf-recent-remove,
+  .mf-recent-item:focus-within .mf-recent-remove {
+    opacity: 1;
+  }
+}
+
+.mf-recent-remove:hover:not(:disabled) {
+  color: var(--mf-danger);
+  background: var(--mf-danger-soft);
+}
+
+.mf-recent-empty,
+.mf-recent-note {
+  margin: 0;
+  padding: 6px 8px 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--mf-text-muted);
+}
+
+.mf-recent-note {
+  padding-top: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--mf-text-faint);
+  border-top: 1px solid var(--mf-border);
 }
 
 /* Command palette and find bar share the input + result list shape. */
