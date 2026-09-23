@@ -200,3 +200,29 @@ the app does, so a touchscreen could only zoom from the toolbar. A second finger
 abandons the first one's gesture and starts a pinch, recomputed from the captured
 start like every other gesture. The arithmetic is a pure function so it can be
 unit-tested, since two simultaneous contacts need raw CDP.
+
+---
+
+## 2026-09-22 — Fewer solids, and a collapsible style panel
+
+> * remove the following 3d shapes - prism, sphere, torus, capsule.
+> * allow the property right sidebar to be collapsible so that on smaller screens
+>   like the ipad we have more screen real estate.
+> * All changes as separate commits.
+
+**Commit 1 — retire four solids.** Schema 1.5.0. `sphere`, `prism`, `torus` and
+`capsule` leave the registry, the flyout, the icon manifest and the schema, and
+the torus takes the even-odd hole machinery with it. Removed from the format, not
+merely hidden, with a 1.4.0 → 1.5.0 migration that turns any on an old board into
+the flat shape of its outline (ellipse, ellipse, triangle, pill-rounded
+rectangle) — without it, the unknown-type rule would have kept them in the file
+but stopped drawing them. The contract test gained the reverse of its docs check,
+which is how stale documentation for a removed type would otherwise have slipped
+through.
+
+**Commit 2 — a collapsible style panel.** The panel gained a header naming the
+selection and a toggle that shrinks it to a single button, remembered per
+browser; `Cmd`/`Ctrl` + `\` and a command-palette entry do the same. It also
+stopped spanning the full height regardless of content — it now hugs its
+controls — which on its own hands back most of the right-hand column for a short
+selection. On a coarse pointer the toggle grows to 40px.

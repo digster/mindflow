@@ -12,6 +12,7 @@ The format follows semantic versioning, interpreted for a data format:
 |---|---|---|
 | **Major** | Old readers cannot correctly interpret new files | Renaming or removing a field; changing a field's meaning |
 | **Minor** | Additive; old readers degrade gracefully | Adding an element type; adding an optional field |
+| **Minor**, with a migration | Every new file is still a valid old file, but not the reverse | Retiring an element type (1.5.0) |
 | **Patch** | No structural change | Clarifying documentation; tightening a constraint that was already implied |
 
 Two rules are absolute:
@@ -27,8 +28,9 @@ Two rules are absolute:
 A reader encountering a version it does not know should:
 
 - **Older major** → apply migrations, or refuse with a clear message.
-- **Newer minor/patch** → load it. The format is additive within a major version;
-  preserve anything unrecognised (see
+- **Newer minor/patch** → load it. Within a major version a newer file never
+  uses anything an older reader lacks a rule for — types are added, and a retired
+  type is converted away rather than reused; preserve anything unrecognised (see
   [06-persistence.md](06-persistence.md#unknown-element-types)) rather than
   dropping it.
 - **Newer major** → warn, attempt the load, and preserve what it cannot interpret.
@@ -343,6 +345,84 @@ A reader that does not know these types should preserve them verbatim, as
 Because they add no fields, a reader that merely wants to *place* them can treat
 any of the thirteen as its bounding box and be exactly right about position,
 size, rotation and z-order — only the outline will differ.
+
+---
+
+## 1.5.0 — 2026-09-22
+
+Retires four element types. Every 1.5.0 file is also a valid 1.4.0 file; a 1.4.0
+file holding a retired type is converted as it loads.
+
+### Removed
+
+**`sphere`, `prism`, `torus` and `capsule`** — four of the eight solids 1.4.0
+introduced. `cube`, `cylinder`, `cone` and `pyramid` remain, unchanged.
+
+MindFlow no longer offers them, and that alone is the reason they leave the
+format rather than lingering in it. A type no build can create would still have
+to be specified, validated and drawn, for boards that could only ever have come
+from one release — and every other reader of the format would carry that cost
+too. Retiring it properly is cheaper for everyone, as long as no board loses a
+shape, which is what the migration is for.
+
+The torus was the only shape with a hole, so the even-odd fill rule it needed is
+gone from [07-rendering.md](07-rendering.md#solids) as well.
+
+The 1.4.0 specification of all four stays available: the
+[1.4.0 schema](schema/mindflow-1.4.0.schema.json) is published and unchanged, and
+their geometry is in
+[03-elements.md as of 1.4.0](https://github.com/digster/mindflow/blob/ccb21b1/docs/03-elements.md#sphere),
+for a reader that would rather draw an old board exactly than convert it.
+
+### Migration: 1.4.0 → 1.5.0
+
+Each retired solid becomes **the flat shape that draws its silhouette**:
+
+| Retired | Becomes | What is lost |
+|---|---|---|
+| `sphere` | `ellipse` | The shaded underside. The outline is identical. |
+| `torus` | `ellipse` | The hole. The outline is identical. |
+| `prism` | `triangle` | The depth — the lit roof face, and the sliver of the box it filled to the upper right. |
+| `capsule` | `rectangle`, with `cornerRadius = min(width, height) / 2` | The lit dome. The outline is identical: a rectangle rounded by half its shorter side *is* a stadium. |
+
+Everything else on the element is carried across untouched — `id`, the box,
+`angle`, `zIndex`, `opacity`, `locked`, `visible`, `groupId`, `frameId`, `style`,
+`label` and `meta` — with **one change**: `style.roughness` is set to `0`. A
+solid never drew its roughness (it has no hand-drawn form), but every shape it
+can become does, so carrying the stored value across would make the shape turn
+sketchy the moment the board is upgraded. If a capsule's raw `width` or `height`
+is not a finite positive number, `cornerRadius` is left unset and the loader's
+repair and default apply.
+
+Because ids do not change, connectors bound to a converted shape stay bound,
+and group and frame membership is unaffected.
+
+**Why the silhouette.** It keeps the one thing a board is laid out by: the
+bounding box stays truthful, the hit region stays where it was (exactly, for
+three of the four), and an arrow anchored to the shape still meets its outline.
+The two alternatives were both worse. Leaving the types to the
+[unknown-type rule](06-persistence.md#unknown-element-types) keeps them in the
+file but stops drawing them, so they would vanish from the canvas. Substituting a
+surviving *solid* — a cylinder for a capsule, say — would draw geometry the user
+never drew.
+
+**The migration is keyed on the declared version.** A board that claims 1.5.0
+and names a retired type was not written by MindFlow; it gets the ordinary
+unknown-type treatment and is preserved verbatim, not reinterpreted.
+
+### Why minor, not major
+
+The versioning table above calls a change major when an *old reader cannot
+correctly interpret new files*. That is not the case here: the type enum only
+narrowed, so a 1.4.0 reader loads any 1.5.0 file perfectly. The direction that
+does break — a 1.4.0 file read by a 1.5.0 reader — is exactly what the migration
+covers, which is the rule for any change that breaks old files.
+
+### Notes for implementers
+
+A 1.5.0 reader should apply the conversion above to a board declaring 1.4.0 or
+earlier. A reader that meets one of the four in a board declaring 1.5.0 or later
+should preserve it as an unknown type.
 
 ---
 

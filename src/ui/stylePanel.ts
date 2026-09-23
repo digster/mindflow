@@ -6,6 +6,11 @@
  * sticky note has typography. The set of controls is derived from the registry's
  * capability flags rather than from a hard-coded per-type table, so a new
  * element type gets a correct panel for free.
+ *
+ * It can be collapsed to a single button. On a tablet the expanded panel covers
+ * a quarter of the board's width every time anything is selected, which is
+ * exactly when the user is looking at the board — so the choice is the user's,
+ * and it is remembered per browser like the flyout's last shape.
  */
 
 import type { MindflowElement, TableElement } from '../model/types.ts';
@@ -16,7 +21,7 @@ import { capabilitiesOf, getDefinition } from '../model/registry.ts';
 import { DEFAULT_TEXT_COLOR, PALETTE } from '../model/defaults.ts';
 import { updateElements } from '../store/commands.ts';
 import { insertColumn, insertRow, removeColumn, removeRow } from '../render/shapes/table.ts';
-import { clear, el, icon } from './dom.ts';
+import { MOD_KEY, clear, el, icon } from './dom.ts';
 import { colorTrigger, swatch } from './colorPicker.ts';
 import { ICONS } from './icons.ts';
 
@@ -34,12 +39,45 @@ const ROUGHNESS_LEVELS: [string, number][] = [
   ['Sketchy', 1.4],
 ];
 
+/** Where the collapsed state is remembered. Per browser, not per board. */
+const COLLAPSED_STORAGE_KEY = 'mindflow.stylePanelCollapsed';
+
+/** Ties the toggle to the region it shows and hides, for assistive tech. */
+const BODY_ID = 'mf-style-body';
+
+/** The chord that toggles the panel, as hints display it. */
+export const STYLE_PANEL_SHORTCUT = `${MOD_KEY}\\`;
+
 const FONT_SIZES: [string, number][] = [
   ['S', 14],
   ['M', 20],
   ['L', 28],
   ['XL', 40],
 ];
+
+/**
+ * Whether the panel was last left collapsed.
+ *
+ * Guarded like every other `localStorage` access in the app: reading it can
+ * throw in a browser that blocks site data, and a style panel that failed to
+ * construct would take the application down with it. Storage failing simply
+ * means the panel starts expanded, as it always used to.
+ */
+function rememberedCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function rememberCollapsed(collapsed: boolean): void {
+  try {
+    localStorage.setItem(COLLAPSED_STORAGE_KEY, collapsed ? '1' : '0');
+  } catch {
+    /* Full, or blocked. See above. */
+  }
+}
 
 /**
  * The ink colour an element is currently using.
@@ -58,16 +96,65 @@ function textColorOf(element: MindflowElement): string {
 export class StylePanel {
   readonly element: HTMLElement;
 
+  /**
+   * The header outlives every sync; only the body is rebuilt. That split is what
+   * keeps focus on the toggle when it is pressed — rebuilding the button would
+   * drop keyboard focus onto the page each time the panel opened or closed.
+   */
+  private readonly title: HTMLElement;
+  private readonly toggle: HTMLButtonElement;
+  private readonly body: HTMLElement;
+
+  private collapsed = rememberedCollapsed();
+
   constructor(
     private readonly store: Store,
     private readonly actions: Actions,
   ) {
-    this.element = el('aside', {
-      class: 'mf-style-panel',
-      'aria-label': 'Style options',
-      hidden: true,
+    this.title = el('span', { class: 'mf-style-title' });
+    this.toggle = el('button', {
+      class: 'mf-icon-button mf-style-toggle',
+      type: 'button',
+      'aria-controls': BODY_ID,
+      onclick: () => this.toggleCollapsed(),
     });
+    this.body = el('div', { class: 'mf-style-body', id: BODY_ID });
+
+    this.element = el(
+      'aside',
+      { class: 'mf-style-panel', 'aria-label': 'Style options', hidden: true },
+      el('div', { class: 'mf-style-header' }, this.title, this.toggle),
+      this.body,
+    );
+
+    this.renderCollapsed();
     this.sync();
+  }
+
+  /**
+   * Flips the panel between its full form and a single button.
+   *
+   * Does nothing while the panel is hidden — with nothing selected, flipping a
+   * preference the user cannot see would only surprise them the next time they
+   * selected something.
+   */
+  toggleCollapsed(): void {
+    if (this.element.hidden) return;
+    this.collapsed = !this.collapsed;
+    rememberCollapsed(this.collapsed);
+    this.renderCollapsed();
+    this.sync();
+  }
+
+  /** Brings the header, the toggle and the body in line with `collapsed`. */
+  private renderCollapsed(): void {
+    const label = this.collapsed ? 'Show style panel' : 'Hide style panel';
+    this.element.classList.toggle('is-collapsed', this.collapsed);
+    this.body.hidden = this.collapsed;
+    this.toggle.setAttribute('aria-expanded', String(!this.collapsed));
+    this.toggle.setAttribute('aria-label', label);
+    this.toggle.title = `${label} — ${STYLE_PANEL_SHORTCUT}`;
+    this.toggle.replaceChildren(icon(this.collapsed ? ICONS.panelExpand : ICONS.panelCollapse, 18));
   }
 
   sync(): void {
@@ -75,19 +162,28 @@ export class StylePanel {
 
     if (selected.length === 0) {
       this.element.hidden = true;
-      clear(this.element);
+      clear(this.body);
       return;
     }
 
     this.element.hidden = false;
-    clear(this.element);
+    clear(this.body);
+
+    const first = selected[0] as MindflowElement;
+    this.title.textContent =
+      selected.length === 1 ? getDefinition(first.type).title : `${selected.length} elements`;
+
+    // Collapsed, nothing is built. `sync` runs on every document change —
+    // including each frame of a drag — so building controls nobody can see
+    // would be pure waste; expanding calls `sync` again and builds them then.
+    if (this.collapsed) return;
 
     // A locked element accepts exactly one edit: being unlocked. Collapsing the
     // panel to that single action is both the honest UI — every other control
     // would silently do nothing — and the affordance that makes unlocking
     // findable at all, since a locked element has no handles to hint at it.
     if (selected.some((element) => element.locked)) {
-      this.element.append(this.lockedNotice(selected.length));
+      this.body.append(this.lockedNotice(selected.length));
       return;
     }
 
@@ -100,14 +196,12 @@ export class StylePanel {
       (element) => element.type !== 'draw' && element.type !== 'line' && element.type !== 'arrow' && element.type !== 'text',
     );
 
-    const first = selected[0] as MindflowElement;
-
     // A frame's name is edited here rather than on the canvas: the name is drawn
     // outside the frame's box, so it cannot be part of the hit region without
     // putting hitTest at odds with the AABB pre-rejection every caller relies on.
     const frames = selected.filter((element) => element.type === 'frame');
     if (frames.length === 1 && selected.length === 1) {
-      this.element.append(this.nameRow(frames[0] as MindflowElement & { name: string }));
+      this.body.append(this.nameRow(frames[0] as MindflowElement & { name: string }));
     }
 
     // Structure controls for a single table, alongside the frame name row above
@@ -115,7 +209,7 @@ export class StylePanel {
     // per-cell versions (insert *here*, delete *this* row) are on the context
     // menu, where the click itself says which cell is meant.
     if (selected.length === 1 && first.type === 'table') {
-      for (const row of this.tableRows(first as TableElement)) this.element.append(row);
+      for (const row of this.tableRows(first as TableElement)) this.body.append(row);
     }
 
     // Palettes come from the type's definition where it declares one — a sticky
@@ -124,7 +218,7 @@ export class StylePanel {
     // this panel already reports state.
     const definition = getDefinition(first.type);
 
-    this.element.append(
+    this.body.append(
       this.swatchRow(
         'Stroke',
         definition.palette?.stroke ?? PALETTE.stroke,
@@ -134,7 +228,7 @@ export class StylePanel {
     );
 
     if (anyFillable) {
-      this.element.append(
+      this.body.append(
         this.swatchRow(
           'Fill',
           definition.palette?.fill ?? PALETTE.fill,
@@ -154,7 +248,7 @@ export class StylePanel {
       );
     }
 
-    this.element.append(
+    this.body.append(
       this.buttonRow(
         'Stroke width',
         STROKE_WIDTHS.map(([label, value]) => ({
@@ -176,7 +270,7 @@ export class StylePanel {
     // Only offered when something in the selection actually has a hand-drawn
     // form — a sticky or an image would show a control that does nothing.
     if (selected.some((element) => Boolean(getDefinition(element.type).roughOutline))) {
-      this.element.append(
+      this.body.append(
         this.buttonRow(
           'Sketch',
           ROUGHNESS_LEVELS.map(([label, value]) => ({
@@ -189,7 +283,7 @@ export class StylePanel {
     }
 
     if (anyFillable) {
-      this.element.append(
+      this.body.append(
         this.buttonRow(
           'Fill style',
           FILL_STYLES.map((style) => ({
@@ -206,7 +300,7 @@ export class StylePanel {
         (element) => element.type === 'line' || element.type === 'arrow',
       ) as Extract<MindflowElement, { type: 'line' | 'arrow' }>;
 
-      this.element.append(
+      this.body.append(
         this.buttonRow(
           'Line shape',
           CURVE_STYLES.map((curve) => ({
@@ -227,7 +321,7 @@ export class StylePanel {
     }
 
     if (anyText) {
-      this.element.append(
+      this.body.append(
         // Ink, not outline. `color` has been in the format since 1.0.0 on text,
         // sticky and table elements and on every `label`, but until now there
         // was no way to set it — a board could carry coloured text that
@@ -264,10 +358,10 @@ export class StylePanel {
       );
     }
 
-    this.element.append(this.opacityRow(first.opacity));
+    this.body.append(this.opacityRow(first.opacity));
     const alignRow = this.alignRow(selected);
-    if (alignRow) this.element.append(alignRow);
-    this.element.append(this.arrangeRow(selected));
+    if (alignRow) this.body.append(alignRow);
+    this.body.append(this.arrangeRow(selected));
   }
 
   /**

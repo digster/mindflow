@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest';
 import '../../src/render/shapes/index.ts';
 import { createDocument } from '../../src/model/defaults.ts';
 import { loadDocument, serializeDocument } from '../../src/model/document.ts';
-import { getDefinition, labelBoxOf } from '../../src/model/registry.ts';
+import { getDefinition, isRegistered, labelBoxOf } from '../../src/model/registry.ts';
 import { polygonOutlineIntersect } from '../../src/model/geometry.ts';
 import type { MindflowElement, Point } from '../../src/model/types.ts';
 import {
@@ -39,16 +39,10 @@ import {
 import { FACE_SHADE, shadeColor } from '../../src/render/shapes/shared.ts';
 
 const POLYGONS: PolygonType[] = ['triangle', 'pentagon', 'hexagon', 'star', 'parallelogram'];
-const SOLIDS: SolidType[] = [
-  'cube',
-  'cylinder',
-  'cone',
-  'pyramid',
-  'sphere',
-  'prism',
-  'torus',
-  'capsule',
-];
+const SOLIDS: SolidType[] = ['cube', 'cylinder', 'cone', 'pyramid'];
+
+/** Solids 1.4.0 introduced and 1.5.0 retired; see `migrate.ts`. */
+const RETIRED_SOLIDS = ['sphere', 'prism', 'torus', 'capsule'];
 
 /** A few aspect ratios, including the two where `min(w, h)` switches sides. */
 const SIZES: [number, number][] = [
@@ -192,7 +186,7 @@ describe('solids', () => {
     for (const type of SOLIDS) {
       for (const [w, h] of SIZES) {
         for (const face of solidFaces(type, w, h)) {
-          for (const point of [...face.points, ...(face.hole ?? [])]) {
+          for (const point of face.points) {
             expect(point.x, `${type} ${w}x${h}`).toBeGreaterThanOrEqual(-1e-9);
             expect(point.y, `${type} ${w}x${h}`).toBeGreaterThanOrEqual(-1e-9);
             expect(point.x, `${type} ${w}x${h}`).toBeLessThanOrEqual(w + 1e-9);
@@ -220,13 +214,6 @@ describe('solids', () => {
     }
   });
 
-  it('gives only the torus a hole', () => {
-    for (const type of SOLIDS) {
-      const holes = solidFaces(type, 120, 100).filter((face) => face.hole);
-      expect(holes.length, type).toBe(type === 'torus' ? 1 : 0);
-    }
-  });
-
   it('does not roughen', () => {
     // Not an omission: a hand-drawn outline is one closed polygon, and a cube's
     // interior edges cannot survive that. Documented, so it is asserted.
@@ -235,11 +222,12 @@ describe('solids', () => {
     }
   });
 
-  it('orients a capsule along the box’s longer axis', () => {
-    const vertical = bounds(solidSilhouette('capsule', 80, 200));
-    const horizontal = bounds(solidSilhouette('capsule', 200, 80));
-    expect(vertical.maxY - vertical.minY).toBeCloseTo(200, 6);
-    expect(horizontal.maxX - horizontal.minX).toBeCloseTo(200, 6);
+  it('no longer registers the solids 1.5.0 retired', () => {
+    // A board that still holds one is converted on load (see `document.test.ts`);
+    // a type left registered here would be one the schema no longer allows.
+    for (const type of RETIRED_SOLIDS) {
+      expect(isRegistered(type), type).toBe(false);
+    }
   });
 });
 
@@ -312,9 +300,7 @@ describe('hit testing', () => {
     for (const type of SOLIDS) {
       const element = filled(type, 120, 100);
       const definition = getDefinition(type);
-      // The centre of a torus is its hole, which is genuinely empty.
-      const expected = type !== 'torus';
-      expect(definition.hitTest(element as never, { x: 60, y: 50 }, 8), type).toBe(expected);
+      expect(definition.hitTest(element as never, { x: 60, y: 50 }, 8), type).toBe(true);
     }
   });
 

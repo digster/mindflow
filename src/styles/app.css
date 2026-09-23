@@ -391,7 +391,7 @@ textarea {
  * The shape slot: one tool button plus a small opener for the flyout.
  *
  * The opener overlaps the button's bottom-right corner rather than sitting
- * beside it, so a sixteen-shape family costs the palette no extra width — the
+ * beside it, so a twelve-shape family costs the palette no extra width — the
  * strip stays one column, which is the whole reason the flyout exists.
  */
 .mf-tool-slot {
@@ -489,17 +489,18 @@ textarea {
   position: absolute;
   top: 12px;
   right: 12px;
-  bottom: 12px;
   z-index: 10;
   display: flex;
   flex-direction: column;
-  gap: 14px;
   /* Fits eight 22px swatches and their 5px gaps on one line — the widest row
      any palette produces. At the old 232px the picker trigger wrapped onto a
      line of its own under the fill and text rows. */
   width: 244px;
-  padding: 14px;
-  overflow-y: auto;
+  /* Hugs its content rather than spanning the full height. The old full-height
+     panel covered the board to the bottom edge even for a selection with six
+     rows of controls, and board is what a tablet is short of. */
+  max-height: calc(100% - 24px);
+  overflow: hidden;
   background: var(--mf-surface);
   border: 1px solid var(--mf-border);
   border-radius: var(--mf-radius-lg);
@@ -508,6 +509,66 @@ textarea {
 
 .mf-style-panel[hidden] {
   display: none;
+}
+
+/* The header stays put while the body scrolls, so the toggle is always one
+   press away however long the panel is. */
+.mf-style-header {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 6px 6px 14px;
+  border-bottom: 1px solid var(--mf-border);
+}
+
+.mf-style-title {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mf-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-style-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  padding: 14px;
+  overflow-y: auto;
+  /* A flick that reaches the end of the controls must not scroll the page. */
+  overscroll-behavior: contain;
+}
+
+/* `display: flex` above would otherwise beat the user-agent rule for [hidden]. */
+.mf-style-body[hidden] {
+  display: none;
+}
+
+/* Collapsed, the panel is its toggle and nothing else. */
+.mf-style-panel.is-collapsed {
+  width: auto;
+}
+
+.mf-style-panel.is-collapsed .mf-style-header {
+  padding: 4px;
+  border-bottom: none;
+}
+
+.mf-style-panel.is-collapsed .mf-style-title {
+  display: none;
+}
+
+/* A finger needs a bigger target than a cursor. 40px is close to the 44pt
+   Apple asks for without making the header tall; the icon stays the same. */
+@media (pointer: coarse) {
+  .mf-style-toggle {
+    width: 40px;
+    height: 40px;
+  }
 }
 
 .mf-style-section {
@@ -1188,6 +1249,12 @@ kbd {
     left: 8px;
     width: auto;
     max-height: 42vh;
+  }
+
+  /* Collapsed, the bottom sheet gives the whole width back to the board and
+     keeps only its toggle, at the corner nearest the thumb. */
+  .mf-style-panel.is-collapsed {
+    left: auto;
   }
 
   .mf-board-name {

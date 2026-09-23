@@ -40,10 +40,6 @@ a connector can attach.
 | `cylinder` | ✓ | | | ✓ | ✓ | ✓ |
 | `cone` | ✓ | | | ✓ | ✓ | ✓ |
 | `pyramid` | ✓ | | | ✓ | ✓ | ✓ |
-| `sphere` | ✓ | | | ✓ | ✓ | ✓ |
-| `prism` | ✓ | | | ✓ | ✓ | ✓ |
-| `torus` | ✓ | | | ✓ | ✓ | ✓ |
-| `capsule` | ✓ | | | ✓ | ✓ | ✓ |
 
 - **`label`** — can carry text inside it via the `label` object.
 - **`path`** — geometry is a `points` list rather than a plain box.
@@ -672,87 +668,16 @@ two faces meeting at the near corner are visible:
 
 ---
 
-## sphere
-
-A sphere inscribed in the element's box.
-
-Adds no fields.
-
-**Geometry:** the ellipse inscribed in the box, painted in the base tone, plus
-the lens between the **near** half of the equator — an ellipse of radii `w/2` and
-`d/2` centred at `(w/2, h/2)` — and the lower half of the outline, painted in the
-shaded tone. The equator needs no separate stroke: it is the boundary between the
-two faces.
-
-**Label box:** `(0.15w, 0.15h)`, `0.7w` wide and `0.35h` tall — above the
-equator, which would otherwise strike through the text.
-
----
-
-## prism
-
-A triangular prism resting on its rectangular face.
-
-Adds no fields.
-
-**Geometry:** the front triangle has apex `((w-d)/2, d)` and base corners
-`(0, h)` and `(w-d, h)`. The back triangle is the front one translated by
-`(+d, -d)`. Only two faces survive the projection:
-
-| Face | Vertices |
-|---|---|
-| right roof (lit) | `((w-d)/2, d)`, `((w+d)/2, 0)`, `(w, h-d)`, `(w-d, h)` |
-| front (base) | `((w-d)/2, d)`, `(w-d, h)`, `(0, h)` |
-
-The back-left corner `(d, h-d)` falls inside the silhouette and is never drawn.
-
-**Label box:** the lower half of the front triangle — `((w-d)/4, d + (h-d)/2)`,
-`(w-d)/2` wide and `(h-d)/2` tall.
-
----
-
-## torus
-
-A torus — a ring — inscribed in the element's box.
-
-Adds no fields.
-
-**Geometry:** the ellipse inscribed in the box, with a second ellipse of radii
-`0.42 x w/2` and `0.30 x h/2` at the same centre. Both belong to **one path**
-filled under the **even-odd** rule, so the inner ellipse is a genuine hole: the
-board shows through it, and a click there passes to whatever is behind.
-
-The flatter hole is what reads as a ring seen at an angle rather than as a flat
-annulus.
-
-**Label box:** the whole box. Text sits across the hole, which is legible
-because the hole is empty.
-
----
-
-## capsule
-
-A capsule — a cylinder with hemispherical ends — lying along the box's longer
-axis.
-
-Adds no fields.
-
-**Geometry:** a stadium with cap radius `r = min(width, height) / 2`, oriented
-vertically when `height >= width` and horizontally otherwise. A seam one cap in
-from the near end — the near half of an ellipse of radii `w/2` and `d/2` for a
-vertical capsule, `d/2` and `h/2` for a horizontal one — separates the dome,
-painted in the lit tone, from the body in the base tone.
-
-**Label box:** the whole box.
-
----
-
 ## Solids
 
-`cube`, `cylinder`, `cone`, `pyramid`, `sphere`, `prism`, `torus` and `capsule`
-are 2.5D: a fixed oblique projection drawn on the 2D canvas. They are ordinary
-elements in every other respect — they resize, rotate, snap, group, bind
-connectors and round-trip exactly as a rectangle does.
+`cube`, `cylinder`, `cone` and `pyramid` are 2.5D: a fixed oblique projection
+drawn on the 2D canvas. They are ordinary elements in every other respect — they
+resize, rotate, snap, group, bind connectors and round-trip exactly as a
+rectangle does.
+
+> **Retired in 1.5.0:** `sphere`, `prism`, `torus` and `capsule`. A board written
+> at 1.4.0 that holds one is converted on load to the flat shape of its outline;
+> the conversion is specified in [CHANGELOG.md](CHANGELOG.md#150--2026-09-22).
 
 **Depth is computed, never stored:**
 
@@ -775,7 +700,7 @@ formula in [07-rendering.md](07-rendering.md#solids), which a reader needs in
 order to reproduce a rendered solid.
 
 **Hit-testing:** as for every closed shape, against the silhouette rather than
-the bounding box. A `torus` additionally excludes its hole.
+the bounding box.
 
 **Connector anchoring:** to the silhouette, by the same ray-polygon algorithm the
 [flat polygons](#flat-polygons) use.

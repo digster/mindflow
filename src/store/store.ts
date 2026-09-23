@@ -61,10 +61,6 @@ export const SHAPE_TOOLS = [
   'cylinder',
   'cone',
   'pyramid',
-  'sphere',
-  'prism',
-  'torus',
-  'capsule',
 ] as const;
 
 export type ShapeToolId = (typeof SHAPE_TOOLS)[number];

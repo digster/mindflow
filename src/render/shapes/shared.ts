@@ -319,22 +319,11 @@ export function applyStroke(ctx: CanvasRenderingContext2D, style: ElementStyle):
   ctx.setLineDash(dashPattern(style));
 }
 
-/**
- * Fills then strokes the current path, honouring the style's on/off switches.
- *
- * `fillRule` exists for the one shape with a hole in it: a torus is a single
- * path holding two ellipses, and `"evenodd"` is what makes the inner one a hole
- * the board shows through rather than a disc painted over the outer one. SVG
- * export carries the same rule across as `fill-rule`.
- */
-export function paintPath(
-  ctx: CanvasRenderingContext2D,
-  style: ElementStyle,
-  fillRule: CanvasFillRule = 'nonzero',
-): void {
+/** Fills then strokes the current path, honouring the style's on/off switches. */
+export function paintPath(ctx: CanvasRenderingContext2D, style: ElementStyle): void {
   if (hasFill(style)) {
     ctx.fillStyle = style.fill;
-    ctx.fill(fillRule);
+    ctx.fill();
   }
   if (hasStroke(style)) {
     applyStroke(ctx, style);
@@ -356,11 +345,10 @@ export function paintFace(
   ctx: CanvasRenderingContext2D,
   style: ElementStyle,
   fill: string | null,
-  fillRule: CanvasFillRule = 'nonzero',
 ): void {
   if (fill !== null) {
     ctx.fillStyle = fill;
-    ctx.fill(fillRule);
+    ctx.fill();
   }
   if (hasStroke(style)) {
     applyStroke(ctx, style);

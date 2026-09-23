@@ -364,19 +364,11 @@ function solidToSvg(element: MindflowElement): string {
   }
   const stroke = strokeParts.join(' ');
 
-  const ring = (points: { x: number; y: number }[]): string =>
-    `M ${points.map((p, i) => `${i === 0 ? '' : 'L '}${round(p.x)} ${round(p.y)}`).join(' ')} Z`;
-
   const faces = solidFaces(element.type, element.width, element.height)
     .map((face) => {
       const paint = fill === null ? 'none' : escapeXml(toneColor(fill, face.tone));
-      if (!face.hole) {
-        const points = face.points.map((p) => `${round(p.x)},${round(p.y)}`).join(' ');
-        return `<polygon points="${points}" fill="${paint}" ${stroke}/>`;
-      }
-      // Two rings in one path under the even-odd rule: the inner one is a hole,
-      // not a disc drawn on top. Matches `paintPath`'s `fillRule` on canvas.
-      return `<path d="${ring(face.points)} ${ring(face.hole)}" fill="${paint}" fill-rule="evenodd" ${stroke}/>`;
+      const points = face.points.map((p) => `${round(p.x)},${round(p.y)}`).join(' ');
+      return `<polygon points="${points}" fill="${paint}" ${stroke}/>`;
     })
     .join('');
 
@@ -447,10 +439,6 @@ function elementToSvg(element: MindflowElement, document: MindflowDocument): str
     case 'cylinder':
     case 'cone':
     case 'pyramid':
-    case 'sphere':
-    case 'prism':
-    case 'torus':
-    case 'capsule':
       return solidToSvg(element);
 
     case 'line':

@@ -45,6 +45,8 @@ export interface KeyboardOptions {
   onSpaceChange: (held: boolean) => void;
   onCommandPalette: () => void;
   onFind: () => void;
+  /** Collapses or expands the style panel. */
+  onToggleStylePanel: () => void;
   /** Closes the text editor, writing whatever was typed. */
   onCommitText: () => void;
 }
@@ -142,6 +144,13 @@ export function installKeyboardShortcuts(options: KeyboardOptions): () => void {
     if (primary && key === 'f') {
       event.preventDefault();
       options.onFind();
+      return;
+    }
+    // Cmd/Ctrl+\ is the chord design tools already use for "hide the panels",
+    // and no browser claims it.
+    if (primary && key === '\\') {
+      event.preventDefault();
+      options.onToggleStylePanel();
       return;
     }
 
@@ -354,6 +363,7 @@ export const SHORTCUT_REFERENCE: { group: string; items: [string, string][] }[] 
       ['Cmd/Ctrl + +/-', 'Zoom in / out'],
       ['Cmd/Ctrl + 0', 'Reset zoom'],
       ['Cmd/Ctrl + 1', 'Zoom to fit'],
+      ['Cmd/Ctrl + \\', 'Show / hide the style panel'],
     ],
   },
   {

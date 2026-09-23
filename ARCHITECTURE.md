@@ -245,9 +245,11 @@ keeps documentation honest. It fails the build when:
 
 - the element registry and the JSON Schema disagree about which types exist;
 - a registered type has no `## ` section or capability-matrix row in
-  `docs/03-elements.md`;
+  `docs/03-elements.md`, or the matrix still lists a type that was removed;
 - an example board stops validating against the schema;
 - an example stops round-tripping (`load → save → load` must be stable);
+- a board holding a retired type stops migrating to one the current schema
+  accepts;
 - a connector becomes bindable (which would create unresolvable binding chains).
 
 It cannot check prose. That part is on the author.

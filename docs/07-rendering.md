@@ -310,14 +310,14 @@ wingB = tip − size × (cos(angle + spread), sin(angle + spread))
 
 ## Solids
 
-The eight solid types — `cube`, `cylinder`, `cone`, `pyramid`, `sphere`,
-`prism`, `torus` and `capsule` — are drawn in a fixed oblique projection. Every
-part of that projection is *computed*, so this section is what a reader needs in
-order to reproduce one from a file that stores nothing but a box.
+The four solid types — `cube`, `cylinder`, `cone` and `pyramid` — are drawn in a
+fixed oblique projection. Every part of that projection is *computed*, so this
+section is what a reader needs in order to reproduce one from a file that stores
+nothing but a box.
 
 ### The depth offset
 
-One number drives all eight:
+One number drives all four:
 
 ```
 d = 0.25 × min(width, height)
@@ -376,13 +376,6 @@ about the same file.
 
 When `style.fillStyle` is `"none"`, no face is filled at all and the solid is
 drawn as its stroked edges.
-
-### The even-odd hole
-
-A `torus` is one path containing two ellipses, filled under the **even-odd**
-rule, so the inner ellipse is a hole rather than a disc painted in the same
-colour. Renderers must use even-odd and not non-zero winding here; SVG export
-emits `fill-rule="evenodd"` for the same reason.
 
 ### Labels on a solid
 

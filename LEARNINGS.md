@@ -792,3 +792,21 @@ fix (checked by reverting it, not by reasoning about it).
 
 The general lesson: when a bug is "the platform does not do X for us", the test
 has to stop the test platform doing X. Otherwise it is a test of the harness.
+
+## Removing an element type fails silently unless something converts it
+
+Retiring `sphere`, `prism`, `torus` and `capsule` in schema 1.5.0 had three traps,
+none of which the existing tests caught on their own:
+
+- **An unknown type is preserved, not drawn.** That rule exists for types from a
+  *newer* build, and it is right for them. Applied to a retired type it means an
+  old board opens with the shape simply missing from the canvas — no error, and
+  it is still in the file. Only a migration keyed on the declared version turns
+  it into something drawable.
+- **The contract test only looked one way.** It failed when a registered type
+  had no docs section, and said nothing when docs described a type that no longer
+  existed. It now checks the capability matrix in both directions.
+- **A stored value the old type ignored can become visible.** Solids never drew
+  `style.roughness`; every shape they convert to does. Carrying the value across
+  verbatim would have made converted shapes turn sketchy on upgrade, so the
+  migration zeroes it.

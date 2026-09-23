@@ -26,10 +26,9 @@ drift apart.
 **Canvas** — infinite pan and zoom, grid with snapping, alignment guides.
 
 **Tools** — select, pan, line, arrow, freehand, text, table, sticky note, frame,
-image, eraser, and sixteen closed shapes in a flyout: rectangle, ellipse,
+image, eraser, and twelve closed shapes in a flyout: rectangle, ellipse,
 diamond, triangle, pentagon, hexagon, star, parallelogram, and the solids — cube,
-cylinder, cone, pyramid, sphere, prism, torus and capsule. Flat shapes can render
-clean or hand-drawn.
+cylinder, cone and pyramid. Flat shapes can render clean or hand-drawn.
 
 **Editing** — move, resize and rotate (including correct rotated resizing),
 multi-select, marquee, grouping, frames that clip and move their contents, align
@@ -44,7 +43,9 @@ curated palette, a hex field and a memory of the last eight colours you used.
 Types can offer their own palette: a sticky note shows paper tones, not pastels.
 
 **Getting around** — a command palette (`Cmd K`), text search across the board
-(`Cmd F`), and a right-click context menu.
+(`Cmd F`), a right-click context menu, and a style panel that collapses to a
+single button (`Cmd \`) when a smaller screen needs the room — remembered
+between sessions.
 
 **Touch** — tap to select, drag to move, double-tap to edit text, long-press for
 the context menu, two-finger drag to pan and pinch to zoom. Hit targets and drag
@@ -98,7 +99,7 @@ default — so any single element is interpretable in isolation.
 ```json
 {
   "type": "mindflow.board",
-  "schemaVersion": "1.3.0",
+  "schemaVersion": "1.5.0",
   "elements": [
     {
       "id": "el_q2WikW58Aw",
@@ -143,7 +144,7 @@ MindFlow itself, which would defeat the point.
 **Start here:** [`docs/README.md`](docs/README.md) ·
 [format](docs/02-document-format.md) · [elements](docs/03-elements.md) ·
 [geometry](docs/04-coordinates.md) · [rendering algorithms](docs/07-rendering.md) ·
-[JSON Schema](docs/schema/mindflow-1.3.0.schema.json)
+[JSON Schema](docs/schema/mindflow-1.5.0.schema.json)
 
 ## Google Drive
 

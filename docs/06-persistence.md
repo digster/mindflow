@@ -148,6 +148,12 @@ Opening a board that uses a newer element type and saving it must not silently
 delete that element. MindFlow cannot draw what it does not know, so it does the
 next best thing: it preserves it and says so.
 
+A type a later version **retired** is treated the same way when the board claims
+the current version. Only a migration reinterprets a type, and migrations are
+chosen by the declared `schemaVersion` — so a 1.4.0 board's `torus` is converted,
+while a `torus` in a board declaring 1.5.0 was not written by MindFlow and is
+preserved untouched.
+
 ## Validation
 
 `validateDocument()` runs on every load and is available to tests. It **reports
@@ -165,9 +171,15 @@ Every breaking format change ships with a transform from the previous version.
 Loading walks the chain from a document's declared `schemaVersion` up to the
 current one.
 
-There are **no migrations yet** — 1.0.0 is the first published version. The
-machinery exists anyway, complete with tests, because retrofitting a migration
-system *after* files exist in the wild is how formats get stuck.
+Every version up to 1.4.0 was purely additive, so those steps are identity
+transforms. They exist anyway: the runner migrates on *any* version inequality,
+and a missing step would make every older board load with a "no migration is
+available" warning, which reads as data loss.
+
+**1.5.0 is the first step that transforms anything.** It retired the `sphere`,
+`prism`, `torus` and `capsule` types, and converts each one it meets into the flat
+shape of its outline — see [CHANGELOG.md](CHANGELOG.md#150--2026-09-22) for the
+exact rules.
 
 ### Three cases
 
@@ -191,7 +203,7 @@ interfaces describe a shape the old file does not have.
 3. Copy `docs/schema/mindflow-<old>.schema.json` and edit the **new copy**.
    Published schemas are immutable — files reference them by URL.
 4. Record the change in [CHANGELOG.md](CHANGELOG.md) **with a rationale**.
-5. Add a fixture in `test/unit/migrate.test.ts` proving the old file still loads.
+5. Add a fixture in `test/unit/document.test.ts` proving the old file still loads.
 
 ## Export
 

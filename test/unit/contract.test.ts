@@ -102,6 +102,28 @@ describe('registry ↔ documentation', () => {
     }
   });
 
+  /**
+   * The reverse of the two checks above. They catch a type added without
+   * documentation; this catches a type REMOVED without it — which is the easier
+   * mistake, because nothing else fails. 1.5.0 retired four solids, and their
+   * rows would otherwise have gone on advertising types the schema rejects.
+   */
+  it('the capability matrix lists no type the registry lacks', () => {
+    const markdown = readFileSync(join(DOCS, '03-elements.md'), 'utf8');
+    const start = markdown.indexOf('## Capability matrix');
+    const end = markdown.indexOf('\n## ', start + 1);
+    const matrix = markdown.slice(start, end);
+    const rows = [...matrix.matchAll(/^\| `([a-z]+)` \|/gm)].map((match) => match[1] as string);
+
+    expect(rows.length).toBeGreaterThan(0);
+    for (const type of rows) {
+      expect(
+        registeredTypes(),
+        `docs/03-elements.md documents "${type}", which is not a registered type`,
+      ).toContain(type);
+    }
+  });
+
   it('the schema version is recorded in the changelog', () => {
     const changelog = readFileSync(join(DOCS, 'CHANGELOG.md'), 'utf8');
     expect(
@@ -163,6 +185,40 @@ describe('registry ↔ documentation', () => {
         expect(definition.capabilities.bindable, `${definition.type} must not be bindable`).toBe(false);
       }
     }
+  });
+});
+
+describe('migrations', () => {
+  /**
+   * An example board is written at the version that introduced what it shows,
+   * so a type that is later retired cannot stay in one — it would stop
+   * validating. This is the fixture that replaces it: an old board holding every
+   * retired type must still come out the other side as a valid current board.
+   */
+  it('a 1.4.0 board holding the retired solids migrates to a valid board', () => {
+    const retired = ['sphere', 'prism', 'torus', 'capsule'].map((type, index) => ({
+      id: `el_retired${index}`,
+      type,
+      x: index * 150,
+      y: 0,
+      width: 120,
+      height: 90,
+      style: { stroke: '#1e1e1e', fill: '#ffffff', fillStyle: 'solid', roughness: 1 },
+    }));
+    const board = JSON.stringify({ type: 'mindflow.board', schemaVersion: '1.4.0', elements: retired });
+
+    const output = JSON.parse(serializeDocument(loadDocument(board).document)) as {
+      elements: { type: string }[];
+    };
+    const validate = createValidator();
+    const valid = validate(output);
+    if (!valid) {
+      const details = (validate.errors ?? [])
+        .map((error) => `  ${error.instancePath || '/'} ${error.message}`)
+        .join('\n');
+      throw new Error(`the migrated board does not validate:\n${details}`);
+    }
+    expect(output.elements).toHaveLength(retired.length);
   });
 });
 

@@ -1562,6 +1562,134 @@ test.describe('colour', () => {
   });
 });
 
+test.describe('collapsing the style panel', () => {
+  const panel = (page: Page) => page.locator('.mf-style-panel');
+  const toggle = (page: Page) => page.locator('.mf-style-toggle');
+
+  async function drawRectangle(page: Page, from: [number, number] = [100, 100], to: [number, number] = [220, 200]) {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, from, to);
+  }
+
+  test('collapses to its toggle and expands again', async ({ page }) => {
+    await drawRectangle(page);
+    await expect(page.locator('.mf-style-panel .mf-swatch').first()).toBeVisible();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+    const expanded = await panel(page).boundingBox();
+
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle(page)).toHaveAccessibleName('Show style panel');
+    await expect(page.locator('.mf-style-body')).toBeHidden();
+    await expect(page.locator('.mf-style-panel .mf-swatch')).toHaveCount(0);
+
+    // The point of the feature: the panel gives the board back its area.
+    const collapsed = await panel(page).boundingBox();
+    expect(collapsed!.width).toBeLessThan(60);
+    expect(collapsed!.height).toBeLessThan(60);
+    expect(collapsed!.width * collapsed!.height).toBeLessThan((expanded!.width * expanded!.height) / 20);
+
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.mf-style-panel .mf-swatch').first()).toBeVisible();
+  });
+
+  test('keeps keyboard focus on the toggle', async ({ page }) => {
+    // The header outlives each rebuild of the controls; if the button were
+    // rebuilt too, focus would fall back to the page on every press.
+    await drawRectangle(page);
+    await toggle(page).focus();
+    await page.keyboard.press('Enter');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle(page)).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle(page)).toBeFocused();
+  });
+
+  test('stays collapsed across selections and a reload', async ({ page }) => {
+    await drawRectangle(page);
+    await toggle(page).click();
+
+    await page.keyboard.press('Escape');
+    await expect(panel(page)).toBeHidden();
+    await drawRectangle(page, [300, 100], [420, 200]);
+    await expect(panel(page)).toBeVisible();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+
+    // Let the autosave land first, so the reload deterministically offers the
+    // board back rather than racing the save's debounce.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            new Promise<boolean>((resolve) => {
+              const open = indexedDB.open('mindflow');
+              // Never create the database from here: a store-less version 1
+              // would stop the app's own upgrade from ever running.
+              open.onupgradeneeded = () => open.transaction?.abort();
+              open.onerror = () => resolve(false);
+              open.onsuccess = () => {
+                const db = open.result;
+                const finish = (found: boolean) => {
+                  db.close();
+                  resolve(found);
+                };
+                if (!db.objectStoreNames.contains('autosave')) return finish(false);
+                const get = db.transaction('autosave').objectStore('autosave').get('current');
+                get.onsuccess = () => finish(get.result !== undefined);
+                get.onerror = () => finish(false);
+              };
+            }),
+        ),
+      )
+      .toBe(true);
+
+    await page.reload();
+    await page.waitForFunction(() => 'mindflow' in window);
+    await page.getByRole('button', { name: 'Recover' }).click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await expect(panel(page)).toBeVisible();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('names the selection in its header', async ({ page }) => {
+    await drawRectangle(page);
+    await expect(page.locator('.mf-style-title')).toHaveText('Rectangle');
+
+    await drawRectangle(page, [300, 100], [420, 200]);
+    await page.keyboard.press('ControlOrMeta+a');
+    await expect(page.locator('.mf-style-title')).toHaveText('2 elements');
+  });
+
+  test('toggles from the keyboard, and not while nothing is selected', async ({ page }) => {
+    await drawRectangle(page);
+    await page.keyboard.press('ControlOrMeta+Backslash');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await page.keyboard.press('ControlOrMeta+Backslash');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+
+    // With no panel on screen the chord must not quietly flip the preference.
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('ControlOrMeta+Backslash');
+    // On the outline: an unfilled rectangle is click-through in the middle.
+    await page.locator('.mf-canvas').click({ position: { x: 100, y: 150 } });
+    await expect(panel(page)).toBeVisible();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('toggles from the command palette', async ({ page }) => {
+    await drawRectangle(page);
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.locator('.mf-palette-input').fill('hide style panel');
+    await page.keyboard.press('Enter');
+
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+    // The selection it acted on is still there, only its controls are tucked away.
+    expect(await selectedCount(page)).toBe(1);
+  });
+});
+
 test.describe('hand-drawn rendering', () => {
   test('offers a sketch control for shapes that have one', async ({ page }) => {
     await page.locator('[data-tool="rectangle"]').click();
@@ -1629,13 +1757,17 @@ test.describe('the shape flyout', () => {
 
   test('lists every closed shape', async ({ page }) => {
     await page.getByRole('button', { name: 'More shapes' }).click();
-    // Sixteen: the three that predate the flyout, five flat polygons, eight solids.
-    await expect(page.locator('.mf-shape-option')).toHaveCount(16);
+    // Twelve: the three that predate the flyout, five flat polygons, four solids.
+    await expect(page.locator('.mf-shape-option')).toHaveCount(12);
     await expect(page.locator('.mf-shape-option[data-shape="cube"]')).toBeVisible();
+    // Retired in schema 1.5.0.
+    for (const retired of ['sphere', 'prism', 'torus', 'capsule']) {
+      await expect(page.locator(`.mf-shape-option[data-shape="${retired}"]`)).toHaveCount(0);
+    }
   });
 
   test('does not grow the tool strip', async ({ page }) => {
-    // The whole point of the flyout: thirteen new types, no new buttons.
+    // The whole point of the flyout: nine new types, no new buttons.
     await expect(page.locator('.mf-tool')).toHaveCount(14);
   });
 
@@ -1669,10 +1801,10 @@ test.describe('the shape flyout', () => {
 
   test('a shape chosen from the command palette appears in the slot', async ({ page }) => {
     await page.keyboard.press('Control+k');
-    await page.locator('.mf-palette-input').fill('Torus');
+    await page.locator('.mf-palette-input').fill('Pyramid');
     await page.keyboard.press('Enter');
 
-    await expect(page.locator('[data-tool="torus"]')).toHaveClass(/is-active/);
+    await expect(page.locator('[data-tool="pyramid"]')).toHaveClass(/is-active/);
   });
 });
 
@@ -1759,21 +1891,33 @@ test.describe('polygons and solids', () => {
     expect(svg).not.toContain('<ellipse');
   });
 
-  test('a torus exports with a real hole', async ({ page }) => {
-    await page.getByRole('button', { name: 'More shapes' }).click();
-    await page.locator('.mf-shape-option[data-shape="torus"]').click();
-    await drag(page, [100, 100], [300, 260]);
+  test('a 1.4.0 board opens its retired solids as flat shapes', async ({ page }) => {
+    // Through the real open path — a file dropped on the window — so the
+    // migration is proven to run before the board reaches the store, and the
+    // shapes land in the drawn element list rather than the preserved one.
+    const board = {
+      type: 'mindflow.board',
+      schemaVersion: '1.4.0',
+      elements: [
+        { id: 'el_torus', type: 'torus', x: 80, y: 80, width: 160, height: 120 },
+        { id: 'el_capsule', type: 'capsule', x: 320, y: 80, width: 80, height: 160 },
+      ],
+    };
 
-    const svg = await page.evaluate(() => {
-      const mf = (
-        window as unknown as {
-          mindflow: { store: { document: unknown }; exportToSVG(doc: unknown): string };
-        }
-      ).mindflow;
-      return mf.exportToSVG(mf.store.document);
-    });
+    await page.evaluate((content) => {
+      const data = new DataTransfer();
+      data.items.add(new File([content], 'old.mindflow.json', { type: 'application/json' }));
+      document
+        .querySelector('.mf-canvas')!
+        .dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
+    }, JSON.stringify(board));
 
-    expect(svg).toContain('fill-rule="evenodd"');
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(2);
+    const doc = await getDocument(page);
+    expect(doc.elements.map((element) => element.type)).toEqual(['ellipse', 'rectangle']);
+    expect(doc.elements[1]).toMatchObject({ cornerRadius: 40 });
+    // An upgrade is an `info` note, which is not worth interrupting anyone for.
+    await expect(page.locator('dialog.mf-dialog')).toHaveCount(0);
   });
 });
 

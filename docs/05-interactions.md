@@ -15,7 +15,7 @@ Reference implementation: [`src/input/controller.ts`](../src/input/controller.ts
 | Rectangle | `R` | Drag to size, or click for a default 100 × 80. |
 | Ellipse | `O` | Drag to size, or click for a default 100 × 100. |
 | Diamond | `D` | Drag to size, or click for a default 120 × 80. Shares its toolbar slot with the shape flyout. |
-| Shapes | — | A flyout on the diamond slot, holding every closed shape: rectangle, ellipse, diamond, triangle, pentagon, hexagon, star, parallelogram, and the solids (cube, cylinder, cone, pyramid, sphere, prism, torus, capsule). All behave as above — drag to size, or click for the type's default. |
+| Shapes | — | A flyout on the diamond slot, holding every closed shape: rectangle, ellipse, diamond, triangle, pentagon, hexagon, star, parallelogram, and the solids (cube, cylinder, cone, pyramid). All behave as above — drag to size, or click for the type's default. |
 | Line | `L` | Drag from start to end. |
 | Arrow | `A` | Drag from start to end; binds to shapes at either end. |
 | Draw | `P` | Drag to draw freehand. |
@@ -32,15 +32,15 @@ not create-many-in-a-row.
 
 ### The shape flyout
 
-Sixteen closed shapes cannot each have a toolbar button without turning the strip
+Twelve closed shapes cannot each have a toolbar button without turning the strip
 into a wall of icons, so one slot shows the shape last chosen from the flyout and
 a small opener beside it lists them all. The slot remembers its choice between
 sessions, and every shape is also reachable by name from the command palette
 (`Cmd`/`Ctrl` + `K`).
 
 Only the shapes that predate the flyout carry a single-letter shortcut. Giving
-thirteen more types a letter each would exhaust the keyboard for a gain the
-palette already provides.
+nine more types a letter each would exhaust the keyboard for a gain the palette
+already provides.
 
 ## The gesture lifecycle
 
@@ -162,6 +162,25 @@ its neighbours; equal gaps is what reads as evenly distributed. A negative `gap`
 (overlapping elements) is left as-is — the spacing is still even.
 
 Each operation is a single undo step, and bound connectors re-route afterwards.
+
+## The style panel
+
+The panel appears whenever something is selected — top right, or along the
+bottom on a narrow screen — and shows only the controls the selection can use.
+It is as tall as its controls and no taller, scrolling only when they outgrow the
+board.
+
+Its header names the selection (the type for one element, a count for several)
+and carries a toggle that **collapses the panel to a single button**, handing the
+board back to a small screen. The same toggle reopens it, as do
+`Cmd`/`Ctrl` + `\` and "Show / hide style panel" in the command palette.
+
+| | Behaviour |
+|---|---|
+| **Remembered** | Per browser, across selection changes and reloads — not per board, since it is a preference about the screen rather than the content. |
+| **Nothing selected** | The panel is hidden, and the shortcut and command do nothing: flipping a preference with nothing on screen would only surprise the user the next time they selected something. |
+| **Collapsed** | No controls are built at all. The panel is rebuilt on every document change, drag frames included, so it costs nothing while closed. |
+| **Touch** | On a coarse pointer the toggle grows to 40 px. |
 
 ## Colour
 
@@ -519,6 +538,7 @@ squeezing the existing rows.
 | `Cmd` + `+` / `-` | Zoom in / out |
 | `Cmd` + `0` | Reset zoom to 100% |
 | `Cmd` + `1` | Zoom to fit (selection, or the whole board) |
+| `Cmd` + `\` | Show / hide the style panel |
 
 ### File
 
@@ -685,7 +705,8 @@ restyle and reorder alike.
 ## Accessibility
 
 - All controls are real `<button>` elements with `aria-label` and, where they
-  represent state, `aria-pressed`.
+  represent state, `aria-pressed`. The style panel's collapse toggle reports
+  `aria-expanded` and points at the region it hides with `aria-controls`.
 - Dialogs use the native `<dialog>` element, which supplies focus trapping, the
   top layer, and Escape-to-close.
 - Notifications are announced via `role="status"` with `aria-live="polite"`.

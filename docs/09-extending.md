@@ -335,7 +335,7 @@ SVG exporter call — that shared call is the only reason the two agree. Omit
 
 `docs/09-extending.md` says "one file per type" and two modules do not follow it:
 `linear.ts` registers both `line` and `arrow`, and `polygons.ts` and `solids.ts`
-register five and eight types respectively.
+register five and four types respectively.
 
 The rule that actually matters is *no branching on `element.type` outside
 `render/shapes/`* — inside this directory, grouping types that differ only in a
@@ -345,7 +345,33 @@ to fix a bug in, and the fifth would be missed. Write one file per type when the
 types are genuinely different, and one module per family when they are not.
 
 Each registration is still separate, so the registry, the schema and the docs see
-thirteen ordinary types and nothing downstream knows they share a file.
+nine ordinary types and nothing downstream knows they share a file.
+
+## Retiring a type
+
+Removing a type is the rarer change and the easier one to get wrong, because a
+board that still holds one breaks silently: an unrecognised type is
+[preserved but not drawn](06-persistence.md#unknown-element-types), so the shape
+disappears from the canvas while lingering in the file. 1.5.0 retired `sphere`,
+`prism`, `torus` and `capsule`, and is the worked example.
+
+1. **Remove it everywhere it was added** — the type union in `types.ts`, the shape
+   module and its registration, `SHAPE_TOOLS` or the toolbar, its icon in
+   `scripts/build-icons.mjs` (then `npm run icons`), and any `case` for it in
+   `render/export.ts`.
+2. **Publish a new schema version without it**, and bump `CURRENT_SCHEMA_VERSION`.
+   The old schema stays exactly as it was.
+3. **Write a migration that converts it to a surviving type** rather than an
+   identity step. Pick the conversion that keeps the board's layout — the box,
+   the hit region and where connectors meet the outline — and record it in the
+   changelog precisely enough for another reader to apply it too. Watch for
+   style fields the old type stored but never drew and the new one does:
+   `roughness` was one.
+4. **Take it out of its example board** in `docs/schema/examples/`. Examples
+   validate against the *current* schema, so the old example stops validating;
+   the migration's own test is the fixture now.
+5. **Remove its `## ` section and capability row** from `03-elements.md`. The
+   contract test fails if the matrix still lists a type the registry lacks.
 
 ## Using `meta` instead
 

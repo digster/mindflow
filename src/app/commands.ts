@@ -18,6 +18,7 @@ import { getDefinition } from '../model/registry.ts';
 import type { Actions } from './actions.ts';
 import type { ToolbarCallbacks } from '../ui/toolbar.ts';
 import { MOD_KEY } from '../ui/dom.ts';
+import { STYLE_PANEL_SHORTCUT } from '../ui/stylePanel.ts';
 
 export interface Command {
   id: string;
@@ -81,7 +82,7 @@ export function buildCommands(
   store: Store,
   actions: Actions,
   callbacks: ToolbarCallbacks,
-  extras: { onFind: () => void },
+  extras: { onFind: () => void; onToggleStylePanel: () => void },
 ): Command[] {
   const hasSelection = () => store.selectedIds().length > 0;
   const unitCount = () =>
@@ -150,6 +151,17 @@ export function buildCommands(
     { id: 'view.resetZoom', title: 'Reset zoom', group: 'View', shortcut: `${MOD_KEY}0`, run: () => actions.resetZoom(), enabled: () => true },
     { id: 'view.zoomToFit', title: 'Zoom to fit', group: 'View', shortcut: `${MOD_KEY}1`, run: () => actions.zoomToFit(), enabled: () => true },
     { id: 'view.toggleGrid', title: 'Toggle grid', group: 'View', keywords: 'snap', run: callbacks.onToggleGrid, enabled: () => true },
+    {
+      id: 'view.toggleStylePanel',
+      title: 'Show / hide style panel',
+      group: 'View',
+      shortcut: STYLE_PANEL_SHORTCUT,
+      keywords: 'collapse expand sidebar properties inspector',
+      run: extras.onToggleStylePanel,
+      // The panel only exists while something is selected; toggling it otherwise
+      // would flip a preference with nothing on screen to show for it.
+      enabled: hasSelection,
+    },
     { id: 'view.shortcuts', title: 'Keyboard shortcuts', group: 'View', keywords: 'help keys', run: callbacks.onHelp, enabled: () => true },
     { id: 'view.settings', title: 'Settings…', group: 'View', keywords: 'preferences drive client id', run: callbacks.onSettings, enabled: () => true },
 
