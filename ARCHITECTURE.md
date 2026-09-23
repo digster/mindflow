@@ -279,5 +279,14 @@ Development: esbuild (bundling), TypeScript (checking), Vitest + Ajv (unit and
 contract tests), Playwright (e2e). Nothing is loaded from a CDN at runtime — a
 strict requirement, since the page must work offline and from a local file.
 
-Icons are hand-written SVG paths in [`src/ui/icons.ts`](src/ui/icons.ts) rather
-than a library, for the same reason.
+Icons are from [Lucide](https://lucide.dev) ([ISC](https://github.com/lucide-icons/lucide/blob/main/LICENSE)),
+extracted at build time rather than fetched at runtime.
+[`scripts/build-icons.mjs`](scripts/build-icons.mjs) reads them from the
+`lucide-static` devDependency through a strict element and attribute whitelist
+and writes [`src/ui/icons.ts`](src/ui/icons.ts): a generated file, committed
+like `index.html` and marked `DO NOT EDIT BY HAND`. The markup is inlined into
+the bundle, so the shipped page still runs no third-party code and loads
+nothing from a CDN. To add an icon, add a line to the manifest in
+`scripts/build-icons.mjs` and run `npm run icons`.
+[`test/unit/icons.test.ts`](test/unit/icons.test.ts) regenerates the file in
+memory and fails if the committed copy has drifted from the manifest.
