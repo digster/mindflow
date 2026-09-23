@@ -226,3 +226,37 @@ browser; `Cmd`/`Ctrl` + `\` and a command-palette entry do the same. It also
 stopped spanning the full height regardless of content — it now hugs its
 controls — which on its own hands back most of the right-hand column for a short
 selection. On a coarse pointer the toggle grows to 40px.
+
+---
+
+## 2026-09-23 — Stale icon note in ARCHITECTURE.md
+
+> `ARCHITECTURE.md`, in its closing "Dependencies" section, still says:
+>
+> > Icons are hand-written SVG paths in `src/ui/icons.ts` rather than a library,
+> > for the same reason.
+>
+> That stopped being true when icons moved to Lucide. `src/ui/icons.ts` is now a
+> **generated, committed build artifact**: `scripts/build-icons.mjs` pulls the
+> icons from the `lucide-static` devDependency through a strict element and
+> attribute whitelist, and writes the file with a `DO NOT EDIT BY HAND` banner.
+> `npm run icons` regenerates it, and a unit test (`test/unit/icons.test.ts`)
+> regenerates it in memory and fails on drift. The shipped page still makes zero
+> external requests, because the extraction happens at build time and the output
+> is inlined.
+>
+> Replace that sentence with an accurate short paragraph covering:
+> - icons are Lucide (ISC), extracted at build time from a devDependency and
+>   committed, so there is still no runtime third-party code and no CDN;
+> - to add an icon, add a line to the manifest in `scripts/build-icons.mjs` and
+>   run `npm run icons`;
+> - the drift test.
+>
+> Check `CLAUDE.md`, `README.md` (its "Credits" section) and `LEARNINGS.md` for
+> wording to stay consistent with. This is a documentation-only change: no code
+> changes and no rebuild of `index.html`. Per the repo's housekeeping rules,
+> append the prompt to `PROMPT.md` and a short note to that day's
+> `memory/YYYY-MM-DD.md`.
+
+Replaced the sentence with one paragraph, worded to match `CLAUDE.md`'s
+workflow note and the README's Credits section. Documentation only.
