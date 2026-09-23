@@ -219,3 +219,10 @@ rectangle) — without it, the unknown-type rule would have kept them in the fil
 but stopped drawing them. The contract test gained the reverse of its docs check,
 which is how stale documentation for a removed type would otherwise have slipped
 through.
+
+**Commit 2 — a collapsible style panel.** The panel gained a header naming the
+selection and a toggle that shrinks it to a single button, remembered per
+browser; `Cmd`/`Ctrl` + `\` and a command-palette entry do the same. It also
+stopped spanning the full height regardless of content — it now hugs its
+controls — which on its own hands back most of the right-hand column for a short
+selection. On a coarse pointer the toggle grows to 40px.

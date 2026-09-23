@@ -43,7 +43,9 @@ curated palette, a hex field and a memory of the last eight colours you used.
 Types can offer their own palette: a sticky note shows paper tones, not pastels.
 
 **Getting around** — a command palette (`Cmd K`), text search across the board
-(`Cmd F`), and a right-click context menu.
+(`Cmd F`), a right-click context menu, and a style panel that collapses to a
+single button (`Cmd \`) when a smaller screen needs the room — remembered
+between sessions.
 
 **Touch** — tap to select, drag to move, double-tap to edit text, long-press for
 the context menu, two-finger drag to pan and pinch to zoom. Hit targets and drag

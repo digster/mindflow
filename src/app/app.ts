@@ -214,6 +214,7 @@ export class MindflowApp {
         onSpaceChange: (held) => this.controller.setSpaceHeld(held),
         onCommandPalette: () => this.openCommandPalette(),
         onFind: () => showFindBar(this.store, this.actions),
+        onToggleStylePanel: () => this.stylePanel.toggleCollapsed(),
         onCommitText: () => this.textEditor.commit(),
       }),
     );
@@ -380,6 +381,7 @@ export class MindflowApp {
     showCommandPalette(
       buildCommands(this.store, this.actions, this.appCallbacks, {
         onFind: () => showFindBar(this.store, this.actions),
+        onToggleStylePanel: () => this.stylePanel.toggleCollapsed(),
       }),
     );
   }

@@ -90,6 +90,10 @@ export const MANIFEST = {
   settings: 'settings',
   help: 'keyboard',
   close: 'x',
+  // The style panel's collapse toggle. The glyph shows what pressing it does:
+  // the panel is on the right, so "close" pushes it out and "open" pulls it in.
+  panelCollapse: 'panel-right-close',
+  panelExpand: 'panel-right-open',
 
   // Arrange
   trash: 'trash-2',

@@ -1562,6 +1562,134 @@ test.describe('colour', () => {
   });
 });
 
+test.describe('collapsing the style panel', () => {
+  const panel = (page: Page) => page.locator('.mf-style-panel');
+  const toggle = (page: Page) => page.locator('.mf-style-toggle');
+
+  async function drawRectangle(page: Page, from: [number, number] = [100, 100], to: [number, number] = [220, 200]) {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, from, to);
+  }
+
+  test('collapses to its toggle and expands again', async ({ page }) => {
+    await drawRectangle(page);
+    await expect(page.locator('.mf-style-panel .mf-swatch').first()).toBeVisible();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+    const expanded = await panel(page).boundingBox();
+
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle(page)).toHaveAccessibleName('Show style panel');
+    await expect(page.locator('.mf-style-body')).toBeHidden();
+    await expect(page.locator('.mf-style-panel .mf-swatch')).toHaveCount(0);
+
+    // The point of the feature: the panel gives the board back its area.
+    const collapsed = await panel(page).boundingBox();
+    expect(collapsed!.width).toBeLessThan(60);
+    expect(collapsed!.height).toBeLessThan(60);
+    expect(collapsed!.width * collapsed!.height).toBeLessThan((expanded!.width * expanded!.height) / 20);
+
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.mf-style-panel .mf-swatch').first()).toBeVisible();
+  });
+
+  test('keeps keyboard focus on the toggle', async ({ page }) => {
+    // The header outlives each rebuild of the controls; if the button were
+    // rebuilt too, focus would fall back to the page on every press.
+    await drawRectangle(page);
+    await toggle(page).focus();
+    await page.keyboard.press('Enter');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle(page)).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle(page)).toBeFocused();
+  });
+
+  test('stays collapsed across selections and a reload', async ({ page }) => {
+    await drawRectangle(page);
+    await toggle(page).click();
+
+    await page.keyboard.press('Escape');
+    await expect(panel(page)).toBeHidden();
+    await drawRectangle(page, [300, 100], [420, 200]);
+    await expect(panel(page)).toBeVisible();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+
+    // Let the autosave land first, so the reload deterministically offers the
+    // board back rather than racing the save's debounce.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            new Promise<boolean>((resolve) => {
+              const open = indexedDB.open('mindflow');
+              // Never create the database from here: a store-less version 1
+              // would stop the app's own upgrade from ever running.
+              open.onupgradeneeded = () => open.transaction?.abort();
+              open.onerror = () => resolve(false);
+              open.onsuccess = () => {
+                const db = open.result;
+                const finish = (found: boolean) => {
+                  db.close();
+                  resolve(found);
+                };
+                if (!db.objectStoreNames.contains('autosave')) return finish(false);
+                const get = db.transaction('autosave').objectStore('autosave').get('current');
+                get.onsuccess = () => finish(get.result !== undefined);
+                get.onerror = () => finish(false);
+              };
+            }),
+        ),
+      )
+      .toBe(true);
+
+    await page.reload();
+    await page.waitForFunction(() => 'mindflow' in window);
+    await page.getByRole('button', { name: 'Recover' }).click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await expect(panel(page)).toBeVisible();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('names the selection in its header', async ({ page }) => {
+    await drawRectangle(page);
+    await expect(page.locator('.mf-style-title')).toHaveText('Rectangle');
+
+    await drawRectangle(page, [300, 100], [420, 200]);
+    await page.keyboard.press('ControlOrMeta+a');
+    await expect(page.locator('.mf-style-title')).toHaveText('2 elements');
+  });
+
+  test('toggles from the keyboard, and not while nothing is selected', async ({ page }) => {
+    await drawRectangle(page);
+    await page.keyboard.press('ControlOrMeta+Backslash');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await page.keyboard.press('ControlOrMeta+Backslash');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+
+    // With no panel on screen the chord must not quietly flip the preference.
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('ControlOrMeta+Backslash');
+    // On the outline: an unfilled rectangle is click-through in the middle.
+    await page.locator('.mf-canvas').click({ position: { x: 100, y: 150 } });
+    await expect(panel(page)).toBeVisible();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('toggles from the command palette', async ({ page }) => {
+    await drawRectangle(page);
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.locator('.mf-palette-input').fill('hide style panel');
+    await page.keyboard.press('Enter');
+
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+    // The selection it acted on is still there, only its controls are tucked away.
+    expect(await selectedCount(page)).toBe(1);
+  });
+});
+
 test.describe('hand-drawn rendering', () => {
   test('offers a sketch control for shapes that have one', async ({ page }) => {
     await page.locator('[data-tool="rectangle"]').click();

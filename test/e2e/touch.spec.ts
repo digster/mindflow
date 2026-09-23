@@ -388,6 +388,49 @@ test.describe('selecting and dragging by touch', () => {
   });
 });
 
+test.describe('the style panel on a tablet', () => {
+  /** A tap at absolute page coordinates, for targets outside the canvas. */
+  async function tapAt(page: Page, at: { x: number; y: number }) {
+    await dispatch(page, 'touchStart', [at]);
+    await dispatch(page, 'touchEnd', []);
+  }
+
+  /** Whether the style panel is what a tap at this canvas point would land on. */
+  async function panelCovers(page: Page, point: Point) {
+    const at = await onCanvas(page, point);
+    return page.evaluate(
+      ({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest('.mf-style-panel')),
+      at,
+    );
+  }
+
+  test('collapsing it gives its area back to the board', async ({ page }) => {
+    // One sticky out in the open, and one where the expanded panel will sit.
+    const hidden: Point = [880, 140];
+    await stickyWithMouse(page, [100, 100], [220, 220]);
+    await stickyWithMouse(page, [820, 80], [940, 200]);
+
+    await tap(page, [160, 160]);
+    expect(await selectedCount(page)).toBe(1);
+    expect(await panelCovers(page, hidden)).toBe(true);
+
+    const toggle = await page.locator('.mf-style-toggle').boundingBox();
+    await tapAt(page, { x: toggle!.x + toggle!.width / 2, y: toggle!.y + toggle!.height / 2 });
+    await expect(page.locator('.mf-style-toggle')).toHaveAttribute('aria-expanded', 'false');
+    // Tapping the chrome must not have disturbed the selection underneath it.
+    expect(await selectedCount(page)).toBe(1);
+
+    expect(await panelCovers(page, hidden)).toBe(false);
+    await tap(page, hidden);
+    const selected = await page.evaluate(() => {
+      const mf = (window as unknown as { mindflow: { store: { selectedIds(): string[] } } }).mindflow;
+      return mf.store.selectedIds();
+    });
+    const doc = await getDocument(page);
+    expect(selected).toEqual([doc.elements[1]?.id]);
+  });
+});
+
 test.describe('two-finger pan and pinch', () => {
   test('spreading two fingers zooms in', async ({ page }) => {
     const before = await viewport(page);

@@ -163,6 +163,25 @@ its neighbours; equal gaps is what reads as evenly distributed. A negative `gap`
 
 Each operation is a single undo step, and bound connectors re-route afterwards.
 
+## The style panel
+
+The panel appears whenever something is selected — top right, or along the
+bottom on a narrow screen — and shows only the controls the selection can use.
+It is as tall as its controls and no taller, scrolling only when they outgrow the
+board.
+
+Its header names the selection (the type for one element, a count for several)
+and carries a toggle that **collapses the panel to a single button**, handing the
+board back to a small screen. The same toggle reopens it, as do
+`Cmd`/`Ctrl` + `\` and "Show / hide style panel" in the command palette.
+
+| | Behaviour |
+|---|---|
+| **Remembered** | Per browser, across selection changes and reloads — not per board, since it is a preference about the screen rather than the content. |
+| **Nothing selected** | The panel is hidden, and the shortcut and command do nothing: flipping a preference with nothing on screen would only surprise the user the next time they selected something. |
+| **Collapsed** | No controls are built at all. The panel is rebuilt on every document change, drag frames included, so it costs nothing while closed. |
+| **Touch** | On a coarse pointer the toggle grows to 40 px. |
+
 ## Colour
 
 Every colour in the format is settable from the interface. Which controls appear
@@ -519,6 +538,7 @@ squeezing the existing rows.
 | `Cmd` + `+` / `-` | Zoom in / out |
 | `Cmd` + `0` | Reset zoom to 100% |
 | `Cmd` + `1` | Zoom to fit (selection, or the whole board) |
+| `Cmd` + `\` | Show / hide the style panel |
 
 ### File
 
@@ -685,7 +705,8 @@ restyle and reorder alike.
 ## Accessibility
 
 - All controls are real `<button>` elements with `aria-label` and, where they
-  represent state, `aria-pressed`.
+  represent state, `aria-pressed`. The style panel's collapse toggle reports
+  `aria-expanded` and points at the region it hides with `aria-controls`.
 - Dialogs use the native `<dialog>` element, which supplies focus trapping, the
   top layer, and Escape-to-close.
 - Notifications are announced via `role="status"` with `aria-live="polite"`.
