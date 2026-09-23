@@ -764,6 +764,40 @@ test.describe('connectors', () => {
     expect(offLine(startOf(moved!), fromLow, { x: target.x, y: target.y + 120 })).toBeLessThan(0.05);
   });
 
+  test('the style panel shows connector controls for a mixed selection and edits only the connector', async ({
+    page,
+  }) => {
+    // The panel finds connectors through the registry (`isConnector`) rather
+    // than by naming `line` and `arrow`. Like every other control, the rows
+    // appear when ANY selected element can use them. They report the
+    // connector and must leave the rectangle beside it untouched.
+    const panel = page.locator('.mf-style-panel');
+    const lineShape = panel.locator('.mf-style-section', { hasText: 'Line shape' });
+    const endArrow = panel.locator('.mf-style-section', { hasText: 'End arrow' });
+
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [200, 200]);
+    await expect(panel).toBeVisible();
+    await expect(lineShape).toHaveCount(0);
+
+    await page.locator('[data-tool="arrow"]').click();
+    await drag(page, [300, 400], [500, 450]);
+    await expect(lineShape.getByRole('button', { name: 'Straight' })).toHaveClass(/is-active/);
+
+    await page.keyboard.press('ControlOrMeta+a');
+    await lineShape.getByRole('button', { name: 'Elbow' }).click();
+    await endArrow.getByRole('button', { name: 'Dot' }).click();
+
+    const doc = await getDocument(page);
+    expect(doc.elements.find((element) => element.type === 'arrow')).toMatchObject({
+      curve: 'elbow',
+      endArrowhead: 'dot',
+    });
+    const rectangle = doc.elements.find((element) => element.type === 'rectangle');
+    expect(rectangle).not.toHaveProperty('curve');
+    expect(rectangle).not.toHaveProperty('endArrowhead');
+  });
+
   test('discards a zero-length connector', async ({ page }) => {
     await page.locator('[data-tool="arrow"]').click();
     const box = await canvasBox(page);

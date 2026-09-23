@@ -53,6 +53,7 @@ export const textDefinition: ElementDefinition<TextElement> = {
     resizable: true,
     rotatable: true,
     bindable: true,
+    connector: false,
   },
 
   create(init: ElementInit): TextElement {

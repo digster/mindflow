@@ -93,6 +93,7 @@ export const drawDefinition: ElementDefinition<DrawElement> = {
     resizable: true,
     rotatable: true,
     bindable: false,
+    connector: false,
   },
 
   create(init: ElementInit): DrawElement {

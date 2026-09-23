@@ -34,6 +34,7 @@ import type { MindflowElement, Point, PointTuple } from '../model/types.ts';
 import type { HandleId, SelectionFrame } from '../render/overlay.ts';
 import { frameLocalToWorld, frameWorldToLocal } from '../render/overlay.ts';
 import { degToRad, normalizeAngle, radToDeg, rotatePoint } from '../model/geometry.ts';
+import { isPathElement } from '../model/registry.ts';
 
 /** Smallest box a resize will produce, in scene units. */
 const MIN_SIZE = 4;
@@ -234,7 +235,7 @@ export function applyFrameToElements(
       angle: after.angle,
     } as MindflowElement;
 
-    if (next.type === 'line' || next.type === 'arrow' || next.type === 'draw') {
+    if (isPathElement(next)) {
       next.points = scalePoints(next.points, scaleX, scaleY);
     }
     return [next];
@@ -252,7 +253,7 @@ export function applyFrameToElements(
       height: Math.max(el.height * scaleY, MIN_SIZE),
     } as MindflowElement;
 
-    if (next.type === 'line' || next.type === 'arrow' || next.type === 'draw') {
+    if (isPathElement(next)) {
       next.points = scalePoints(next.points, scaleX, scaleY);
     }
     return next;

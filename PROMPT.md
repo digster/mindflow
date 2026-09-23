@@ -328,3 +328,44 @@ remember a drop point. Format 1.6.0 adds a `focus` anchor for drops inside a
 shape. Decisions confirmed with the user: the aim-point anchor with a format
 bump (over pinning to the outline with no format change), and near-centre drops
 still snap to `auto`.
+
+---
+
+## 2026-09-23 — Registry-driven connector checks in `binding.ts`
+
+> In /Users/ishan/lab/mindflow, CLAUDE.md invariant #1 says: "No code outside
+> `src/render/shapes/` may branch on `element.type`. Use the registry." Two
+> functions in `src/input/binding.ts` violate it:
+>
+> - `connectorsToRefresh` has `if (element.type !== 'line' && element.type !== 'arrow') continue;`
+> - `connectorsBoundTo` filters with `(el.type === 'line' || el.type === 'arrow')`
+>
+> Both only need to know "is this element a connector with bindings?". Replace
+> the type checks with a registry-driven predicate. Options: use
+> `capabilitiesOf(el)` from `src/model/registry.ts` (connectors have
+> `path: true` and `bindable: false`, but `draw` is also
+> `path: true`/`bindable: false`, so that pair alone is not enough), or add an
+> explicit capability flag such as `connector: true` to the registry's
+> capability descriptor and set it in `src/render/shapes/linear.ts` only. If you
+> add a capability, the contract test `test/unit/contract.test.ts` checks that
+> every definition declares a complete capability set (the `required` list in
+> "every definition declares a complete capability set"), so update that list
+> and every shape definition in `src/render/shapes/`. A cheaper alternative is to
+> test for the presence of the `startBinding`/`endBinding` fields structurally
+> (`'startBinding' in el`), which needs no registry change. Pick whichever reads
+> cleanest and explain the choice in a comment.
+>
+> Also grep `src/` (outside `src/render/shapes/`) for any other `.type ===` /
+> `.type !==` comparisons against element type names and fix them the same way.
+> Do not change behaviour. Run `npm run typecheck`, `npm test`, `npm run build`
+> (index.html is a committed build artifact), and `npm run test:e2e`; delete
+> `test-results/` and `playwright-report/` afterwards. Per the project's
+> housekeeping rules, append the prompt to PROMPT.md, a summary to
+> memory/YYYY-MM-DD.md, and generate a commit message without committing (never
+> list Claude as an author).
+
+The grep found about 35 comparisons in 11 files, far more than two. Scope was
+confirmed with the user: connector + path sites only. They became a new
+`connector` capability, with `isConnector` / `isPathElement` guards in
+`registry.ts`. Frame, image, fillable, text autoWidth, draw validation, table UI
+and the SVG exporter's switch were left as follow-ups.

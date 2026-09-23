@@ -49,6 +49,7 @@ export const stickyDefinition: ElementDefinition<StickyElement> = {
     resizable: true,
     rotatable: true,
     bindable: true,
+    connector: false,
   },
 
   // The warm paper tones a note is actually created with, rather than the

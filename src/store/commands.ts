@@ -31,6 +31,7 @@ import type {
 } from '../model/types.ts';
 import { Z_INDEX_STEP, newGroupId } from '../model/defaults.ts';
 import { withFrameMembers } from '../model/frames.ts';
+import { isConnector } from '../model/registry.ts';
 
 /**
  * The change to one element.
@@ -153,7 +154,7 @@ export function deleteElements(
     // Deleting a shape must not leave connectors pointing at a ghost. Any
     // binding aimed at a doomed element is cleared in the same command, so undo
     // restores both the shape and its connections in one step.
-    if (el.type === 'line' || el.type === 'arrow') {
+    if (isConnector(el)) {
       const startDangles = el.startBinding && targets.has(el.startBinding.elementId);
       const endDangles = el.endBinding && targets.has(el.endBinding.elementId);
       if (startDangles || endDangles) {

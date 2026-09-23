@@ -71,6 +71,14 @@ handful of optional members carry the cases the capability flags cannot express 
 and `palette`. Each exists because the alternative was a `type === '…'` branch in
 code that is not allowed to have one, and each costs existing types nothing.
 
+When code outside `render/shapes/` needs a narrowed type rather than just a flag,
+it uses the capability type guards next to `capabilitiesOf`: `isConnector(el):
+el is LinearElement` and `isPathElement(el): el is PathElement`. These are how
+re-routing, delete clean-up, paste, validation, resize and the style panel reach
+`points` and `startBinding` without naming `line`, `arrow` or `draw`. A flag
+cannot prove its type's fields, so `contract.test.ts` creates one element per
+definition and checks that the fields match the flags.
+
 **The rule: no code outside `render/shapes/` may branch on `element.type`.**
 
 Two things fall out of that discipline:

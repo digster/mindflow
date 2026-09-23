@@ -476,6 +476,7 @@ export const tableDefinition: ElementDefinition<TableElement> = {
     resizable: true,
     rotatable: true,
     bindable: true,
+    connector: false,
   },
 
   create(init: ElementInit): TableElement {

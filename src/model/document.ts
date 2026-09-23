@@ -52,7 +52,7 @@ import {
   newBoardId,
   newElementId,
 } from './defaults.ts';
-import { findDefinition } from './registry.ts';
+import { findDefinition, isConnector, isPathElement } from './registry.ts';
 import { danglingFrameRefs } from './frames.ts';
 import { clamp, normalizeAngle, roundCoord } from './geometry.ts';
 import { migrateDocument, needsMigration } from './migrate.ts';
@@ -442,7 +442,7 @@ export function validateDocument(document: MindflowDocument): LoadWarning[] {
     // A dangling binding would leave a connector pointing at nothing. We report
     // it rather than deleting the binding, because a document assembled in
     // pieces may legitimately be fixed up by the caller.
-    if (el.type === 'line' || el.type === 'arrow') {
+    if (isConnector(el)) {
       for (const end of ['startBinding', 'endBinding'] as const) {
         const binding = el[end];
         if (!binding) continue;
@@ -527,7 +527,7 @@ function roundElement(el: MindflowElement): MindflowElement {
     opacity: roundCoord(el.opacity, 3),
   } as MindflowElement;
 
-  if (rounded.type === 'line' || rounded.type === 'arrow' || rounded.type === 'draw') {
+  if (isPathElement(rounded)) {
     rounded.points = rounded.points.map((p) =>
       p.length > 2
         ? [roundCoord(p[0]), roundCoord(p[1]), roundCoord(p[2] as number, 3)]

@@ -166,7 +166,7 @@ describe('registry ↔ documentation', () => {
   });
 
   it('every definition declares a complete capability set', () => {
-    const required = ['label', 'path', 'text', 'resizable', 'rotatable', 'bindable'];
+    const required = ['label', 'path', 'text', 'resizable', 'rotatable', 'bindable', 'connector'];
     for (const definition of allDefinitions()) {
       for (const flag of required) {
         expect(
@@ -179,11 +179,38 @@ describe('registry ↔ documentation', () => {
 
   it('connectors are never bindable', () => {
     // Binding arrows to arrows creates dependency chains with no stable layout
-    // fixed point. Enforced here so a future shape cannot quietly opt in.
+    // fixed point. Enforced here so a future shape cannot quietly opt in. It is
+    // keyed on the capability rather than on type names, so a new connector
+    // type is covered as soon as it declares itself one.
     for (const definition of allDefinitions()) {
-      if (definition.type === 'line' || definition.type === 'arrow') {
+      if (definition.capabilities.connector) {
         expect(definition.capabilities.bindable, `${definition.type} must not be bindable`).toBe(false);
       }
+    }
+  });
+
+  /**
+   * `isConnector` and `isPathElement` narrow to `LinearElement` and
+   * `PathElement` because of a flag, and TypeScript cannot check that a flag
+   * matches the fields. This test does: a definition sets each flag exactly
+   * when what it creates has the fields the narrowing promises. In the other
+   * direction, it also catches the flag being dropped from `linear.ts`, which
+   * would quietly stop arrows re-routing when their shapes move.
+   */
+  it('the connector and path flags match the fields they promise', () => {
+    for (const definition of allDefinitions()) {
+      const element = definition.create({ x: 0, y: 0, width: 120, height: 80, zIndex: 0 }) as unknown as
+        Record<string, unknown>;
+      const { connector, path } = definition.capabilities;
+
+      expect(
+        Array.isArray(element.points),
+        `${definition.type}: path is ${path}, so points must be ${path ? 'present' : 'absent'}`,
+      ).toBe(path);
+      expect(
+        'startBinding' in element && 'endBinding' in element,
+        `${definition.type}: connector is ${connector}, so the binding fields must be ${connector ? 'present' : 'absent'}`,
+      ).toBe(connector);
     }
   });
 });

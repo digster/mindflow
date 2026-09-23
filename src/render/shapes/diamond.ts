@@ -41,6 +41,7 @@ export const diamondDefinition: ElementDefinition<DiamondElement> = {
     resizable: true,
     rotatable: true,
     bindable: true,
+    connector: false,
   },
 
   create(init: ElementInit): DiamondElement {

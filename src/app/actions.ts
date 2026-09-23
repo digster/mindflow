@@ -13,7 +13,7 @@
 
 import type { AABB, ElementId, MindflowElement, Point, Viewport } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
-import { getDefinition } from '../model/registry.ts';
+import { getDefinition, isConnector } from '../model/registry.ts';
 import {
   MAX_ZOOM,
   MIN_ZOOM,
@@ -171,7 +171,7 @@ export class Actions {
         groupId,
       } as MindflowElement;
 
-      if (clone.type === 'line' || clone.type === 'arrow') {
+      if (isConnector(clone)) {
         clone.startBinding = remapBinding(clone.startBinding, idMap);
         clone.endBinding = remapBinding(clone.endBinding, idMap);
       }

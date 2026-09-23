@@ -45,6 +45,7 @@ export const frameDefinition: ElementDefinition<FrameElement> = {
     // for very little, and the axis-aligned box is what keeps the clip a rect.
     rotatable: false,
     bindable: true,
+    connector: false,
   },
 
   create(init: ElementInit): FrameElement {

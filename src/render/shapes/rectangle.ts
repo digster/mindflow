@@ -29,6 +29,7 @@ export const rectangleDefinition: ElementDefinition<RectangleElement> = {
     resizable: true,
     rotatable: true,
     bindable: true,
+    connector: false,
   },
 
   create(init: ElementInit): RectangleElement {

@@ -995,3 +995,26 @@ outline ray *from* it. Three details were easy to get wrong:
 is on the drawn line" with a raw cross product fails, because the cross product
 scales that rounding by the segment's length. Assert on the perpendicular
 distance instead, as `distanceFromLine` in `test/unit/binding.test.ts` does.
+
+## Swapping a `type ===` branch for a capability can quietly change two things
+
+Invariant 1 says nothing outside `render/shapes/` may branch on `element.type`.
+Converting an old branch to a registry lookup looks mechanical, but the obvious
+spelling, `capabilitiesOf(el).flag`, differs from `el.type === '…'` in two ways:
+
+- **It throws on an unregistered type** (`getDefinition` throws), whereas the
+  comparison answered `false`. The guards in `registry.ts` (`isConnector`,
+  `isPathElement`) use `findDefinition(...)?.capabilities.flag === true` so the
+  conversion stays a pure refactor.
+- **It loses narrowing.** `el.type === 'arrow'` narrows the union for free, and a
+  boolean does not, so every caller then needs a cast to reach `points` or
+  `startBinding`. A type-predicate guard (`el is LinearElement`) restores the
+  narrowing, but TypeScript cannot check it: a flag in a definition says
+  nothing about the fields its elements carry. `contract.test.ts` ("the
+  connector and path flags match the fields they promise") creates one element
+  per definition and checks the fields against the flags. A new guard needs a
+  matching assertion there.
+
+Also, do not identify a type family by combining unrelated flags. `path &&
+!bindable` looks like "connector" but also matches `draw`, which has points and
+no bindings. Give the concept its own flag.

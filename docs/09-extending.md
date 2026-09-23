@@ -66,7 +66,7 @@ export const diamondDefinition: ElementDefinition<DiamondElement> = {
 
   capabilities: {
     label: true, path: false, text: false,
-    resizable: true, rotatable: true, bindable: true,
+    resizable: true, rotatable: true, bindable: true, connector: false,
   },
 
   create(init: ElementInit): DiamondElement {
@@ -226,9 +226,14 @@ Declared per type, they drive the UI so it need not know about your type.
 | `resizable` | Selection shows the eight resize handles. |
 | `rotatable` | Selection shows the rotate handle. |
 | `bindable` | Connector endpoints can attach to it. |
+| `connector` | It is a connector. Code outside `render/shapes/` finds it through `isConnector()`: it is re-routed when its targets move, its bindings are cleared when a target is deleted, and the style panel offers line-shape and arrowhead controls. |
 
-Set `bindable: false` for anything connector-like. Binding connectors to
-connectors creates dependency chains with no stable layout fixed point.
+A `connector` must also set `bindable: false`, since binding connectors to
+connectors creates dependency chains with no stable layout fixed point. It must
+create elements with the `LinearElement` fields (`points`, `startBinding`,
+`endBinding`), because `isConnector()` narrows to that type. The contract test
+enforces both, and in the same way checks that `path: true` types create a
+`points` list, which `isPathElement()` relies on.
 
 `text: true` does **not** have to mean one `text` field. A type that owns many
 independent blocks — `table` and its cells — sets the same flag and implements the

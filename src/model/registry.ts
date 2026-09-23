@@ -20,8 +20,10 @@
 import type {
   BaseElement,
   ElementType,
+  LinearElement,
   MindflowDocument,
   MindflowElement,
+  PathElement,
   Point,
 } from './types.ts';
 
@@ -68,6 +70,16 @@ export interface ElementCapabilities {
   rotatable: boolean;
   /** May be the target of a connector binding. */
   bindable: boolean;
+  /**
+   * Is a connector: its ends can bind to other elements (`startBinding` and
+   * `endBinding`), it is re-routed when they move, and it gets the line-shape
+   * and arrowhead controls. Declaring it promises the `LinearElement` fields;
+   * see {@link isConnector}.
+   *
+   * No combination of the other flags says this. `path && !bindable` also
+   * describes a freehand `draw` stroke, which has points but no bindings.
+   */
+  connector: boolean;
 }
 
 /**
@@ -302,6 +314,46 @@ export function allDefinitions(): ElementDefinition<MindflowElement>[] {
 /** Convenience wrappers so callers need not fetch the definition first. */
 export function capabilitiesOf(el: MindflowElement): ElementCapabilities {
   return getDefinition(el.type).capabilities;
+}
+
+/*
+ * Capability type guards.
+ *
+ * These are how code outside `render/shapes/` asks "is this a connector?" or
+ * "does this have points?" without naming types, which it may not do. They
+ * return type predicates rather than plain booleans because the `type ===`
+ * comparisons they replace narrowed the union for free. Without the narrowing,
+ * every caller would need a cast to reach `points` or `startBinding`.
+ *
+ * TypeScript cannot check that the narrowing is sound: a flag in a definition
+ * says nothing about the fields its elements carry. `contract.test.ts` checks
+ * it instead, by asserting that every definition's `create()` output has
+ * exactly the fields its flags promise.
+ *
+ * Both look up with `findDefinition` and answer `false` for an unregistered
+ * type instead of throwing like `capabilitiesOf`. That matches the behaviour
+ * of the comparisons they replaced, and a predicate should be safe to call on
+ * anything.
+ */
+
+/**
+ * True for connectors, the elements with `startBinding` and `endBinding`.
+ *
+ * Why a capability rather than the structural test `'startBinding' in el`:
+ * most callers are not asking about bindings. The style panel wants
+ * "show arrowhead controls", and validation wants "needs at least two points".
+ * Those are facts about being a connector, and a flag declared next to the
+ * type's other capabilities says so in one place. A structural test would
+ * stay silently true for any future type that reuses the field name for
+ * something else.
+ */
+export function isConnector(el: MindflowElement): el is LinearElement {
+  return findDefinition(el.type)?.capabilities.connector === true;
+}
+
+/** True for elements whose geometry is a `points` list (`capabilities.path`). */
+export function isPathElement(el: MindflowElement): el is PathElement {
+  return findDefinition(el.type)?.capabilities.path === true;
 }
 
 export function drawElement(el: MindflowElement, render: RenderContext): void {

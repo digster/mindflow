@@ -18,28 +18,28 @@ Capabilities are declared per type in the registry and drive the UI — which
 controls the style panel shows, whether double-click opens a text editor, whether
 a connector can attach.
 
-| Type | `label` | `path` | `text` | `resizable` | `rotatable` | `bindable` |
-|---|---|---|---|---|---|---|
-| `rectangle` | ✓ | | | ✓ | ✓ | ✓ |
-| `ellipse` | ✓ | | | ✓ | ✓ | ✓ |
-| `diamond` | ✓ | | | ✓ | ✓ | ✓ |
-| `frame` | | | | ✓ | | ✓ |
-| `line` | ✓ | ✓ | | ✓ | ✓ | |
-| `arrow` | ✓ | ✓ | | ✓ | ✓ | |
-| `draw` | | ✓ | | ✓ | ✓ | |
-| `text` | | | ✓ | ✓ | ✓ | ✓ |
-| `sticky` | | | ✓ | ✓ | ✓ | ✓ |
-| `table` | | | ✓ | ✓ | ✓ | ✓ |
-| `image` | ✓ | | | ✓ | ✓ | ✓ |
-| `triangle` | ✓ | | | ✓ | ✓ | ✓ |
-| `pentagon` | ✓ | | | ✓ | ✓ | ✓ |
-| `hexagon` | ✓ | | | ✓ | ✓ | ✓ |
-| `star` | ✓ | | | ✓ | ✓ | ✓ |
-| `parallelogram` | ✓ | | | ✓ | ✓ | ✓ |
-| `cube` | ✓ | | | ✓ | ✓ | ✓ |
-| `cylinder` | ✓ | | | ✓ | ✓ | ✓ |
-| `cone` | ✓ | | | ✓ | ✓ | ✓ |
-| `pyramid` | ✓ | | | ✓ | ✓ | ✓ |
+| Type | `label` | `path` | `text` | `resizable` | `rotatable` | `bindable` | `connector` |
+|---|---|---|---|---|---|---|---|
+| `rectangle` | ✓ | | | ✓ | ✓ | ✓ | |
+| `ellipse` | ✓ | | | ✓ | ✓ | ✓ | |
+| `diamond` | ✓ | | | ✓ | ✓ | ✓ | |
+| `frame` | | | | ✓ | | ✓ | |
+| `line` | ✓ | ✓ | | ✓ | ✓ | | ✓ |
+| `arrow` | ✓ | ✓ | | ✓ | ✓ | | ✓ |
+| `draw` | | ✓ | | ✓ | ✓ | | |
+| `text` | | | ✓ | ✓ | ✓ | ✓ | |
+| `sticky` | | | ✓ | ✓ | ✓ | ✓ | |
+| `table` | | | ✓ | ✓ | ✓ | ✓ | |
+| `image` | ✓ | | | ✓ | ✓ | ✓ | |
+| `triangle` | ✓ | | | ✓ | ✓ | ✓ | |
+| `pentagon` | ✓ | | | ✓ | ✓ | ✓ | |
+| `hexagon` | ✓ | | | ✓ | ✓ | ✓ | |
+| `star` | ✓ | | | ✓ | ✓ | ✓ | |
+| `parallelogram` | ✓ | | | ✓ | ✓ | ✓ | |
+| `cube` | ✓ | | | ✓ | ✓ | ✓ | |
+| `cylinder` | ✓ | | | ✓ | ✓ | ✓ | |
+| `cone` | ✓ | | | ✓ | ✓ | ✓ | |
+| `pyramid` | ✓ | | | ✓ | ✓ | ✓ | |
 
 - **`label`** — can carry text inside it via the `label` object.
 - **`path`** — geometry is a `points` list rather than a plain box.
@@ -47,9 +47,14 @@ a connector can attach.
   editable in place. Usually that means one `text` field; a `table` instead owns
   one block per cell, addressed individually (see [`table`](#table)).
 - **`bindable`** — a connector endpoint can attach to it.
+- **`connector`** — is a connector. It carries `startBinding` and `endBinding`,
+  is re-routed when an element it is bound to moves (see
+  [07-rendering.md](07-rendering.md#when-to-re-route)), and gets the line-shape
+  and arrowhead controls. A connector is also always a `path`.
 
 Connectors are deliberately **not** bindable. Binding arrows to arrows creates
-dependency chains with no stable layout fixed point.
+dependency chains with no stable layout fixed point. The contract test enforces
+this for every type flagged `connector`.
 
 ---
 

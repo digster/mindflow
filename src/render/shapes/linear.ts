@@ -243,6 +243,10 @@ export const linearDefinition = (type: 'line' | 'arrow'): ElementDefinition<Line
     // A connector cannot be the target of another connector. Permitting it would
     // create binding chains whose layout has no stable fixed point.
     bindable: false,
+    // The only module that sets this. Re-routing, delete clean-up, paste
+    // remapping and the arrowhead controls all ask `isConnector` rather than
+    // naming `line` and `arrow`.
+    connector: true,
   },
 
   create(init: ElementInit): LinearElement {

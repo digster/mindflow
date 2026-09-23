@@ -25,7 +25,7 @@ import type {
   Point,
   PointTuple,
 } from '../model/types.ts';
-import { capabilitiesOf } from '../model/registry.ts';
+import { capabilitiesOf, isConnector } from '../model/registry.ts';
 import {
   elementCenter,
   elementWorldAABB,
@@ -330,7 +330,7 @@ export function connectorsToRefresh(
   const updated: LinearElement[] = [];
 
   for (const element of document.elements) {
-    if (element.type !== 'line' && element.type !== 'arrow') continue;
+    if (!isConnector(element)) continue;
     // A connector being dragged itself is handled by the drag, not here.
     if (movedIds.has(element.id)) continue;
 
@@ -374,7 +374,7 @@ export function connectorsBoundTo(
 ): LinearElement[] {
   return document.elements.filter(
     (el): el is LinearElement =>
-      (el.type === 'line' || el.type === 'arrow') &&
+      isConnector(el) &&
       Boolean(
         (el.startBinding && ids.has(el.startBinding.elementId)) ||
           (el.endBinding && ids.has(el.endBinding.elementId)),

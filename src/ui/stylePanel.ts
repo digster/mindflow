@@ -17,7 +17,7 @@ import type { MindflowElement, TableElement } from '../model/types.ts';
 import { ARROWHEADS, CURVE_STYLES, FILL_STYLES, FONT_FAMILIES, STROKE_STYLES } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
 import type { Actions } from '../app/actions.ts';
-import { capabilitiesOf, getDefinition } from '../model/registry.ts';
+import { capabilitiesOf, getDefinition, isConnector } from '../model/registry.ts';
 import { DEFAULT_TEXT_COLOR, PALETTE } from '../model/defaults.ts';
 import { updateElements } from '../store/commands.ts';
 import { insertColumn, insertRow, removeColumn, removeRow } from '../render/shapes/table.ts';
@@ -191,7 +191,8 @@ export class StylePanel {
     // it, and the update simply skips elements that cannot.
     const capabilities = selected.map((element) => capabilitiesOf(element));
     const anyText = capabilities.some((capability) => capability.text || capability.label);
-    const anyLinear = selected.some((element) => element.type === 'line' || element.type === 'arrow');
+    // The first connector, whose curve and arrowheads the controls report.
+    const linear = selected.find(isConnector);
     const anyFillable = selected.some(
       (element) => element.type !== 'draw' && element.type !== 'line' && element.type !== 'arrow' && element.type !== 'text',
     );
@@ -295,11 +296,7 @@ export class StylePanel {
       );
     }
 
-    if (anyLinear) {
-      const linear = selected.find(
-        (element) => element.type === 'line' || element.type === 'arrow',
-      ) as Extract<MindflowElement, { type: 'line' | 'arrow' }>;
-
+    if (linear) {
       this.body.append(
         this.buttonRow(
           'Line shape',
@@ -462,7 +459,7 @@ export class StylePanel {
   private updateLinear(patch: Record<string, unknown>): void {
     const ids = this.store
       .selectedElements()
-      .filter((element) => element.type === 'line' || element.type === 'arrow')
+      .filter(isConnector)
       .map((element) => element.id);
     if (ids.length === 0) return;
     this.store.execute(

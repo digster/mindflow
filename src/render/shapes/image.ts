@@ -96,6 +96,7 @@ export const imageDefinition: ElementDefinition<ImageElement> = {
     resizable: true,
     rotatable: true,
     bindable: true,
+    connector: false,
   },
 
   create(init: ElementInit): ImageElement {

@@ -168,6 +168,7 @@ function definePolygon<T extends PolygonElement>(
       resizable: true,
       rotatable: true,
       bindable: true,
+      connector: false,
     },
 
     create(init: ElementInit): T {
