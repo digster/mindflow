@@ -212,6 +212,18 @@ period, which is what keeps Cmd+V working in WebKit. The gate is DOM-free for th
 same reason as the pinch code: Playwright's Chromium only produces one of the
 possible arrival orders.
 
+**Keyboard shortcuts are one `window` listener, and overlays opt out by
+position.** `input/keyboard.ts` handles keydown on `window` in the bubble phase
+and skips only typing targets (inputs, textareas, contenteditable). Anything
+else that takes keys has to stop them before they get there.
+[`src/ui/popover.ts`](src/ui/popover.ts) does this once for every popover (the
+context menu, command palette, find bar, shape flyout and recent-boards menu).
+It stops the propagation of unmodified keydowns at the popover root, so
+Cmd/Ctrl chords still reach the app. It also takes Escape on `window` in the
+*capture* phase, so dismissing a popover never also deselects. The shortcut
+handler does not read `defaultPrevented`, so `preventDefault` alone isolates
+nothing.
+
 ## Text editing
 
 The highest-risk code in the app: two independent text layout engines — Canvas 2D

@@ -881,10 +881,28 @@ nudges on arrows, deletes on Backspace and switches tools on letters. Space is
 worse. Space-to-pan cancels the keydown, so Space stops activating the focused
 button at all.
 
-**Fix, as the recent-boards menu does it:** a keydown listener on the popover
-element stops propagation of **unmodified** keys, so `Cmd+S` and other chords
-still reach the app. Escape is unaffected: `Popover` takes it in the capture
-phase, before any of this. The context menu still has the bug as of this entry.
+**Fix:** the `Popover` constructor puts one keydown listener on its root that
+stops the propagation of every key pressed without `Cmd`/`Ctrl`. Chords such as
+`Cmd+S` and `Cmd+Z` still reach the app. Escape is unaffected, because `Popover`
+takes it in the capture phase, before any of this. The fix started as a local
+listener in the recent-boards menu, and the context menu kept the bug until it
+moved into `Popover`. Doing it per consumer meant each new popover had to
+rediscover it.
+
+Three details that are easy to get wrong:
+
+- **Stop `Alt` chords too.** The first version let any modifier through, but
+  the shortcut handler ignores `Alt` on arrows and `Delete`, so `Alt`+`↓` still
+  nudged. Only `Cmd`/`Ctrl` chords need the app.
+- **Leave `keyup` alone.** Space-to-pan ends on `keyup`. Swallowing it inside a
+  menu could strand the board in pan mode.
+- **`stopPropagation`, not `preventDefault`.** The browser's defaults must still
+  run, because Space presses the focused button and Tab moves focus. Only the
+  page's own listeners are meant to miss the key.
+
+The e2e tests right-click, press keys and then assert on the *document*. The
+menu's own highlight moving proves nothing, because it moved in the broken
+version too.
 
 ---
 
@@ -896,3 +914,18 @@ read up front, and the contents come from a second IndexedDB read after the
 click. A test that clicks and immediately reads the document, or presses
 `Cmd+A`, sees the previous board. Use `expect.poll` on the document, as the
 recent-boards tests do.
+
+---
+
+## `npm run serve` and `npm run dev` overwrite the committed `index.html`
+
+The watch modes write to the same `index.html` as `npm run build`, as an
+unminified dev build (about 430 kB and 11,000 lines, against 207 kB and 78
+lines). Build, then start a preview (the in-app browser's launch config runs
+`npm run serve`), and the diff suddenly shows thousands of changed lines in the
+artifact. The tests do not catch it: the dev build is functionally the same and
+passes the whole e2e suite.
+
+**Rule:** run `npm run build` *after* the last dev server has stopped, and check
+`git diff --stat index.html` before committing. A source change of a few lines
+should move the artifact by a few lines.

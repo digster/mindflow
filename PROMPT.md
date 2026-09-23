@@ -286,3 +286,23 @@ board (capped at ten), and the logo opens a menu of them. Decisions confirmed
 with the user: list every recent board, not only unsaved ones; leaving a board
 keeps its copy; declining startup recovery ("Start blank") keeps it too, and
 only the board on screen at the end of the last session is ever offered.
+
+---
+
+## 2026-09-23 — Arrow keys in the context menu nudged the selection
+
+> In MindFlow, arrow keys pressed while the right-click context menu is open also
+> nudge the selected element on the board. […] Task: apply the same isolation to
+> the context menu, ideally by moving it into the shared `Popover` class, or
+> behind an option on it, so every popover gets it. Check that the command
+> palette and find bar still work […]. Then remove the now-redundant local
+> listener in `recentBoards.ts`. Add a Playwright e2e test in
+> `test/e2e/board.spec.ts` ("context menu" describe block): right-click a shape,
+> press ArrowDown, and assert the element did not move. […] Rebuild with
+> `npm run build` and commit the built `index.html` with the change, run
+> `npm run typecheck`, `npm test` and `npm run test:e2e`, and add a LEARNINGS.md
+> entry. Generate a commit message but do not commit.
+
+`Popover` now stops the propagation of every keydown without Cmd/Ctrl at its
+root, so all five popovers get it. The recent-boards menu's local copy of the
+listener is gone.

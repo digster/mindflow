@@ -134,16 +134,10 @@ export function showRecentBoardsMenu(options: RecentBoardsMenuOptions): Popover 
   // button can hold it. So the index follows focus rather than only the arrows,
   // and Enter presses whatever is focused — pressing "the highlighted board"
   // while a remove button is focused would open a board the user did not pick.
+  //
+  // `Popover` already keeps these keys from reaching the app's shortcuts, so
+  // arrowing here cannot also nudge the selection behind the menu.
   let index = 0;
-  // The app's shortcuts listen on `window`, further along the bubble path. With
-  // focus in here an arrow key would also nudge the selection behind the menu,
-  // Delete would delete it, a letter would switch tools and Space would start a
-  // pan instead of pressing the focused button. Chords with a modifier still go
-  // through, so Cmd+S saves as it does anywhere else. Escape never reaches this:
-  // the popover takes it in the capture phase.
-  popover.element.addEventListener('keydown', (event) => {
-    if (!event.metaKey && !event.ctrlKey && !event.altKey) event.stopPropagation();
-  });
   popover.element.addEventListener('focusin', (event) => {
     const focused = openButtons.indexOf(event.target as HTMLButtonElement);
     if (focused !== -1) index = focused;

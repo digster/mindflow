@@ -9,6 +9,7 @@
  * the dismissal behaviour a modal gives away has to be written out once:
  *
  *   - dismiss on outside `pointerdown`, on `Escape`, and when the window blurs;
+ *   - keep its own pointer presses and unmodified keys away from the board;
  *   - restore focus to whatever had it before opening;
  *   - keep exactly one popover open at a time;
  *   - flip and clamp so the panel is never placed off-screen.
@@ -67,6 +68,27 @@ export class Popover {
     // Canvas gestures listen on the canvas itself, which is underneath. Without
     // this the pointerdown that lands on a menu item also starts a marquee.
     this.element.addEventListener('pointerdown', (event) => event.stopPropagation());
+
+    // The keyboard equivalent. The app's shortcuts listen on `window`, further
+    // along the bubble path, and skip only typing targets — a menu button is not
+    // one. So with focus in here, an arrow key that moves the highlight would
+    // also nudge the selection behind the popover, Backspace would delete it, a
+    // letter would switch tools and Space would start a pan instead of pressing
+    // the focused button. `preventDefault` in a key handler here does not help:
+    // the shortcut handler never checks `defaultPrevented`.
+    //
+    // Only Cmd/Ctrl chords go through. They are deliberate commands (Cmd+S,
+    // Cmd+Z) and keep working with a popover open. Alt alone is not enough to
+    // pass, because the shortcut handler ignores Alt on arrows and Delete. This
+    // is `stopPropagation`, not `preventDefault`, so the browser still does
+    // what it would anyway: Space presses a button and Tab moves focus.
+    //
+    // Escape never gets this far — `onWindowKeyDown` takes it in the capture
+    // phase. `keyup` is deliberately left alone: space-to-pan ends on keyup, and
+    // swallowing it could leave the board stuck panning.
+    this.element.addEventListener('keydown', (event) => {
+      if (!event.metaKey && !event.ctrlKey) event.stopPropagation();
+    });
 
     document.body.append(this.element);
     this.position(options.at, options.align ?? 'start');
@@ -157,6 +179,10 @@ export function isPopoverOpen(): boolean {
  * Shared because all three consumers present a vertical list that responds to
  * the same four keys, and because the "wrap around at the ends" detail is easy
  * to get subtly wrong twice.
+ *
+ * It only calls `preventDefault`. Keeping those keys from the app's `window`
+ * shortcuts is `Popover`'s job, so `target` has to live inside one — used
+ * anywhere else, every arrow press would also nudge the selection.
  */
 export function installListNavigation(options: {
   /** The element that receives the key events — the panel, or a search input. */

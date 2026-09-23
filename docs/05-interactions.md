@@ -563,6 +563,13 @@ Two rules govern shortcut handling:
 2. **Never override a browser shortcut the user relies on** — `Cmd+R`, `Cmd+T`,
    `Cmd+W`, `Cmd+L` all fall through untouched.
 
+While a floating menu has keyboard focus (the context menu, the shape flyout,
+recent boards, the command palette or the find bar), **its unmodified keys
+belong to it**. They never reach the shortcuts above, so arrow keys, `Delete`,
+tool letters and `Space` act on the menu and not on the board behind it.
+`Cmd`/`Ctrl` chords still go through, and `Escape` closes the menu without also
+deselecting.
+
 ## Clipboard
 
 Copy writes to **both** the system clipboard (as JSON tagged with a private
@@ -629,6 +636,10 @@ layer the toolbar and keyboard use, so behaviour cannot drift between routes.
 - On a **locked** element the menu collapses to a single **Unlock**, matching the
   style panel. This is the other half of the escape hatch described above.
 - `Escape` dismisses the menu without clearing the selection.
+- The arrow keys, `Home` and `End` move the highlight, and `Enter` or `Space`
+  runs the highlighted entry. Unmodified keys stay in the menu, so an arrow key
+  does not also nudge the selection behind it and a letter does not switch
+  tools. Chords such as `Cmd+S` and `Cmd+Z` still work.
 - On a **table** the menu gains row and column entries for the cell that was
   right-clicked. These are the only commands in the app that depend on *where*
   the click landed rather than on what is selected, which is why they live here

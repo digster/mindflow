@@ -1040,6 +1040,64 @@ test.describe('context menu', () => {
 
     expect((await getDocument(page)).elements).toHaveLength(1);
   });
+
+  test('keeps its keys to itself instead of driving the board behind it', async ({ page }) => {
+    // The app's shortcuts listen on `window`. A key the menu handles still
+    // bubbles there unless the popover stops it, and a menu button is not a
+    // typing target — so ArrowDown also nudged the selected shape 1px, Backspace
+    // deleted it and a letter switched tools, all with the menu still open.
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+    const before = (await getDocument(page)).elements[0];
+
+    await rightClick(page, [170, 150]);
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.press('r');
+
+    // The keys did reach the menu: two presses from "nothing highlighted" land
+    // on the second enabled entry.
+    await expect(page.locator('.mf-menu .mf-menu-item.is-active')).toHaveText(/^Copy/);
+    await expect(page.locator('[data-tool="select"]')).toHaveClass(/is-active/);
+
+    const after = (await getDocument(page)).elements;
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ x: before!.x, y: before!.y });
+  });
+
+  test('Space presses the highlighted entry rather than starting a pan', async ({ page }) => {
+    // Space-to-pan cancels the keydown, which is also what stops a focused
+    // button from activating on the matching keyup.
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+
+    await rightClick(page, [170, 150]);
+    // Cut, Copy, Duplicate.
+    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+    await expect(page.locator('.mf-menu .mf-menu-item.is-active')).toHaveText(/^Duplicate/);
+    await page.keyboard.press('Space');
+
+    await expect(page.locator('.mf-menu')).toHaveCount(0);
+    expect((await getDocument(page)).elements).toHaveLength(2);
+  });
+
+  test('still lets Cmd/Ctrl chords through to the app', async ({ page }) => {
+    // Isolation stops at unmodified keys. A chord is a deliberate command, and
+    // Cmd+S or Cmd+Z should not stop working because a menu happens to be open.
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await page.locator('[data-tool="select"]').click();
+
+    // The menu focuses its own panel on opening, so the chord starts inside it.
+    await rightClick(page, [170, 150]);
+    await expect(page.locator('.mf-menu')).toBeFocused();
+    await page.keyboard.press('ControlOrMeta+z');
+
+    expect((await getDocument(page)).elements).toHaveLength(0);
+  });
 });
 
 test.describe('style clipboard', () => {
@@ -1829,6 +1887,21 @@ test.describe('the shape flyout', () => {
     await page.keyboard.press('Enter');
 
     await expect(page.locator('[data-tool="pyramid"]')).toHaveClass(/is-active/);
+  });
+
+  test('with focus inside, letters stay out of the tool shortcuts and Space picks', async ({ page }) => {
+    // The isolation lives in `Popover`, not in any one menu, so the flyout gets
+    // it too: `e` must not switch to the eraser behind the grid, and Space must
+    // press the focused option instead of being eaten by space-to-pan.
+    await page.getByRole('button', { name: 'More shapes' }).click();
+    await page.locator('.mf-shape-option[data-shape="hexagon"]').focus();
+
+    await page.keyboard.press('e');
+    await expect(page.locator('[data-tool="select"]')).toHaveClass(/is-active/);
+
+    await page.keyboard.press('Space');
+    await expect(page.locator('.mf-shape-flyout')).toHaveCount(0);
+    await expect(page.locator('[data-tool="hexagon"]')).toHaveClass(/is-active/);
   });
 });
 
