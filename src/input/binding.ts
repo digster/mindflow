@@ -247,6 +247,28 @@ export function connectorsToRefresh(
   return updated;
 }
 
+/**
+ * `ids` plus every connector bound to any of them — the set a move must keep
+ * object snapping away from.
+ *
+ * A bound connector is not a stable neighbour while its target moves: it is
+ * re-routed from the target's new position on every frame. Snapping the target
+ * to it therefore feeds each frame's result into the next. The target runs ahead
+ * of the pointer until the snap radius is exceeded, then lurches back, which on
+ * screen is a shape vibrating as it is dragged.
+ *
+ * Every bound connector is excluded, not only those whose box happens to sit
+ * near the target: whichever end is bound, its geometry depends on the drag.
+ */
+export function withBoundConnectors(
+  document: MindflowDocument,
+  ids: ReadonlySet<ElementId>,
+): Set<ElementId> {
+  const result = new Set(ids);
+  for (const connector of connectorsBoundTo(document, ids)) result.add(connector.id);
+  return result;
+}
+
 /** All connectors bound to any of the given elements, for highlighting. */
 export function connectorsBoundTo(
   document: MindflowDocument,

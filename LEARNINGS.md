@@ -929,3 +929,31 @@ passes the whole e2e suite.
 **Rule:** run `npm run build` *after* the last dev server has stopped, and check
 `git diff --stat index.html` before committing. A source change of a few lines
 should move the artifact by a few lines.
+
+---
+
+## Snapping to geometry that follows the drag is a feedback loop
+
+**Symptom:** a shape with an arrow attached vibrates while it is dragged. Crept
+slowly, it visibly runs ahead of the pointer: about 1.18 units of travel per
+pixel of mouse movement in the reproduction.
+
+**Cause:** object snapping excluded the moving elements, and nothing else. A
+connector bound to a moving shape is re-routed from that shape on every frame,
+so its box always ends `gap` units from the edge being dragged, well inside the
+6px snap radius. Frame N snapped the shape to where frame N−1 had put the
+arrow, the arrow followed, and frame N+1 snapped to that. The move gesture
+recomputes from the pointerdown state precisely so that frames cannot feed
+each other, and the snap candidates quietly reintroduced that dependency
+through the live document.
+
+**Fix:** `withBoundConnectors` in `input/binding.ts` extends the exclusion set
+with every connector bound to a moving element, captured once at pointerdown.
+
+**The general rule:** a snap target is only valid if the drag cannot move it.
+Anything whose geometry is *derived* from the moving set belongs in the
+exclusion set, not only the moving set itself. That applies to any future
+derived geometry too, such as a label that tracks its container. The e2e test
+creeps the shape one pixel per step and asserts it moves exactly with the
+pointer. A single long drag does not catch this, because the final position
+can still land correctly.

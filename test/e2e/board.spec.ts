@@ -673,6 +673,44 @@ test.describe('connectors', () => {
     expect(JSON.stringify(after.points)).not.toBe(before);
   });
 
+  test('moving a bound shape tracks the pointer instead of snapping to its own arrow', async ({ page }) => {
+    // The arrow's box is re-derived from the shape every frame, so snapping to
+    // it fed each frame's position into the next: the shape ran ahead of the
+    // pointer and then lurched back, which is the vibration users saw.
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 200], [240, 300]);
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [500, 200], [640, 300]);
+    await page.locator('[data-tool="arrow"]').click();
+    // Ends just inside the target's left edge, so the arrow's box finishes a
+    // few units from the edge being dragged: well inside the snap radius.
+    await drag(page, [170, 250], [505, 230]);
+    await page.keyboard.press('Escape');
+
+    const targetX = () =>
+      page.evaluate(
+        () =>
+          (window as unknown as { mindflow: { store: { document: { elements: { x: number }[] } } } }).mindflow.store
+            .document.elements[1]!.x,
+      );
+
+    // Grab the top edge, clear of the corner handles, and creep right a pixel
+    // at a time.
+    const box = await canvasBox(page);
+    await page.mouse.move(box.x + 570, box.y + 200);
+    await page.mouse.down();
+    const seen: number[] = [];
+    for (let step = 1; step <= 20; step++) {
+      await page.mouse.move(box.x + 570 + step, box.y + 200);
+      seen.push(await targetX());
+    }
+    await page.mouse.up();
+
+    // Below the 3px drag threshold nothing moves; after it, exactly the pointer.
+    const expected = Array.from({ length: 20 }, (_, i) => (i + 1 < 3 ? 500 : 500 + i + 1));
+    expect(seen).toEqual(expected);
+  });
+
   test('discards a zero-length connector', async ({ page }) => {
     await page.locator('[data-tool="arrow"]').click();
     const box = await canvasBox(page);

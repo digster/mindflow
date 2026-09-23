@@ -28,7 +28,9 @@ import {
   findBindTarget,
   refreshConnector,
   resolveBindingPoint,
+  withBoundConnectors,
 } from '../../src/input/binding.ts';
+import { computeSnap } from '../../src/input/snapping.ts';
 import {
   applyFrameToElements,
   resizeFrame,
@@ -276,6 +278,38 @@ describe('connectorsToRefresh', () => {
     connector.endBinding = { elementId: b.id, anchor: { mode: 'auto' }, gap: 0 };
 
     expect(connectorsToRefresh(doc(b, connector), new Set([b.id, connector.id]))).toHaveLength(0);
+  });
+});
+
+describe('withBoundConnectors', () => {
+  it('adds connectors bound at either end, and nothing else', () => {
+    const a = rect(0, 0, 100, 100, 1000);
+    const b = rect(300, 0, 100, 100, 2000);
+    const fromB = { ...arrow({ x: 350, y: 50 }, { x: 600, y: 50 }, 3000) };
+    fromB.startBinding = { elementId: b.id, anchor: { mode: 'auto' }, gap: 0 };
+    const intoB = { ...arrow({ x: 50, y: 50 }, { x: 350, y: 50 }, 3001) };
+    intoB.endBinding = { elementId: b.id, anchor: { mode: 'auto' }, gap: 0 };
+    const unrelated = { ...arrow({ x: 50, y: 50 }, { x: 50, y: 400 }, 3002) };
+    unrelated.startBinding = { elementId: a.id, anchor: { mode: 'auto' }, gap: 0 };
+
+    const result = withBoundConnectors(doc(a, b, fromB, intoB, unrelated), new Set([b.id]));
+    expect([...result].sort()).toEqual([b.id, fromB.id, intoB.id].sort());
+  });
+
+  it('keeps a moving shape from snapping to its own connector', () => {
+    // The feedback loop behind the vibration: the connector's box ends a gap
+    // away from B, well inside the snap radius, and moves whenever B does.
+    const a = rect(0, 0, 100, 100, 1000);
+    const b = rect(300, 0, 100, 100, 2000);
+    let connector = { ...arrow({ x: 50, y: 50 }, { x: 350, y: 30 }, 3000) };
+    connector.endBinding = { elementId: b.id, anchor: { mode: 'fixed', u: 0, v: 0.3 }, gap: 4 };
+    connector = refreshConnector(doc(a, b, connector), connector);
+    const document = doc(a, b, connector);
+    const nudged = [{ ...b, x: 301 }];
+
+    // Excluding only the moving shape still lets the connector pull it.
+    expect(computeSnap(document, nudged, new Set([b.id]), 1, true).dx).not.toBe(0);
+    expect(computeSnap(document, nudged, withBoundConnectors(document, new Set([b.id])), 1, true).dx).toBe(0);
   });
 });
 

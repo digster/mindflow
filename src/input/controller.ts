@@ -83,6 +83,7 @@ import {
   createBinding,
   findBindTarget,
   refreshConnector,
+  withBoundConnectors,
 } from './binding.ts';
 import {
   ROTATION_SNAP_DEGREES,
@@ -118,7 +119,17 @@ type Gesture =
   | { kind: 'none' }
   | { kind: 'pan'; startScreen: Point; startViewport: Viewport }
   | { kind: 'marquee'; origin: Point; additive: boolean }
-  | { kind: 'move'; origin: Point; originals: MindflowElement[] }
+  | {
+      kind: 'move';
+      origin: Point;
+      originals: MindflowElement[];
+      /**
+       * What object snapping must ignore: the moving elements themselves, and
+       * every connector bound to them. Captured once at pointerdown — see
+       * `withBoundConnectors` for why the connectors are in here.
+       */
+      snapExclude: ReadonlySet<ElementId>;
+    }
   | {
       kind: 'resize';
       handle: Exclude<HandleId, 'rotate'>;
@@ -448,7 +459,12 @@ export class InteractionController {
     const movingIds = withFrameMembers(store.document, dragged.map((el) => el.id));
     const moving = store.document.elements.filter((el) => movingIds.has(el.id));
     if (moving.length > 0 && canTransform(dragged)) {
-      this.gesture = { kind: 'move', origin: scene, originals: moving.map((el) => ({ ...el })) };
+      this.gesture = {
+        kind: 'move',
+        origin: scene,
+        originals: moving.map((el) => ({ ...el })),
+        snapExclude: withBoundConnectors(store.document, movingIds),
+      };
     }
   }
 
@@ -738,7 +754,7 @@ export class InteractionController {
   private updateMove(scene: Point, event: PointerEvent): void {
     if (this.gesture.kind !== 'move') return;
     const { store } = this.options;
-    const { origin, originals } = this.gesture;
+    const { origin, originals, snapExclude } = this.gesture;
 
     let dx = scene.x - origin.x;
     let dy = scene.y - origin.y;
@@ -751,9 +767,12 @@ export class InteractionController {
 
     let moved = translateElements(originals, dx, dy);
 
-    // Alt suspends snapping, so exact placement is always possible.
+    // Alt suspends snapping, so exact placement is always possible. Snapping
+    // skips `snapExclude` rather than just the moving ids: a bound connector is
+    // re-routed from the moving shape every frame, so aligning to it would feed
+    // each frame's result into the next and the shape would vibrate.
     const ids = new Set(originals.map((el) => el.id));
-    const snap = computeSnap(store.document, moved, ids, store.viewport.zoom, !event.altKey);
+    const snap = computeSnap(store.document, moved, snapExclude, store.viewport.zoom, !event.altKey);
     if (snap.dx !== 0 || snap.dy !== 0) moved = translateElements(originals, dx + snap.dx, dy + snap.dy);
     this.guides = snap.guides;
 

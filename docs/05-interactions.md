@@ -404,6 +404,13 @@ box, so it is visible *what* aligned to *what*.
 
 Considers at most 200 nearby elements, which bounds cost on very large boards.
 
+**Never snaps to a connector bound to anything being moved.** Such a connector is
+re-routed from the moving shape on every frame, so it is not a fixed neighbour.
+Aligning to it fed each frame's position into the next one. The shape ran ahead of
+the pointer, then jumped back once the snap radius was exceeded, which looked like
+a shape vibrating as it was dragged. The exclusion set is taken at pointerdown:
+the moving elements plus every connector bound to one of them at either end.
+
 ### 2. Grid snap
 
 Active only when `canvas.grid.snap` is true. Rounds the moving box's top-left to
