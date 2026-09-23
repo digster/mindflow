@@ -85,7 +85,8 @@ Some stored values do not directly give a rendered position. An arrow with
 The where is recomputed from the target's current geometry.
 
 Every such computation is specified in [07-rendering.md](07-rendering.md):
-auto-anchor resolution, elbow routing, curve smoothing, and text wrapping. Without
+auto- and focus-anchor resolution, elbow routing, curve smoothing, and text
+wrapping. Without
 those, a file containing a bound arrow would be uninterpretable outside MindFlow,
 which would defeat the entire purpose of the format.
 

@@ -15,7 +15,7 @@ import type { ElementDefinition, ElementInit, RenderContext } from '../../model/
 import { registerElement } from '../../model/registry.ts';
 import type { BaseElement, DiamondElement, Point } from '../../model/types.ts';
 import { DEFAULT_STYLE, newElementId } from '../../model/defaults.ts';
-import { distanceToPolyline, pointInPolygon } from '../../model/geometry.ts';
+import { distanceToPolyline, pointInPolygon, polygonOutlineIntersect } from '../../model/geometry.ts';
 import { drawLabel, hasFill, paintPath, tracePoints } from './shared.ts';
 import { roughOutlineFor } from '../rough.ts';
 
@@ -92,18 +92,17 @@ export const diamondDefinition: ElementDefinition<DiamondElement> = {
   },
 
   /**
-   * Where a ray from the centre crosses one of the four edges.
+   * Where a ray last crosses one of the four edges.
    *
-   * For the rhombus `|x|/a + |y|/b = 1` with `a = w/2`, `b = h/2`, substituting
-   * `(t·dx, t·dy)` gives `t = 1 / (|dx|/a + |dy|/b)` directly — no per-edge
-   * search needed.
+   * From the centre there is a closed form — substituting `(t·dx, t·dy)` into the
+   * rhombus `|x|/a + |y|/b = 1` gives `t = 1 / (|dx|/a + |dy|/b)` — and 1.5.0
+   * and earlier used it. A `focus` anchor casts from an arbitrary point, where
+   * the absolute values no longer collapse to one case, so the diamond now uses
+   * the per-edge solver the flat polygons share. From the centre the two agree
+   * to floating-point precision, so no existing `auto` connector moves.
    */
-  outlineIntersect(el: DiamondElement, direction: Point): Point {
-    const a = el.width / 2;
-    const b = el.height / 2;
-    const denominator = Math.abs(direction.x) / a + Math.abs(direction.y) / b;
-    const t = denominator === 0 ? 0 : 1 / denominator;
-    return { x: a + direction.x * t, y: b + direction.y * t };
+  outlineIntersect(el: DiamondElement, direction: Point, origin: Point): Point | null {
+    return polygonOutlineIntersect(vertices(el), origin, direction);
   },
 };
 

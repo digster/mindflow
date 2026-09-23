@@ -426,6 +426,82 @@ should preserve it as an unknown type.
 
 ---
 
+## 1.6.0 — 2026-09-23
+
+Adds the `focus` connector anchor mode and generalises the outline ray to start
+anywhere inside a shape. Additive: every 1.5.0 file is a valid 1.6.0 file.
+
+### Added
+
+**`{"mode": "focus", "u": …, "v": …}`** — an anchor that aims at a stored point
+inside its target instead of at the target's centre. The tip lands where the ray
+from that point toward the connector's other end last crosses the outline, plus
+the gap along the same ray. `u` and `v` are normalised to the box exactly as for
+`fixed`. Specified in [07-rendering.md](07-rendering.md#resolving-one-endpoint).
+
+MindFlow writes it when a connector end is dropped inside a shape, but not near
+its centre (see [05-interactions.md](05-interactions.md#connector-binding)).
+
+**Why.** Until 1.5.0 there were two answers to "where does this end attach?",
+and neither remembered where it was put. `fixed` pins the tip, which is right on
+the outline and wrong inside it, because the tip would sit inside the shape.
+`auto` aims through the centre, so every drop inside a shape landed on the same
+spot on its outline: the one facing the other shape's centre. Drawing an arrow
+from the lower right of a box, then from the upper left, gave the same arrow
+twice. `focus` keeps the line that was drawn and trims it at the outline, and it
+keeps aiming through the same point as either shape moves, so the tip slides
+around the outline instead of staying glued to one spot. That is how Excalidraw
+behaves, and it was the reported expectation.
+
+**Why a new mode rather than optional fields on `auto`.** `auto` is exactly
+`focus` at `(0.5, 0.5)`, so `{"mode": "auto", "u": …, "v": …}` would have
+worked. But every other variant of `anchor` has a fixed shape, which keeps the
+schema a plain `oneOf` and makes each variant's meaning readable from its `mode`
+alone. `auto` also stays the natural choice for a script or a language model
+writing a board, since it needs no numbers.
+
+### Changed
+
+**The outline ray may start anywhere inside the box.** It was always cast from
+the centre. It now starts from an origin `o` — the centre for `auto`, the focus
+point for `focus` — and the crossing is the **last** one along the ray. Each
+shape's rule is restated for an arbitrary origin in
+[07-rendering.md](07-rendering.md#casting-a-ray-at-the-outline): the rectangle
+per wall, the ellipse as a quadratic, and the diamond joins the flat polygons'
+per-edge rule, because the rhombus has no single closed form away from its
+centre. From the centre each reduces to its 1.5.0 formula, so **no `auto` anchor
+resolves differently**.
+
+**A bound far end is aimed at by its anchor point, not its target's centre.**
+When both ends of a connector are bound, each `auto` or `focus` end aims at what
+the other end's anchor aims at: the centre for `auto`, the `(u, v)` point for
+`focus` and `fixed`. Before, the other end always contributed its target's
+centre. The rules agree whenever the far end is `auto`. They differ when it is
+`fixed`: the near end now points straight at the pinned spot instead of past it
+at the centre. Without this change, a `focus` end facing a `fixed` end would not
+lie on the line that was drawn either, which would defeat the point of adding it.
+
+### Migration: 1.5.0 → 1.6.0
+
+Identity. A 1.5.0 file contains no `focus` anchors, and its stored points are a
+cache of the route, so nothing in the file needs rewriting. A connector between
+an `auto` end and a `fixed` end takes the new reference rule the next time
+either shape moves, and may re-angle slightly when it does.
+
+### Notes for implementers
+
+- Clamp a focus point's `u` and `v` to `[0, 1]` before casting from it. The
+  rectangle rule is only defined for an origin inside the box.
+- A focus point inside the box can still lie outside a non-rectangular outline,
+  such as the corner of an ellipse's box or the notch of a star. A ray from
+  there that points away from the shape has no crossing, so resolve it as
+  `auto`.
+- A 1.5.0 reader that meets `"mode": "focus"` should treat it as `auto`, as
+  MindFlow's own 1.5.0 loader does with any mode it does not know. The end then
+  attaches to the right shape, just not at the remembered spot.
+
+---
+
 ## Unreleased
 
 Candidates under consideration, in rough priority order:

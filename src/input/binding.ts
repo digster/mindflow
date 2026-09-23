@@ -8,7 +8,7 @@
  * ---------------------------------------------------------------------------
  * Why the algorithms here are part of the published contract
  * ---------------------------------------------------------------------------
- * A saved connector with `"anchor": {"mode": "auto"}` does NOT store where its
+ * A saved connector with an `auto` or `focus` anchor does NOT store where its
  * endpoint actually lands — that position is computed from the target's current
  * geometry. Any tool that wants to render such a file correctly must reproduce
  * this computation exactly. It is therefore specified in `docs/07-rendering.md`,
@@ -17,6 +17,7 @@
 
 import type {
   Binding,
+  BindingAnchor,
   ElementId,
   LinearElement,
   MindflowDocument,
@@ -31,6 +32,7 @@ import {
   expandAABB,
   localToWorld,
   normalizePathBounds,
+  outlineCrossing,
   pointInAABB,
   rayIntersectElementOutline,
   worldToLocal,
@@ -45,6 +47,24 @@ export const BIND_DISTANCE = 12;
 
 /** Default clearance between a shape's outline and a connector tip. */
 export const DEFAULT_BIND_GAP = 4;
+
+/**
+ * Normalised distance from the centre, per axis, within which a drop aims at the
+ * exact centre (`auto`) rather than being remembered as a `focus` point.
+ *
+ * Without it a drop a few pixels off-centre is kept faithfully, and an arrow
+ * meant to be radial comes out visibly skewed once its shapes move. Normalised
+ * rather than in scene units for the same reason as the outline band below: it
+ * scales with the shape, so it is equally easy to hit on a small sticky and a
+ * large frame.
+ */
+export const CENTRE_SNAP = 0.1;
+
+/**
+ * Normalised width of the band along the box edge where a drop pins a `fixed`
+ * anchor. Inside it, and outside the centre zone, a drop becomes a `focus`.
+ */
+const OUTLINE_BAND = 0.15;
 
 /**
  * The shape a connector endpoint at `world` should bind to, or null.
@@ -73,26 +93,79 @@ export function findBindTarget(
 /**
  * Creates a binding from a drop position.
  *
- * Dropping inside a shape produces an `auto` anchor, which tracks the other end
- * and always attaches to the nearest edge — the behaviour people expect by
- * default. Dropping precisely on the outline produces a `fixed` anchor pinned to
- * that spot, for when a specific attachment point matters.
+ * Three zones, from the middle outwards:
+ *
+ *   - **Near the centre** → `auto`. The connector aims through the exact centre,
+ *     which is what someone dragging from the middle of a box means.
+ *   - **Elsewhere inside** → `focus`, remembering the drop point. The tip lands
+ *     where the line the user drew crosses the outline, and keeps aiming at
+ *     that point as the shapes move — the connector respects where it was
+ *     placed, instead of every drop inside a shape collapsing to one spot.
+ *   - **Near or beyond the outline** → `fixed`, pinned to that exact spot, for
+ *     when a specific attachment point matters.
  */
 export function createBinding(target: MindflowElement, world: Point): Binding {
   const local = worldToLocal(target, world);
   const u = target.width === 0 ? 0.5 : local.x / target.width;
   const v = target.height === 0 ? 0.5 : local.y / target.height;
+  return { elementId: target.id, anchor: anchorForDrop(u, v), gap: DEFAULT_BIND_GAP };
+}
 
-  // Comfortably inside → auto. Near or beyond the outline → pin it.
-  const inside = u > 0.15 && u < 0.85 && v > 0.15 && v < 0.85;
+/**
+ * The bindings for a connector drawn from `start` to `end`, both in world space.
+ *
+ * Each end binds to whatever shape it lands on, as {@link createBinding}
+ * decides, with one exception. When both ends land on the SAME shape, only a
+ * `fixed` end binds. An `auto` or `focus` end aims through its shape at the
+ * other end, and that makes no sense when the other end is inside the same
+ * shape. Two focus ends would each shoot out past the opposite edge, so the
+ * arrow comes out reversed. Two auto ends (the only option before 1.6.0) both
+ * aimed at the centre, so the arrow collapsed there. Leaving such an end free
+ * keeps the arrow exactly as drawn, which is what an arrow sketched inside a
+ * frame wants. Pinned ends aim at nothing, so an edge-to-edge loop still binds.
+ */
+export function bindConnectorEnds(
+  document: MindflowDocument,
+  start: Point,
+  end: Point,
+  excludeIds: ReadonlySet<ElementId>,
+): { startBinding: Binding | null; endBinding: Binding | null } {
+  const startTarget = findBindTarget(document, start, excludeIds);
+  const endTarget = findBindTarget(document, end, excludeIds);
+  const startBinding = startTarget ? createBinding(startTarget, start) : null;
+  const endBinding = endTarget ? createBinding(endTarget, end) : null;
 
-  return {
-    elementId: target.id,
-    anchor: inside
-      ? { mode: 'auto' }
-      : { mode: 'fixed', u: Math.min(Math.max(u, 0), 1), v: Math.min(Math.max(v, 0), 1) },
-    gap: DEFAULT_BIND_GAP,
-  };
+  if (!startTarget || startTarget !== endTarget) return { startBinding, endBinding };
+  const pinnedOnly = (binding: Binding | null) => (binding?.anchor.mode === 'fixed' ? binding : null);
+  return { startBinding: pinnedOnly(startBinding), endBinding: pinnedOnly(endBinding) };
+}
+
+/** The anchor a drop at normalised `(u, v)` on the target's box produces. */
+function anchorForDrop(u: number, v: number): BindingAnchor {
+  const inside =
+    u > OUTLINE_BAND && u < 1 - OUTLINE_BAND && v > OUTLINE_BAND && v < 1 - OUTLINE_BAND;
+  if (!inside) return { mode: 'fixed', u: clampUnit(u), v: clampUnit(v) };
+
+  const nearCentre = Math.abs(u - 0.5) <= CENTRE_SNAP && Math.abs(v - 0.5) <= CENTRE_SNAP;
+  return nearCentre ? { mode: 'auto' } : { mode: 'focus', u, v };
+}
+
+function clampUnit(value: number): number {
+  return Math.min(Math.max(value, 0), 1);
+}
+
+/**
+ * The world point an anchor aims at: the target's centre for `auto`, and the
+ * stored `(u, v)` spot for `focus` and `fixed`.
+ *
+ * This is what the OTHER end of a connector aims at when both ends are bound —
+ * see {@link refreshConnector}. It depends only on the target and the stored
+ * anchor, never on where either tip currently is, which is what keeps the
+ * two-ended case closed-form.
+ */
+export function anchorAimPoint(target: MindflowElement, anchor: BindingAnchor): Point {
+  if (anchor.mode === 'auto') return elementCenter(target);
+  return localToWorld(target, { x: anchor.u * target.width, y: anchor.v * target.height });
 }
 
 /**
@@ -115,39 +188,54 @@ export function createBinding(target: MindflowElement, world: Point): Binding {
  *        `rayIntersectElementOutline` in `model/geometry.ts`.
  *     3. Push the result `gap` units further along the same ray.
  *
- * The gap is applied identically in both cases, which is why an arrow never
- * touches the shape it points at.
+ *   FOCUS anchor
+ *     As AUTO, but the ray starts at the focus point (u × width, v × height)
+ *     instead of the centre, and the attachment is its LAST crossing of the
+ *     outline. If the ray has no crossing — a focus point outside the outline
+ *     with the ray pointing away — or the reference coincides with the focus
+ *     point, resolve as AUTO instead.
+ *
+ * The gap always pushes along the direction the tip is travelling away from the
+ * shape, which is why an arrow never touches the shape it points at.
  */
 export function resolveBindingPoint(
   target: MindflowElement,
   binding: Binding,
   reference: Point,
 ): Point {
-  const center = elementCenter(target);
+  const { anchor } = binding;
 
-  let attachment: Point;
-  if (binding.anchor.mode === 'fixed') {
-    attachment = localToWorld(target, {
-      x: binding.anchor.u * target.width,
-      y: binding.anchor.v * target.height,
-    });
-  } else {
-    attachment = rayIntersectElementOutline(target, reference);
+  if (anchor.mode === 'focus') {
+    const focus = { x: anchor.u * target.width, y: anchor.v * target.height };
+    const attachment = outlineCrossing(target, focus, reference);
+    // The ray leaves the focus point heading for the reference, so that is the
+    // direction to push. The attachment minus the centre would NOT do: from an
+    // off-centre focus it points somewhere else, and the tip would slide
+    // sideways along the outline instead of backing away from it.
+    if (attachment) return pushAway(attachment, localToWorld(target, focus), binding.gap);
   }
 
-  if (binding.gap <= 0) return attachment;
+  const attachment =
+    anchor.mode === 'fixed'
+      ? localToWorld(target, { x: anchor.u * target.width, y: anchor.v * target.height })
+      : rayIntersectElementOutline(target, reference);
 
-  // Direction to push the tip outward. For a fixed anchor that is away from the
-  // centre; for an auto anchor it is the ray direction, which is the same thing.
-  const dx = attachment.x - center.x;
-  const dy = attachment.y - center.y;
+  // For a fixed anchor the push is away from the centre. For an auto anchor it
+  // is the ray direction, which from the centre is the same thing.
+  return pushAway(attachment, elementCenter(target), binding.gap);
+}
+
+/**
+ * Moves `point` `gap` units further along the direction from `from` through it.
+ * Skipped when the two coincide, since there is then no direction to follow.
+ */
+function pushAway(point: Point, from: Point, gap: number): Point {
+  if (gap <= 0) return point;
+  const dx = point.x - from.x;
+  const dy = point.y - from.y;
   const length = Math.hypot(dx, dy);
-  if (length === 0) return attachment;
-
-  return {
-    x: attachment.x + (dx / length) * binding.gap,
-    y: attachment.y + (dy / length) * binding.gap,
-  };
+  if (length === 0) return point;
+  return { x: point.x + (dx / length) * gap, y: point.y + (dy / length) * gap };
 }
 
 /**
@@ -156,11 +244,17 @@ export function resolveBindingPoint(
  * Returns the same object when nothing moved, so callers can cheaply skip
  * emitting a no-op command.
  *
- * The reference point for an auto anchor is the OTHER end of the connector. When
- * both ends are bound, each uses the other target's centre — resolving them
+ * The reference point for an auto or focus anchor is the OTHER end of the
+ * connector. When both ends are bound, each aims at the other end's
+ * {@link anchorAimPoint} rather than at its resolved tip — resolving the tips
  * against each other would be a mutual dependency with no closed-form solution,
  * and iterating to a fixed point is not worth the complexity for the pixel or
  * two of difference it would make.
+ *
+ * Aiming at the other end's anchor point, rather than always at its target's
+ * centre (the rule until 1.6.0), is what keeps a connector on the line it was
+ * drawn along: a drop remembered at some spot on the far shape is a spot this
+ * end should point at too.
  */
 export function refreshConnector(
   document: MindflowDocument,
@@ -180,10 +274,14 @@ export function refreshConnector(
   const currentStart = localToWorld(connector, { x: firstTuple[0], y: firstTuple[1] });
   const currentEnd = localToWorld(connector, { x: lastTuple[0], y: lastTuple[1] });
 
-  // Reference points: a bound end aims at the other target's centre, an unbound
-  // end aims at wherever it currently sits.
-  const startReference = endTarget ? elementCenter(endTarget) : currentEnd;
-  const endReference = startTarget ? elementCenter(startTarget) : currentStart;
+  // Reference points: toward a bound end, aim at its anchor; toward an unbound
+  // end, at wherever it currently sits.
+  const startReference =
+    connector.endBinding && endTarget ? anchorAimPoint(endTarget, connector.endBinding.anchor) : currentEnd;
+  const endReference =
+    connector.startBinding && startTarget
+      ? anchorAimPoint(startTarget, connector.startBinding.anchor)
+      : currentStart;
 
   let nextStart = currentStart;
   let nextEnd = currentEnd;

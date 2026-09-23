@@ -79,8 +79,8 @@ import { computeSnap } from './snapping.ts';
 import { type PinchPair, pinchViewport } from './pinch.ts';
 import {
   BIND_DISTANCE,
+  bindConnectorEnds,
   connectorsToRefresh,
-  createBinding,
   findBindTarget,
   refreshConnector,
   withBoundConnectors,
@@ -1094,15 +1094,10 @@ export class InteractionController {
       return;
     }
 
-    const exclude = new Set([element.id]);
     const startWorld = { x: element.x + (element.points[0]?.[0] ?? 0), y: element.y + (element.points[0]?.[1] ?? 0) };
-    const startTarget = findBindTarget(store.document, startWorld, exclude);
-    const endTarget = findBindTarget(store.document, scene, exclude);
-
     element = {
       ...element,
-      startBinding: startTarget ? createBinding(startTarget, startWorld) : null,
-      endBinding: endTarget ? createBinding(endTarget, scene) : null,
+      ...bindConnectorEnds(store.document, startWorld, scene, new Set([element.id])),
     };
 
     store.execute(deleteElements(store.document, [element.id]), true);

@@ -81,18 +81,39 @@ export const ellipseDefinition: ElementDefinition<EllipseElement> = {
   },
 
   /**
-   * Solves `(t·dx/rx)² + (t·dy/ry)² = 1` for `t` — where the ray leaves the
-   * ellipse rather than its bounding box.
+   * Where the ray `origin + t·direction` leaves the ellipse rather than its
+   * bounding box.
+   *
+   * With `p = origin − centre`, substituting the ray into
+   * `(x/rx)² + (y/ry)² = 1` gives the quadratic `A·t² + B·t + C = 0`:
+   *
+   *     A = (dx/rx)² + (dy/ry)²
+   *     B = 2·(px·dx/rx² + py·dy/ry²)
+   *     C = (px/rx)² + (py/ry)² − 1
+   *
+   * The LARGER root is the exit. From the centre, `B = 0` and `C = −1`, which
+   * reduces to the `1 / hypot(dx/rx, dy/ry)` that 1.5.0 and earlier specified.
+   * No real root, or an exit behind the origin, means the ray misses: only
+   * possible for a focus point in a corner of the box, outside the curve.
    *
    * This used to be a `type === 'ellipse'` branch inside `geometry.ts`, the one
    * place outside this directory that switched on an element type.
    */
-  outlineIntersect(el: EllipseElement, direction: Point): Point {
+  outlineIntersect(el: EllipseElement, direction: Point, origin: Point): Point | null {
     const rx = el.width / 2;
     const ry = el.height / 2;
-    const denominator = Math.hypot(direction.x / rx, direction.y / ry);
-    const t = denominator === 0 ? 0 : 1 / denominator;
-    return { x: rx + direction.x * t, y: ry + direction.y * t };
+    const px = origin.x - rx;
+    const py = origin.y - ry;
+
+    const a = (direction.x / rx) ** 2 + (direction.y / ry) ** 2;
+    const b = 2 * ((px * direction.x) / (rx * rx) + (py * direction.y) / (ry * ry));
+    const c = (px / rx) ** 2 + (py / ry) ** 2 - 1;
+    const discriminant = b * b - 4 * a * c;
+    if (a === 0 || discriminant < 0) return null;
+
+    const t = (-b + Math.sqrt(discriminant)) / (2 * a);
+    if (t < 0) return null;
+    return { x: origin.x + direction.x * t, y: origin.y + direction.y * t };
   },
 };
 

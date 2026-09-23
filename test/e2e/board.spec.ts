@@ -711,6 +711,59 @@ test.describe('connectors', () => {
     expect(seen).toEqual(expected);
   });
 
+  test('starts an arrow where it was drawn from, not at one fixed spot on the source', async ({ page }) => {
+    // Every drop well inside a shape used to become an `auto` anchor aimed
+    // through the other shape's centre, so arrows drawn from different places
+    // in the source all started from the same point on its outline.
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 200], [240, 300]);
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [500, 200], [640, 300]);
+
+    // Both end just inside the target's left edge, pinning a fixed anchor there.
+    const target = { x: 505, y: 230 };
+    const fromLow = { x: 130, y: 280 };
+    const fromHigh = { x: 200, y: 225 };
+    await page.locator('[data-tool="arrow"]').click();
+    await drag(page, [fromLow.x, fromLow.y], [target.x, target.y]);
+    await page.locator('[data-tool="arrow"]').click();
+    await drag(page, [fromHigh.x, fromHigh.y], [target.x, target.y]);
+
+    type Arrow = {
+      x: number;
+      y: number;
+      points: number[][];
+      startBinding: { anchor: { mode: string } } | null;
+      endBinding: { anchor: { mode: string } } | null;
+    };
+    const arrows = async () => (await getDocument(page)).elements.filter((el) => el.type === 'arrow') as unknown as Arrow[];
+    const startOf = (arrow: Arrow) => ({ x: arrow.x + arrow.points[0]![0]!, y: arrow.y + arrow.points[0]![1]! });
+    const offLine = (p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / Math.hypot(b.x - a.x, b.y - a.y);
+
+    const [low, high] = await arrows();
+    expect(low!.startBinding?.anchor.mode).toBe('focus');
+    expect(high!.startBinding?.anchor.mode).toBe('focus');
+    expect(low!.endBinding?.anchor.mode).toBe('fixed');
+
+    // Each start sits on the line that was drawn, just outside the source's
+    // right edge — and so the two are nowhere near each other.
+    for (const [arrow, from] of [[low!, fromLow], [high!, fromHigh]] as const) {
+      const start = startOf(arrow);
+      expect(offLine(start, from, target)).toBeLessThan(0.05);
+      expect(start.x).toBeGreaterThan(240);
+      expect(start.x).toBeLessThan(245);
+    }
+    expect(Math.abs(startOf(low!).y - startOf(high!).y)).toBeGreaterThan(20);
+
+    // Move the target down: the start swings round, still aimed from where it
+    // was drawn toward the (moved) pinned spot.
+    await page.keyboard.press('Escape');
+    await drag(page, [570, 200], [570, 320]);
+    const [moved] = await arrows();
+    expect(offLine(startOf(moved!), fromLow, { x: target.x, y: target.y + 120 })).toBeLessThan(0.05);
+  });
+
   test('discards a zero-length connector', async ({ page }) => {
     await page.locator('[data-tool="arrow"]').click();
     const box = await canvasBox(page);

@@ -391,6 +391,12 @@ export type Arrowhead = (typeof ARROWHEADS)[number];
 export const CURVE_STYLES = ['straight', 'curved', 'elbow'] as const;
 export type CurveStyle = (typeof CURVE_STYLES)[number];
 
+/** The three ways a binding can decide where on its target a connector ends. */
+export type BindingAnchor =
+  | { mode: 'auto' }
+  | { mode: 'focus'; u: number; v: number }
+  | { mode: 'fixed'; u: number; v: number };
+
 /**
  * How one end of a connector attaches to another element.
  *
@@ -401,15 +407,21 @@ export type CurveStyle = (typeof CURVE_STYLES)[number];
  *
  * `mode: "auto"` recomputes the attachment point every time either element
  * moves, aiming at the target's centre and stopping where the ray crosses the
- * target's outline. The exact algorithm is specified in `docs/07-rendering.md`,
- * and it must be, or a file with an auto binding cannot be rendered correctly by
- * anything except MindFlow itself.
+ * target's outline.
+ *
+ * `mode: "focus"` (1.6.0) does the same, but aims at a stored point `(u, v)`
+ * inside the target instead of its centre — the spot where the connector was
+ * dropped. The tip therefore stays on the line the user actually drew, and slides
+ * around the outline to keep aiming at that spot as either element moves. `auto`
+ * is exactly `focus` at `(0.5, 0.5)`.
+ *
+ * The auto and focus algorithms are specified in `docs/07-rendering.md`, and they
+ * must be, or a file with such a binding cannot be rendered correctly by anything
+ * except MindFlow itself.
  */
 export interface Binding {
   elementId: ElementId;
-  anchor:
-    | { mode: 'auto' }
-    | { mode: 'fixed'; u: number; v: number };
+  anchor: BindingAnchor;
   /** Clearance left between the target's outline and the connector tip, in scene units. */
   gap: number;
 }
@@ -693,7 +705,7 @@ export interface MindflowDocument {
 }
 
 /** The schema version this build reads and writes natively. */
-export const CURRENT_SCHEMA_VERSION = '1.5.0';
+export const CURRENT_SCHEMA_VERSION = '1.6.0';
 
 /** Canonical filename extension for a board. */
 export const FILE_EXTENSION = '.mindflow.json';

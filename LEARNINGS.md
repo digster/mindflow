@@ -957,3 +957,41 @@ derived geometry too, such as a label that tracks its container. The e2e test
 creeps the shape one pixel per step and asserts it moves exactly with the
 pointer. A single long drag does not catch this, because the final position
 can still land correctly.
+
+---
+
+## An anchor that forgets the drop point makes every drop the same
+
+**Symptom:** an arrow's start jumped to one spot on its source shape, wherever
+inside the shape it was drawn from, while its end stayed where it was dropped.
+
+**Cause:** the design worked as written, and the design was the gap. A drop well
+inside a shape became an `auto` anchor, which records *which* shape and nothing
+else. It aims through the shape's centre at the other end, and when the other
+end is bound, at that shape's centre. Every drop inside the source therefore
+resolved to the same point. The end looked right only because people drop an
+arrowhead near the target's edge, where it becomes a pinned `fixed` anchor.
+
+**Fix (format 1.6.0):** a `focus` anchor stores the drop point and casts the
+outline ray *from* it. Three details were easy to get wrong:
+
+- **What the other end aims at.** It must be the other anchor's *aim point*
+  (the centre for `auto`, the `(u, v)` spot otherwise), not the other end's
+  resolved tip. Aiming at the tip makes the two ends depend on each other,
+  which has no closed form, and a board's cache would then decide its own
+  layout. Aiming at the other *target's centre* (the old rule) kept a focus end
+  off the line that was drawn whenever the far end was pinned.
+- **Which way the gap pushes.** For a ray from the centre, "away from the
+  centre" and "along the ray" are the same. From an off-centre focus point they
+  are not, and pushing away from the centre slides the tip sideways along the
+  outline. Push along the ray.
+- **Both ends on one shape.** An end that aims through its shape at a point
+  inside the same shape is meaningless. Two focus ends point out past opposite
+  edges and reverse the arrow. Two `auto` ends, the only option before 1.6.0,
+  collapsed onto the centre, which is also how an arrow sketched inside a frame
+  used to vanish. `bindConnectorEnds` binds only pinned ends in that case.
+
+**Testing trap:** stored coordinates are rounded to 0.01, so asserting "the tip
+is on the drawn line" with a raw cross product fails, because the cross product
+scales that rounding by the segment's length. Assert on the perpendicular
+distance instead, as `distanceFromLine` in `test/unit/binding.test.ts` does.

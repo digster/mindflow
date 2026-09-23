@@ -520,6 +520,59 @@ describe('1.4.0 → 1.5.0: retired solids', () => {
   });
 });
 
+/**
+ * 1.6.0 adds the `focus` anchor mode: an arrow end dropped inside a shape
+ * remembers where, instead of collapsing to an `auto` anchor.
+ */
+describe('1.5.0 → 1.6.0: focus anchors', () => {
+  const connectorWith = (anchor: unknown) => ({
+    type: 'mindflow.board',
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    elements: [
+      { id: 'el_box', type: 'rectangle', x: 0, y: 0, width: 100, height: 100 },
+      {
+        id: 'el_arrow',
+        type: 'arrow',
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 1,
+        points: [[0, 0], [200, 0]],
+        startBinding: { elementId: 'el_box', anchor, gap: 4 },
+      },
+    ],
+  });
+  const startAnchor = (json: unknown) =>
+    (loadDocument(JSON.stringify(json)).document.elements.find((el) => el.id === 'el_arrow') as LinearElement)
+      .startBinding?.anchor;
+
+  it('upgrades a 1.5.0 board quietly and leaves its bindings alone', () => {
+    const board = { ...connectorWith({ mode: 'fixed', u: 1, v: 0.5 }), schemaVersion: '1.5.0' };
+    const { document, warnings } = loadDocument(JSON.stringify(board));
+    expect(warnings.find((warning) => warning.message.includes('1.5.0 → 1.6.0'))?.level).toBe('info');
+    expect(warnings.filter((warning) => warning.level !== 'info')).toEqual([]);
+    expect(document.schemaVersion).toBe('1.6.0');
+    expect((document.elements[1] as LinearElement).startBinding?.anchor).toEqual({ mode: 'fixed', u: 1, v: 0.5 });
+  });
+
+  it('round-trips a focus anchor', () => {
+    const first = serializeDocument(loadDocument(JSON.stringify(connectorWith({ mode: 'focus', u: 0.25, v: 0.7 }))).document);
+    expect(startAnchor(JSON.parse(first))).toEqual({ mode: 'focus', u: 0.25, v: 0.7 });
+  });
+
+  it('clamps a focus point into the box, since rays are cast from it', () => {
+    expect(startAnchor(connectorWith({ mode: 'focus', u: 1.4, v: -0.2 }))).toEqual({ mode: 'focus', u: 1, v: 0 });
+  });
+
+  it('fills a focus point it cannot read with the centre', () => {
+    expect(startAnchor(connectorWith({ mode: 'focus', u: 'left' }))).toEqual({ mode: 'focus', u: 0.5, v: 0.5 });
+  });
+
+  it('reads an unknown mode as auto', () => {
+    expect(startAnchor(connectorWith({ mode: 'magnetic', u: 0.2, v: 0.2 }))).toEqual({ mode: 'auto' });
+  });
+});
+
 function stripUpdatedAt(json: string): unknown {
   const parsed = JSON.parse(json) as { meta: { updatedAt?: string } };
   delete parsed.meta.updatedAt;

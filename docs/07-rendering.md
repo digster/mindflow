@@ -405,70 +405,115 @@ Inputs: the target element, the binding, and a **reference point** (see below).
 
 **Auto anchor** (`{"mode": "auto"}`):
 
-1. Transform the reference point into the target's local frame (`worldToLocal`).
-2. Cast a ray from the target's local centre `(w/2, h/2)` toward it. With
-   `d = reference_local − centre`, the scale factor `t` at which the ray leaves
-   the outline is **per shape**, with the rectangular case as the default for any
-   type not listed:
+1. Cast a ray from the target's local centre `(w/2, h/2)` toward the reference
+   point, and take where it crosses the outline. See
+   [Casting a ray at the outline](#casting-a-ray-at-the-outline).
+2. If the reference point is exactly the centre, the attachment point is the
+   centre.
 
-   | Target | `t` |
-   |---|---|
-   | `ellipse` | `1 / hypot(dx/a, dy/b)` — solving `(t·dx/a)² + (t·dy/b)² = 1` |
-   | `diamond` | `1 / (\|dx\|/a + \|dy\|/b)` — solving `\|x\|/a + \|y\|/b = 1` |
-   | **everything else** | `min(\|a/dx\|, \|b/dy\|)`, treating a zero denominator as `∞` — the ray exits through whichever pair of box edges it reaches first |
+**Focus anchor** (`{"mode": "focus", "u": u, "v": v}`, added in 1.6.0):
 
-   In all three, `a = w/2` and `b = h/2`.
+1. The **focus point** is the local point `(u × target.width, v × target.height)`.
+2. Cast a ray from the focus point toward the reference point, and take its
+   **last** crossing of the outline — the point where it finally leaves the shape.
+3. If there is no crossing, or the reference point is exactly the focus point,
+   resolve the binding as `auto` instead.
 
-3. The attachment point is `centre + d × t`, transformed back to world space.
-4. If `d` is exactly zero, the attachment point is the target's centre.
+A ray from inside the outline always crosses it, so step 3 applies only to a
+focus point that lies inside the bounding box but outside the outline (a corner
+of an ellipse's box, the notch of a star) with the ray pointing away from the
+shape. MindFlow never writes a focus point outside the box, and a reader should
+clamp `u` and `v` to `[0, 1]` before casting.
+
+`auto` is exactly `focus` at `(0.5, 0.5)`. The two are separate modes because
+aiming through the centre is the natural default for a board written by hand or
+by a script, and it needs no numbers.
+
+**Then, in every case**, apply the gap: push the attachment point `a` a distance
+`gap` further along the direction the tip leaves the shape.
+
+```
+fixed, auto:  direction = (a − c) / |a − c|     c = the target's world centre
+focus:        direction = (a − f) / |a − f|     f = the focus point, in world space
+tip           = a + direction × gap
+```
+
+For `auto` the two formulas agree, since the ray starts at the centre. For
+`focus` they do not, and using the centre would slide the tip sideways along the
+outline instead of backing it away. If `|a − c|` (or `|a − f|`) is zero, the gap
+is skipped. This is why an arrow never quite touches the shape it points at.
+
+### Casting a ray at the outline
+
+Work in the target's local frame: transform the reference point with
+`worldToLocal`, cast from the origin `o` (the centre, or the focus point) with
+direction `d = reference_local − o`, and transform the crossing back with
+`localToWorld`. The crossing is `o + t·d` for the **largest** `t ≥ 0` at which
+the ray meets the outline. The outline is **per shape**, with the rectangular
+case as the default for any type not listed:
+
+| Target | Crossing |
+|---|---|
+| `ellipse` | With `p = o − (a, b)`, the larger root of `A·t² + B·t + C = 0`, where `A = (dx/a)² + (dy/b)²`, `B = 2·(px·dx/a² + py·dy/b²)`, `C = (px/a)² + (py/b)² − 1`. No real root, or a negative one, is no crossing. |
+| `diamond`, the flat polygons, the solids | The polygon rule below, on the rhombus, the polygon's vertices or the solid's silhouette. |
+| **everything else** | `t = min(tx, ty)`, with `tx = (w − ox)/dx` when `dx > 0`, `−ox/dx` when `dx < 0`, and `∞` when `dx = 0` — the ray leaves through whichever wall it reaches first. `ty` likewise, with `h` and `oy`. |
+
+In all three, `a = w/2` and `b = h/2`.
+
+From the centre these reduce to the closed forms 1.5.0 and earlier specified —
+`1 / hypot(dx/a, dy/b)` for an ellipse, `1 / (|dx|/a + |dy|/b)` for a diamond,
+`min(|a/dx|, |b/dy|)` for a rectangle — so an `auto` anchor resolves exactly as
+it always has.
 
 A reader that does not recognise a type should use the rectangular default: it is
 always a defined answer, and it is what MindFlow itself does for any shape that
 does not declare an outline of its own.
 
-**Then, in both cases**, apply the gap. With `c` = the target's world centre and
-`a` = the attachment point:
-
-```
-direction = (a − c) / |a − c|
-tip       = a + direction × gap
-```
-
-If `|a − c|` is zero, the gap is skipped. This is why an arrow never quite touches
-the shape it points at.
-
 ### Polygonal outlines
 
-`diamond` solves its outline analytically. The flat polygons and the solids
-share one rule instead: intersect the ray from the element's centre with each
-edge of the outline in turn and take the crossing with the **largest** positive
-parameter. With the centre `c`, an edge running `a → b` and a direction `dir`,
-the crossing solves
+The diamond, the flat polygons and the solids share one rule: intersect the ray
+with each edge of the outline in turn and take the crossing with the **largest**
+non-negative parameter. With the origin `o`, an edge running `p → q` and a
+direction `d`, the crossing solves
 
 ```
-c + t·dir = a + u·(b − a),    t ≥ 0,  0 ≤ u ≤ 1
+o + t·d = p + u·(q − p),    t ≥ 0,  0 ≤ u ≤ 1
 ```
 
-a 2×2 system whose determinant is the 2D cross product of `dir` and `b − a`; a
-determinant of zero means the edge is parallel to the ray and is skipped.
+a 2×2 system whose determinant is the 2D cross product of `d` and `q − p`; a
+determinant of zero means the edge is parallel to the ray and is skipped. If no
+edge is crossed, there is no crossing — for an `auto` anchor that can only mean a
+degenerate polygon, and the rectangular default applies.
 
 Taking the largest `t` rather than the smallest is what makes a `star` anchor to
 the tip of a point instead of to the notch between two of them. For a convex
-outline the two choices coincide.
+outline cast from inside, there is only one crossing anyway.
 
 The outline used is the type's silhouette, which for a solid is the outside of
 its projection rather than any one face.
 
 ### Choosing the reference point
 
-For an `auto` anchor, the reference is the connector's **other end**:
+For an `auto` or `focus` anchor, the reference is the connector's **other end**:
 
-- If the other end is **also bound**, use that target's **centre**.
+- If the other end is **also bound**, use the point that end's anchor **aims
+  at**: its target's centre for `auto`, and its `(u, v)` point, in world space,
+  for `focus` and `fixed`.
 - Otherwise, use the other end's current world position.
 
-Resolving two auto anchors against each other would be a mutual dependency with no
-closed-form solution. Iterating to a fixed point is not worth the complexity for
-the pixel or two of difference it would make.
+The aim point depends only on the other target and its stored anchor, never on
+where either tip currently sits. Resolving the tips against each other would be a
+mutual dependency with no closed-form solution, and iterating to a fixed point
+is not worth the complexity for the pixel or two of difference it would make.
+
+Two focus anchors therefore aim at each other's focus points, and the connector
+is the segment between them, trimmed at each outline — the line that was drawn.
+
+> **Changed in 1.6.0.** Until 1.5.0 a bound other end always contributed its
+> target's **centre**. The two rules agree when the other end is `auto`. When it
+> is `fixed`, this end now aims at the pinned spot rather than past it at the
+> centre. A board's stored points are only a cache, so this takes effect the
+> next time either shape moves.
 
 ### Applying the result
 

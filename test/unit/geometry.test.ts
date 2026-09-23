@@ -19,6 +19,7 @@ import {
   normalizePathBounds,
   pointInEllipse,
   pointInPolygon,
+  outlineCrossing,
   rayIntersectElementOutline,
   rotatePoint,
   roundCoord,
@@ -253,6 +254,39 @@ describe('rayIntersectElementOutline', () => {
   it('returns the centre when the target is the centre', () => {
     const rect = box({ x: 0, y: 0, width: 100, height: 100 });
     expect(rayIntersectElementOutline(rect, { x: 50, y: 50 })).toEqual({ x: 50, y: 50 });
+  });
+});
+
+describe('outlineCrossing', () => {
+  it('leaves a rectangle from an off-centre origin along the line to the target', () => {
+    // From (20, 80) toward (220, 30): slope −1/4, so x = 100 is reached at y = 60.
+    const rect = box({ x: 0, y: 0, width: 100, height: 100 });
+    const point = outlineCrossing(rect, { x: 20, y: 80 }, { x: 220, y: 30 });
+    closeTo(point!.x, 100);
+    closeTo(point!.y, 60);
+  });
+
+  it('takes the wall the ray reaches first', () => {
+    // From (90, 50) heading up-right at 45°, the right wall is 10 away and the
+    // top 50, so it leaves through the right.
+    const rect = box({ x: 0, y: 0, width: 100, height: 100 });
+    const point = outlineCrossing(rect, { x: 90, y: 50 }, { x: 190, y: -50 });
+    closeTo(point!.x, 100);
+    closeTo(point!.y, 40);
+  });
+
+  it('casts in the local frame of a rotated element', () => {
+    // Rotated 90° clockwise about its centre (50, 50): local (20, 50) sits at
+    // world (50, 20), and a target straight below it leaves through world y = 100.
+    const rect = box({ x: 0, y: 0, width: 100, height: 100, angle: 90 });
+    const point = outlineCrossing(rect, { x: 20, y: 50 }, { x: 50, y: 500 });
+    closeTo(point!.x, 50, 4);
+    closeTo(point!.y, 100, 4);
+  });
+
+  it('is null when the target is the origin', () => {
+    const rect = box({ x: 0, y: 0, width: 100, height: 100 });
+    expect(outlineCrossing(rect, { x: 20, y: 30 }, { x: 20, y: 30 })).toBeNull();
   });
 });
 

@@ -306,3 +306,25 @@ only the board on screen at the end of the last session is ever offered.
 `Popover` now stops the propagation of every keydown without Cmd/Ctrl at its
 root, so all five popovers get it. The recent-boards menu's local copy of the
 listener is gone.
+
+---
+
+## 2026-09-23 — Jittery bound shapes, and arrow starts that ignore where they were drawn
+
+> * When an arrow is attached to an object and we then move the object, the
+>   object is very jittery/vibrates while moving.
+> * Consider two objects, one source and the other target. When we try to attach
+>   an arrow from the source to the target, after the placement, the arrow end
+>   for the target rests where it was placed, but for the source, the beginning
+>   point of the arrow is relocated to some common point near the source object
+>   irrespective of where it was placed(excalidraw does it correctly, respecting
+>   where the beginning and end points of the arrow where placed).
+> * Work on this as separate comments.
+
+The jitter was object snapping aligning a shape to its own bound arrow, which is
+re-routed from that shape every frame. Bound connectors are now excluded from
+snapping for the drag. The arrow start was an `auto` anchor, which cannot
+remember a drop point. Format 1.6.0 adds a `focus` anchor for drops inside a
+shape. Decisions confirmed with the user: the aim-point anchor with a format
+bump (over pinning to the outline with no format change), and near-centre drops
+still snap to `auto`.

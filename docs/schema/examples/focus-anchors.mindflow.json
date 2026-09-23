@@ -1,0 +1,254 @@
+{
+  "$schema": "https://digster.github.io/mindflow/docs/schema/mindflow-1.6.0.schema.json",
+  "type": "mindflow.board",
+  "schemaVersion": "1.6.0",
+  "id": "brd_FocusAnchors",
+  "meta": {
+    "name": "Focus anchors",
+    "createdAt": "2026-09-23T10:00:00.000Z",
+    "updatedAt": "2026-09-23T12:00:00.000Z",
+    "app": {
+      "name": "mindflow",
+      "version": "0.0.0-dev"
+    }
+  },
+  "canvas": {
+    "background": "#ffffff",
+    "grid": {
+      "visible": false,
+      "size": 20,
+      "snap": false
+    }
+  },
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "elements": [
+    {
+      "id": "el_Source0001",
+      "type": "rectangle",
+      "x": 60,
+      "y": 100,
+      "width": 160,
+      "height": 100,
+      "angle": 0,
+      "zIndex": 1000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1971c2",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#a5d8ff",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": {
+        "text": "Source",
+        "fontFamily": "sans",
+        "fontSize": 16,
+        "fontWeight": 500,
+        "lineHeight": 1.25,
+        "color": "#1e1e1e",
+        "textAlign": "center",
+        "verticalAlign": "middle",
+        "padding": 8
+      },
+      "meta": {},
+      "cornerRadius": 8
+    },
+    {
+      "id": "el_Target0001",
+      "type": "rectangle",
+      "x": 420,
+      "y": 40,
+      "width": 160,
+      "height": 100,
+      "angle": 0,
+      "zIndex": 2000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#2f9e44",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#b2f2bb",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": {
+        "text": "Target",
+        "fontFamily": "sans",
+        "fontSize": 16,
+        "fontWeight": 500,
+        "lineHeight": 1.25,
+        "color": "#1e1e1e",
+        "textAlign": "center",
+        "verticalAlign": "middle",
+        "padding": 8
+      },
+      "meta": {},
+      "cornerRadius": 8
+    },
+    {
+      "id": "el_Decision01",
+      "type": "diamond",
+      "x": 420,
+      "y": 240,
+      "width": 160,
+      "height": 110,
+      "angle": 0,
+      "zIndex": 3000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#e8590c",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "#ffd8a8",
+        "fillStyle": "solid",
+        "roughness": 0
+      },
+      "label": {
+        "text": "Decide",
+        "fontFamily": "sans",
+        "fontSize": 16,
+        "fontWeight": 500,
+        "lineHeight": 1.25,
+        "color": "#1e1e1e",
+        "textAlign": "center",
+        "verticalAlign": "middle",
+        "padding": 8
+      },
+      "meta": {}
+    },
+    {
+      "id": "el_ArrowFocus1",
+      "type": "arrow",
+      "x": 223.97,
+      "y": 100.5,
+      "width": 192.06,
+      "height": 24.85,
+      "angle": 0,
+      "zIndex": 4000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {
+        "exampleNote": "Start: a 'focus' anchor, dropped in the lower right of Source. End: 'fixed', pinned to Target's left edge. The start aims at the pinned spot from the focus point, so the arrow runs along the line that was drawn. The stored points are a CACHE - re-route with docs/07-rendering.md#binding-resolution after moving either shape."
+      },
+      "points": [
+        [
+          0,
+          24.85
+        ],
+        [
+          192.06,
+          0
+        ]
+      ],
+      "startArrowhead": "none",
+      "endArrowhead": "arrow",
+      "curve": "straight",
+      "startBinding": {
+        "elementId": "el_Source0001",
+        "anchor": {
+          "mode": "focus",
+          "u": 0.8,
+          "v": 0.3
+        },
+        "gap": 4
+      },
+      "endBinding": {
+        "elementId": "el_Target0001",
+        "anchor": {
+          "mode": "fixed",
+          "u": 0,
+          "v": 0.6
+        },
+        "gap": 4
+      }
+    },
+    {
+      "id": "el_ArrowFocus2",
+      "type": "arrow",
+      "x": 223.78,
+      "y": 197.72,
+      "width": 221.72,
+      "height": 75.85,
+      "angle": 0,
+      "zIndex": 5000,
+      "opacity": 1,
+      "locked": false,
+      "visible": true,
+      "groupId": null,
+      "frameId": null,
+      "style": {
+        "stroke": "#1e1e1e",
+        "strokeWidth": 2,
+        "strokeStyle": "solid",
+        "fill": "transparent",
+        "fillStyle": "none",
+        "roughness": 0
+      },
+      "label": null,
+      "meta": {
+        "exampleNote": "Both ends 'focus'. Each end aims at the other end's focus point, so the arrow is the segment between the two points, trimmed at each outline. On the diamond, the crossing is found with the per-edge polygon rule."
+      },
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          221.72,
+          75.85
+        ]
+      ],
+      "startArrowhead": "none",
+      "endArrowhead": "arrow",
+      "curve": "straight",
+      "startBinding": {
+        "elementId": "el_Source0001",
+        "anchor": {
+          "mode": "focus",
+          "u": 0.7,
+          "v": 0.8
+        },
+        "gap": 4
+      },
+      "endBinding": {
+        "elementId": "el_Decision01",
+        "anchor": {
+          "mode": "focus",
+          "u": 0.35,
+          "v": 0.4
+        },
+        "gap": 4
+      }
+    }
+  ],
+  "files": {}
+}

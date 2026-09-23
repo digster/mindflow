@@ -265,8 +265,8 @@ describe('connector anchoring', () => {
     // inside it.
     const triangle = polygonVertices('triangle', 100, 100);
     const centre = { x: 50, y: 50 };
-    expect(polygonOutlineIntersect(triangle, centre, { x: 0, y: -1 }).y).toBeCloseTo(0, 6);
-    expect(polygonOutlineIntersect(triangle, centre, { x: 1, y: 0 }).x).toBeLessThan(100);
+    expect(polygonOutlineIntersect(triangle, centre, { x: 0, y: -1 })!.y).toBeCloseTo(0, 6);
+    expect(polygonOutlineIntersect(triangle, centre, { x: 1, y: 0 })!.x).toBeLessThan(100);
   });
 
   it('takes the outermost crossing, so a star anchors to a point', () => {
@@ -275,15 +275,67 @@ describe('connector anchoring', () => {
     const star = polygonVertices('star', 100, 100);
     const centre = { x: 50, y: 50 };
     const up = polygonOutlineIntersect(star, centre, { x: 0, y: -1 });
-    expect(up.y).toBeCloseTo(0, 6);
+    expect(up!.y).toBeCloseTo(0, 6);
   });
 
   it('anchors a solid to its silhouette', () => {
     const cube = make('cube', 120, 80);
-    const crossing = getDefinition('cube').outlineIntersect?.(cube as never, { x: 1, y: 0 });
+    const crossing = getDefinition('cube').outlineIntersect?.(cube as never, { x: 1, y: 0 }, { x: 60, y: 40 });
     expect(crossing).toBeDefined();
     expect(crossing!.x).toBeCloseTo(120, 6);
     expect(crossing!.y).toBeCloseTo(40, 6);
+  });
+
+  // 1.6.0: `focus` anchors cast from a stored point, not the centre.
+
+  it('casts a polygon ray from an off-centre origin', () => {
+    // From low on a triangle's axis, straight up still reaches the apex.
+    const triangle = polygonVertices('triangle', 100, 100);
+    const crossing = polygonOutlineIntersect(triangle, { x: 50, y: 90 }, { x: 0, y: -1 });
+    expect(crossing!.x).toBeCloseTo(50, 6);
+    expect(crossing!.y).toBeCloseTo(0, 6);
+  });
+
+  it('reports a miss when an origin outside the polygon points away', () => {
+    // The top-left corner of a triangle's box is outside the triangle; heading
+    // further up-left, the ray never meets it.
+    const triangle = polygonVertices('triangle', 100, 100);
+    expect(polygonOutlineIntersect(triangle, { x: 5, y: 5 }, { x: -1, y: -1 })).toBeNull();
+  });
+
+  it('solves an ellipse from an off-centre origin exactly', () => {
+    // A circle of radius 50: from (50, 80) heading right, the exit satisfies
+    // (x − 50)² + (80 − 50)² = 50², so x = 50 + 40.
+    const circle = make('ellipse', 100, 100);
+    const crossing = getDefinition('ellipse').outlineIntersect?.(circle as never, { x: 1, y: 0 }, { x: 50, y: 80 });
+    expect(crossing!.x).toBeCloseTo(90, 6);
+    expect(crossing!.y).toBeCloseTo(80, 6);
+  });
+
+  it('matches the 1.5.0 closed form from the centre of an ellipse', () => {
+    const ellipse = make('ellipse', 160, 80);
+    const direction = { x: 3, y: 2 };
+    const t = 1 / Math.hypot(direction.x / 80, direction.y / 40);
+    const crossing = getDefinition('ellipse').outlineIntersect?.(ellipse as never, direction, { x: 80, y: 40 });
+    expect(crossing!.x).toBeCloseTo(80 + direction.x * t, 9);
+    expect(crossing!.y).toBeCloseTo(40 + direction.y * t, 9);
+  });
+
+  it('reports a miss when an ellipse ray starts in a corner and points away', () => {
+    const circle = make('ellipse', 100, 100);
+    expect(getDefinition('ellipse').outlineIntersect?.(circle as never, { x: -1, y: -1 }, { x: 5, y: 5 })).toBeNull();
+  });
+
+  it('matches the 1.5.0 closed form from the centre of a diamond', () => {
+    // The diamond moved from `t = 1 / (|dx|/a + |dy|/b)` to the per-edge solver;
+    // from the centre the two must agree, or existing auto connectors move.
+    const diamond = make('diamond', 160, 80);
+    for (const direction of [{ x: 3, y: 2 }, { x: -1, y: 4 }, { x: -5, y: -1 }, { x: 2, y: -7 }]) {
+      const t = 1 / (Math.abs(direction.x) / 80 + Math.abs(direction.y) / 40);
+      const crossing = getDefinition('diamond').outlineIntersect?.(diamond as never, direction, { x: 80, y: 40 });
+      expect(crossing!.x).toBeCloseTo(80 + direction.x * t, 9);
+      expect(crossing!.y).toBeCloseTo(40 + direction.y * t, 9);
+    }
   });
 });
 

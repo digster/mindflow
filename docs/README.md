@@ -27,7 +27,7 @@ a format.
 Plus:
 
 - [CHANGELOG.md](CHANGELOG.md) — schema version history and migration notes.
-- [schema/mindflow-1.5.0.schema.json](schema/mindflow-1.5.0.schema.json) — machine-readable JSON Schema (draft 2020-12), current version. Earlier versions stay published and unchanged; see the changelog.
+- [schema/mindflow-1.6.0.schema.json](schema/mindflow-1.6.0.schema.json) — machine-readable JSON Schema (draft 2020-12), current version. Earlier versions stay published and unchanged; see the changelog.
 - [schema/examples/](schema/examples/) — valid boards covering minimal, complete, connector-heavy, frame, table, polygon and solid cases. Each is written at the schema version that introduced what it demonstrates, so the set doubles as a migration fixture. A type later retired is taken out of its example — it would no longer validate — and its migration is proven by a unit test instead.
 
 ## If you only read one thing

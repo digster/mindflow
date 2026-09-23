@@ -10,7 +10,7 @@
  * transforms. They are not omitted: `needsMigration` triggers on any version
  * inequality, so a missing step would make every older board load with a "no
  * migration is available" warning, which reads as data loss. 1.5.0 is the first
- * to transform anything — it retired four element types.
+ * to transform anything — it retired four element types. 1.6.0 is additive again.
  *
  * ---------------------------------------------------------------------------
  * Adding a migration
@@ -122,6 +122,19 @@ const MIGRATIONS: Record<string, Migration> = {
       if (!Array.isArray(document.elements)) return document;
       return { ...document, elements: document.elements.map(retireSolid) };
     },
+  },
+
+  /**
+   * Identity again. 1.6.0 adds the `focus` anchor mode, which a 1.5.0 file
+   * cannot contain. It also changes what one bound end aims at when the other
+   * end is `fixed` (the pinned spot, not its shape's centre), but stored points
+   * are only a cache of the route, so nothing in the file needs rewriting — the
+   * new rule applies the next time either shape moves.
+   */
+  '1.5.0': {
+    to: '1.6.0',
+    description: 'Additive: the `focus` connector anchor mode.',
+    migrate: (document) => document,
   },
 };
 

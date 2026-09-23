@@ -341,58 +341,101 @@ export function pointInPolygon(p: Point, polygon: readonly Point[]): boolean {
  *
  * This is the core of `mode: "auto"` connector bindings, and it is specified in
  * `docs/07-rendering.md` so that external renderers can reproduce it exactly.
- *
- * The ray is computed in the element's LOCAL frame (so the shape is axis-aligned
- * and the math is closed-form), then the result is rotated back out to world.
+ * It is {@link outlineCrossing} with the origin fixed at the centre, which is
+ * always inside the outline, so it always has an answer.
  */
 export function rayIntersectElementOutline(el: MindflowElement, target: Point): Point {
+  const centre = { x: el.width / 2, y: el.height / 2 };
   const local = worldToLocal(el, target);
-  const cx = el.width / 2;
-  const cy = el.height / 2;
-  const dx = local.x - cx;
-  const dy = local.y - cy;
+  if (local.x === centre.x && local.y === centre.y) return elementCenter(el);
 
-  if (dx === 0 && dy === 0) return elementCenter(el);
+  // A null here means a degenerate outline (zero area), which no ray from the
+  // centre can leave. The bounding rectangle is always a defined answer.
+  return (
+    outlineCrossing(el, centre, target) ??
+    localToWorld(el, rectOutlineIntersect(el, { x: local.x - centre.x, y: local.y - centre.y }, centre))
+  );
+}
+
+/**
+ * Where the ray from `localOrigin` toward the world point `target` last crosses
+ * the element's outline, in world coordinates, or `null` if it never does.
+ *
+ * The general form behind both `auto` anchors (origin = centre) and `focus`
+ * anchors (origin = the stored focus point). The ray is solved in the element's
+ * LOCAL frame, so the shape is axis-aligned and the math is closed-form, and
+ * the crossing is rotated back out to world.
+ *
+ * "Last" — the largest ray parameter — is what makes this well defined for an
+ * origin that is not the centre: it is the point where the connector finally
+ * leaves the shape heading for `target`, which is where its tip belongs.
+ */
+export function outlineCrossing(
+  el: MindflowElement,
+  localOrigin: Point,
+  target: Point,
+): Point | null {
+  const local = worldToLocal(el, target);
+  const direction = { x: local.x - localOrigin.x, y: local.y - localOrigin.y };
+  if (direction.x === 0 && direction.y === 0) return null;
 
   // A shape that knows its own outline says so through the registry; everything
   // else is treated as its bounding rectangle. That default is why most types
-  // implement nothing, and why this function no longer branches on `el.type` —
+  // implement nothing, and why this function does not branch on `el.type` —
   // which no code outside `render/shapes/` is allowed to do.
-  const direction = { x: dx, y: dy };
   const definition = findDefinition(el.type);
-  const crossing = definition?.outlineIntersect?.(el, direction) ?? rectOutlineIntersect(el, direction);
+  const crossing = definition?.outlineIntersect
+    ? definition.outlineIntersect(el, direction, localOrigin)
+    : rectOutlineIntersect(el, direction, localOrigin);
 
-  return localToWorld(el, crossing);
+  return crossing ? localToWorld(el, crossing) : null;
 }
 
 /**
  * The rectangular-outline case, and the default for any type that does not
  * implement `outlineIntersect`.
  *
- * The ray exits through whichever pair of edges it reaches first, which is the
- * smaller of the two axis-wise scale factors.
+ * From an origin inside the box the ray leaves through exactly one edge: per
+ * axis, the distance to the wall it is heading for divided by its speed along
+ * that axis, and the smaller of the two wins. From the centre this reduces to
+ * `min(|w/2 ÷ dx|, |h/2 ÷ dy|)`, the formula 1.0.0 to 1.5.0 specified.
+ *
+ * `origin` defaults to the centre. Focus points are clamped into the box on
+ * load, so the origin is never outside it.
  */
 export function rectOutlineIntersect(
   el: { width: number; height: number },
   direction: Point,
+  origin: Point = { x: el.width / 2, y: el.height / 2 },
 ): Point {
-  const cx = el.width / 2;
-  const cy = el.height / 2;
-  const tx = direction.x === 0 ? Infinity : Math.abs(cx / direction.x);
-  const ty = direction.y === 0 ? Infinity : Math.abs(cy / direction.y);
-  const t = Math.min(tx, ty);
-  return { x: cx + direction.x * t, y: cy + direction.y * t };
+  const t = Math.min(
+    wallParameter(direction.x, origin.x, el.width),
+    wallParameter(direction.y, origin.y, el.height),
+  );
+  if (!Number.isFinite(t)) return origin;
+  return { x: origin.x + direction.x * t, y: origin.y + direction.y * t };
 }
 
 /**
- * Where a ray from the element's centre crosses a closed polygon, in the LOCAL
- * frame. The shared implementation of `outlineIntersect` for every type whose
- * silhouette is a polygon — the flat shapes and the solids alike.
+ * The ray parameter at which one axis reaches the wall it is heading for — `0`
+ * when moving backwards, `size` when moving forwards, never when not moving.
+ */
+function wallParameter(speed: number, from: number, size: number): number {
+  if (speed > 0) return (size - from) / speed;
+  if (speed < 0) return -from / speed;
+  return Infinity;
+}
+
+/**
+ * Where a ray from `origin` last crosses a closed polygon, in the LOCAL frame,
+ * or `null` if it crosses no edge. The shared implementation of
+ * `outlineIntersect` for every type whose silhouette is a polygon — the diamond,
+ * the flat shapes and the solids alike.
  *
  * Each edge is solved analytically rather than by marching along the ray: with
- * the centre at `c` and the edge running `a -> b`, the crossing satisfies
+ * the origin at `o` and the edge running `a -> b`, the crossing satisfies
  *
- *     c + t*direction = a + u*(b - a),    t >= 0,  0 <= u <= 1
+ *     o + t*direction = a + u*(b - a),    t >= 0,  0 <= u <= 1
  *
  * which is a 2x2 system whose determinant is the 2D cross product of the two
  * directions. A determinant of zero means the edge is parallel to the ray and is
@@ -400,14 +443,14 @@ export function rectOutlineIntersect(
  * anchors to its outermost crossing rather than to a notch the arrow would
  * appear to stop short of.
  *
- * Falls back to the polygon's bounding rectangle if nothing is crossed, which
- * can only happen for a degenerate polygon.
+ * `null` means the ray missed: the origin is outside the polygon and pointing
+ * away, or the polygon is degenerate. The caller decides what that means.
  */
 export function polygonOutlineIntersect(
   polygon: readonly Point[],
-  center: Point,
+  origin: Point,
   direction: Point,
-): Point {
+): Point | null {
   let best = -Infinity;
 
   for (let i = 0; i < polygon.length; i++) {
@@ -419,23 +462,16 @@ export function polygonOutlineIntersect(
     const determinant = direction.x * -ey - direction.y * -ex;
     if (determinant === 0) continue;
 
-    const rx = a.x - center.x;
-    const ry = a.y - center.y;
+    const rx = a.x - origin.x;
+    const ry = a.y - origin.y;
     const t = (rx * -ey - ry * -ex) / determinant;
     const u = (direction.x * ry - direction.y * rx) / determinant;
 
     if (t >= 0 && u >= 0 && u <= 1 && t > best) best = t;
   }
 
-  if (best === -Infinity) {
-    const box = aabbFromPoints(polygon);
-    return rectOutlineIntersect(
-      { width: box.maxX - box.minX, height: box.maxY - box.minY },
-      direction,
-    );
-  }
-
-  return { x: center.x + direction.x * best, y: center.y + direction.y * best };
+  if (best === -Infinity) return null;
+  return { x: origin.x + direction.x * best, y: origin.y + direction.y * best };
 }
 
 // ---------------------------------------------------------------------------

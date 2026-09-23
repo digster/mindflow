@@ -108,24 +108,31 @@ export interface ElementDefinition<T extends MindflowElement = MindflowElement> 
   hitTest(el: T, local: Point, tolerance: number): boolean;
 
   /**
-   * Where a ray from the element's centre towards `localDirection` crosses its
-   * outline, in the LOCAL frame. Optional; omitting it means "my outline is my
+   * Where the ray `localOrigin + t·localDirection` crosses the element's
+   * outline for the LAST time (the largest `t ≥ 0`), in the LOCAL frame, or
+   * `null` if it never does. Optional; omitting it means "my outline is my
    * bounding rectangle", which is right for most shapes.
    *
-   * This exists so auto-anchored connectors can attach to a shape's real edge
-   * rather than its bounding box. It was previously a `type === 'ellipse'`
-   * branch inside `geometry.ts` — the one place outside `render/shapes/` that
-   * broke the no-branching-on-type rule, and the reason adding a diamond would
-   * otherwise have had to break it a second time.
+   * This exists so auto- and focus-anchored connectors can attach to a shape's
+   * real edge rather than its bounding box. It was previously a
+   * `type === 'ellipse'` branch inside `geometry.ts` — the one place outside
+   * `render/shapes/` that broke the no-branching-on-type rule, and the reason
+   * adding a diamond would otherwise have had to break it a second time.
    *
-   * `localDirection` is a vector from the centre, not a point. Implementations
-   * return the crossing point in local coordinates; the caller handles rotation
-   * and the connector gap.
+   * The origin is the element's centre for an `auto` anchor and the stored focus
+   * point for a `focus` one. From an origin inside the outline there is always
+   * exactly one exit, so `null` only arises when a focus point lies inside the
+   * bounding box but outside the outline (the corner of an ellipse's box, the
+   * notch of a star) and the ray points away from the shape. The caller then
+   * falls back to the `auto` rule.
+   *
+   * `localDirection` is a vector, not a point, and need not be normalised. The
+   * caller handles rotation and the connector gap.
    *
    * Published in `docs/07-rendering.md`: an external renderer needs this to
    * reproduce a bound connector, so a new implementation is a format change.
    */
-  outlineIntersect?(el: T, localDirection: Point): Point;
+  outlineIntersect?(el: T, localDirection: Point, localOrigin: Point): Point | null;
 
   /**
    * The element's outline as a closed polygon in the LOCAL frame, used as the

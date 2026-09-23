@@ -223,12 +223,8 @@ function definePolygon<T extends PolygonElement>(
      * at a triangle's apex would stop at the bounding box, leaving a gap of up
      * to half the box — exactly the case `diamond` implements this hook for.
      */
-    outlineIntersect(el: T, direction: Point): Point {
-      return polygonOutlineIntersect(
-        verticesOf(el),
-        { x: el.width / 2, y: el.height / 2 },
-        direction,
-      );
+    outlineIntersect(el: T, direction: Point, origin: Point): Point | null {
+      return polygonOutlineIntersect(verticesOf(el), origin, direction);
     },
   };
 }

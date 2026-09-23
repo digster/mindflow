@@ -23,6 +23,8 @@ import type {
   RectangleElement,
 } from '../../src/model/types.ts';
 import {
+  anchorAimPoint,
+  bindConnectorEnds,
   connectorsToRefresh,
   createBinding,
   findBindTarget,
@@ -63,6 +65,21 @@ function arrow(from: { x: number; y: number }, to: { x: number; y: number }, zIn
   });
 }
 
+/** A connector's first and last points, in world coordinates. */
+function endpoints(connector: LinearElement): [{ x: number; y: number }, { x: number; y: number }] {
+  const first = connector.points[0]!;
+  const last = connector.points[connector.points.length - 1]!;
+  return [
+    { x: connector.x + first[0], y: connector.y + first[1] },
+    { x: connector.x + last[0], y: connector.y + last[1] },
+  ];
+}
+
+/** Perpendicular distance from `p` to the infinite line through `a` and `b`. */
+function distanceFromLine(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / Math.hypot(b.x - a.x, b.y - a.y);
+}
+
 function doc(...elements: MindflowElement[]): MindflowDocument {
   return { ...createDocument(), elements: [...elements].sort((a, b) => a.zIndex - b.zIndex) };
 }
@@ -71,6 +88,21 @@ describe('createBinding', () => {
   it('produces an auto anchor when dropped well inside', () => {
     const target = rect(0, 0, 100, 100);
     expect(createBinding(target, { x: 50, y: 50 }).anchor.mode).toBe('auto');
+  });
+
+  it('remembers an off-centre drop inside the shape as a focus anchor', () => {
+    // The fix for arrows whose start collapsed to one spot wherever inside the
+    // shape they were drawn from: the drop point is now kept.
+    const binding = createBinding(rect(0, 0, 100, 100), { x: 30, y: 70 });
+    expect(binding.anchor).toEqual({ mode: 'focus', u: 0.3, v: 0.7 });
+  });
+
+  it('snaps a drop near the centre to auto, and only near it', () => {
+    const target = rect(0, 0, 200, 100);
+    // 0.1 of the box either side of the centre, per axis.
+    expect(createBinding(target, { x: 118, y: 42 }).anchor.mode).toBe('auto');
+    expect(createBinding(target, { x: 122, y: 50 }).anchor.mode).toBe('focus');
+    expect(createBinding(target, { x: 100, y: 38 }).anchor.mode).toBe('focus');
   });
 
   it('produces a fixed anchor when dropped near the outline', () => {
@@ -166,6 +198,82 @@ describe('resolveBindingPoint', () => {
     const point = resolveBindingPoint(target, { elementId: target.id, anchor: { mode: 'auto' }, gap: 0 }, { x: 50, y: 50 });
     expect(point).toEqual(elementCenter(target));
   });
+
+  it('resolves a focus anchor where the line from its focus crosses the outline', () => {
+    // Focus (20, 80), reference (220, 30): slope −1/4, so x = 100 at y = 60 —
+    // not (100, 50), where aiming from the centre would have put it.
+    const target = rect(0, 0, 100, 100);
+    const point = resolveBindingPoint(
+      target,
+      { elementId: target.id, anchor: { mode: 'focus', u: 0.2, v: 0.8 }, gap: 0 },
+      { x: 220, y: 30 },
+    );
+    closeTo(point.x, 100);
+    closeTo(point.y, 60);
+  });
+
+  it('pushes a focus tip along its own ray, not away from the centre', () => {
+    const target = rect(0, 0, 100, 100);
+    const point = resolveBindingPoint(
+      target,
+      { elementId: target.id, anchor: { mode: 'focus', u: 0.2, v: 0.8 }, gap: Math.hypot(4, 1) },
+      { x: 220, y: 30 },
+    );
+    // The ray runs (200, −50), i.e. (4, −1) scaled, so the push is exactly that.
+    closeTo(point.x, 104);
+    closeTo(point.y, 59);
+  });
+
+  it('follows a rotated target with a focus anchor', () => {
+    // Rotated 90° clockwise, local (20, 50) sits at world (50, 20). A reference
+    // straight below leaves through what is now the bottom edge.
+    const target = { ...rect(0, 0, 100, 100), angle: 90 };
+    const point = resolveBindingPoint(
+      target,
+      { elementId: target.id, anchor: { mode: 'focus', u: 0.2, v: 0.5 }, gap: 0 },
+      { x: 50, y: 500 },
+    );
+    closeTo(point.x, 50, 3);
+    closeTo(point.y, 100, 3);
+  });
+
+  it('falls back to auto when a focus ray misses the outline', () => {
+    // (5, 5) on a circle's box is outside the circle; up and to the left, the
+    // ray never meets it.
+    const target = ellipse(0, 0, 100, 100);
+    const reference = { x: -300, y: -200 };
+    const focus = resolveBindingPoint(
+      target,
+      { elementId: target.id, anchor: { mode: 'focus', u: 0.05, v: 0.05 }, gap: 4 },
+      reference,
+    );
+    const auto = resolveBindingPoint(target, { elementId: target.id, anchor: { mode: 'auto' }, gap: 4 }, reference);
+    expect(focus).toEqual(auto);
+  });
+
+  it('falls back to auto when the reference sits on the focus point', () => {
+    const target = rect(0, 0, 100, 100);
+    const reference = { x: 20, y: 80 };
+    const focus = resolveBindingPoint(
+      target,
+      { elementId: target.id, anchor: { mode: 'focus', u: 0.2, v: 0.8 }, gap: 4 },
+      reference,
+    );
+    const auto = resolveBindingPoint(target, { elementId: target.id, anchor: { mode: 'auto' }, gap: 4 }, reference);
+    expect(focus).toEqual(auto);
+  });
+});
+
+describe('anchorAimPoint', () => {
+  it('is the centre for auto and the stored spot for focus and fixed', () => {
+    const target = { ...rect(0, 0, 100, 100), angle: 90 };
+    expect(anchorAimPoint(target, { mode: 'auto' })).toEqual(elementCenter(target));
+    for (const mode of ['focus', 'fixed'] as const) {
+      const point = anchorAimPoint(target, { mode, u: 0.2, v: 0.5 });
+      closeTo(point.x, 50, 3);
+      closeTo(point.y, 20, 3);
+    }
+  });
 });
 
 describe('refreshConnector', () => {
@@ -236,7 +344,57 @@ describe('refreshConnector', () => {
     expect(refreshConnector(doc(connector), connector)).toBe(connector);
   });
 
-  it('uses the other target’s centre when both ends are bound', () => {
+  it('keeps a connector between two focus anchors on the line it was drawn along', () => {
+    // Drawn from (20, 80) inside A to (330, 20) inside B. Both tips must sit on
+    // that line, trimmed at each outline — the Excalidraw behaviour the auto
+    // anchor could not give, since it always aimed through the centres.
+    const a = rect(0, 0, 100, 100, 1000);
+    const b = rect(300, 0, 100, 100, 2000);
+    const connector = { ...arrow({ x: 20, y: 80 }, { x: 330, y: 20 }) };
+    connector.startBinding = { elementId: a.id, anchor: { mode: 'focus', u: 0.2, v: 0.8 }, gap: 0 };
+    connector.endBinding = { elementId: b.id, anchor: { mode: 'focus', u: 0.3, v: 0.2 }, gap: 0 };
+
+    const refreshed = refreshConnector(doc(a, b, connector), connector);
+    const [start, end] = endpoints(refreshed);
+
+    closeTo(start.x, 100, 1); // A's right edge
+    closeTo(end.x, 300, 1); // B's left edge
+    // Stored coordinates are rounded to 0.01, so "on the line" means within that.
+    expect(distanceFromLine(start, { x: 20, y: 80 }, { x: 330, y: 20 })).toBeLessThan(0.01);
+    expect(distanceFromLine(end, { x: 20, y: 80 }, { x: 330, y: 20 })).toBeLessThan(0.01);
+  });
+
+  it('keeps aiming through the focus point when the far target moves', () => {
+    const a = rect(0, 0, 100, 100, 1000);
+    const b = rect(300, 0, 100, 100, 2000);
+    let connector = { ...arrow({ x: 20, y: 80 }, { x: 350, y: 50 }) };
+    connector.startBinding = { elementId: a.id, anchor: { mode: 'focus', u: 0.2, v: 0.8 }, gap: 0 };
+    connector.endBinding = { elementId: b.id, anchor: { mode: 'auto' }, gap: 0 };
+    connector = refreshConnector(doc(a, b, connector), connector);
+
+    const movedB = { ...b, y: 300 };
+    const [start] = endpoints(refreshConnector(doc(a, movedB, connector), connector));
+    // The start tip lies on the line from A's focus (20, 80) to B's new centre.
+    expect(distanceFromLine(start, { x: 20, y: 80 }, { x: 350, y: 350 })).toBeLessThan(0.01);
+    expect(start.y).toBeGreaterThan(80); // and it swung round to face B below
+  });
+
+  it('aims an auto end at a fixed far end’s pinned spot, not its centre', () => {
+    // B is pinned at local (0, 20), world (300, 20). From A's centre (50, 50)
+    // that line leaves A's right edge at y = 44. Aiming at B's centre, the rule
+    // before 1.6.0, would have given y = 50.
+    const a = rect(0, 0, 100, 100, 1000);
+    const b = rect(300, 0, 100, 100, 2000);
+    const connector = { ...arrow({ x: 50, y: 50 }, { x: 300, y: 20 }) };
+    connector.startBinding = { elementId: a.id, anchor: { mode: 'auto' }, gap: 0 };
+    connector.endBinding = { elementId: b.id, anchor: { mode: 'fixed', u: 0, v: 0.2 }, gap: 0 };
+
+    const [start] = endpoints(refreshConnector(doc(a, b, connector), connector));
+    closeTo(start.x, 100, 1);
+    closeTo(start.y, 44, 1);
+  });
+
+  it('aims at the other target’s centre when both ends are auto', () => {
     // Resolving two auto anchors against each other would be a mutual dependency
     // with no closed-form solution.
     const a = rect(0, 0, 100, 100, 1000);
@@ -278,6 +436,41 @@ describe('connectorsToRefresh', () => {
     connector.endBinding = { elementId: b.id, anchor: { mode: 'auto' }, gap: 0 };
 
     expect(connectorsToRefresh(doc(b, connector), new Set([b.id, connector.id]))).toHaveLength(0);
+  });
+});
+
+describe('bindConnectorEnds', () => {
+  it('binds each end to the shape it lands on', () => {
+    const a = rect(0, 0, 100, 100, 1000);
+    const b = rect(300, 0, 100, 100, 2000);
+    const { startBinding, endBinding } = bindConnectorEnds(doc(a, b), { x: 20, y: 80 }, { x: 302, y: 30 }, new Set());
+    expect(startBinding).toMatchObject({ elementId: a.id, anchor: { mode: 'focus' } });
+    expect(endBinding).toMatchObject({ elementId: b.id, anchor: { mode: 'fixed' } });
+  });
+
+  it('leaves both ends free when drawn between two points inside one shape', () => {
+    // Say an arrow drawn inside a frame. Aiming each end through the shape at
+    // the other would send it out past the opposite edge, reversed; as `auto`
+    // anchors, the whole arrow collapsed onto the centre.
+    const frame = rect(0, 0, 400, 300, 1000);
+    const { startBinding, endBinding } = bindConnectorEnds(doc(frame), { x: 100, y: 150 }, { x: 300, y: 150 }, new Set());
+    expect(startBinding).toBeNull();
+    expect(endBinding).toBeNull();
+  });
+
+  it('still binds a loop from one edge of a shape to another', () => {
+    // Pinned anchors do not aim at anything, so both ends on one shape is fine.
+    const box = rect(0, 0, 100, 100, 1000);
+    const { startBinding, endBinding } = bindConnectorEnds(doc(box), { x: 100, y: 50 }, { x: 50, y: 0 }, new Set());
+    expect(startBinding?.anchor.mode).toBe('fixed');
+    expect(endBinding?.anchor.mode).toBe('fixed');
+  });
+
+  it('keeps only the pinned end when one end is inside the shape and one on its edge', () => {
+    const box = rect(0, 0, 100, 100, 1000);
+    const { startBinding, endBinding } = bindConnectorEnds(doc(box), { x: 30, y: 70 }, { x: 100, y: 50 }, new Set());
+    expect(startBinding).toBeNull();
+    expect(endBinding?.anchor.mode).toBe('fixed');
   });
 });
 

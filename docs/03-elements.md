@@ -112,9 +112,11 @@ coordinates, clockwise from the top: `(w/2, 0)`, `(w, h/2)`, `(w/2, h)`,
 non-empty label text) is hit anywhere inside its outline, and an unfilled one only
 near its edges, so a click passes through the hollow middle.
 
-**Connector anchoring:** an `auto`-bound connector attaches to the *rhombus*, not
-its bounding box. Substituting a ray `(t·dx, t·dy)` into `|x|/a + |y|/b = 1`,
-where `a = width/2` and `b = height/2`, gives the crossing directly:
+**Connector anchoring:** an `auto`- or `focus`-bound connector attaches to the
+*rhombus*, not its bounding box, found by the same per-edge rule as the
+[flat polygons](#flat-polygons). From the centre, which is where an `auto` ray
+starts, substituting `(t·dx, t·dy)` into `|x|/a + |y|/b = 1`, where
+`a = width/2` and `b = height/2`, gives the crossing directly:
 
 ```
 t = 1 / (|dx|/a + |dy|/b)
@@ -227,17 +229,32 @@ The first and last points are the endpoints that bindings apply to.
 | Field | Type | Notes |
 |---|---|---|
 | `elementId` | string | MUST reference an existing, `bindable` element. |
-| `anchor` | object | `{"mode": "auto"}` or `{"mode": "fixed", "u": …, "v": …}`. |
+| `anchor` | object | `{"mode": "auto"}`, `{"mode": "focus", "u": …, "v": …}` or `{"mode": "fixed", "u": …, "v": …}`. |
 | `gap` | number ≥ 0 | Clearance between the target's outline and the tip, in scene units. |
 
 - **`auto`** — the attachment point is recomputed whenever either element moves,
   by casting a ray from the target's centre toward the connector's other end and
   taking where it crosses the outline. Attaches to whichever edge faces the other
   end.
+- **`focus`** *(1.6.0)* — as `auto`, but the ray starts at a **focus point**
+  `(u, v)` inside the target instead of its centre. The focus point is where the
+  connector was dropped, so the tip lands where the line that was drawn crosses
+  the outline, and it slides around the outline to keep aiming at that spot as
+  either element moves. `u` and `v` are normalised as for `fixed`, and `(0.5,
+  0.5)` behaves exactly like `auto`.
 - **`fixed`** — pinned to a specific spot, given in normalised coordinates on the
   target's local unrotated box: `u` runs 0 (left) → 1 (right), `v` runs 0 (top) →
   1 (bottom). The point is transformed by the target's rotation, so it follows the
   shape as it turns.
+
+When both ends are bound, an `auto` or `focus` end aims at the point the other
+end's anchor aims at: its target's centre, or its `(u, v)` spot. See
+[07-rendering.md](07-rendering.md#choosing-the-reference-point).
+
+A connector bound at both ends to the **same** element should use `fixed` anchors
+at both. With `auto` or `focus` the result is still defined, but it is degenerate:
+the end aims through its own shape at a point inside that same shape. MindFlow
+never writes one.
 
 > **The stored `points` of a bound connector are a cache, not the truth.** They
 > reflect the last computed route. A reader that moves a bound element MUST
@@ -582,10 +599,10 @@ except their vertex lists.
 non-empty label text) is hit anywhere inside its outline, and an unfilled one
 only near its edges, so a click passes through the hollow middle.
 
-**Connector anchoring:** an `auto`-bound connector attaches to the polygon, not
-to its bounding box. The crossing is found by intersecting the ray from the
-element's centre with each edge in turn and taking the **largest** valid
-parameter, so a star anchors to the tip of a point rather than to the notch
+**Connector anchoring:** an `auto`- or `focus`-bound connector attaches to the
+polygon, not to its bounding box. The crossing is found by intersecting the ray
+(from the centre, or from the focus point) with each edge in turn and taking the
+**largest** valid parameter, so a star anchors to the tip of a point rather than to the notch
 between two of them. The algorithm is specified in
 [07-rendering.md](07-rendering.md#binding-resolution).
 

@@ -23,6 +23,7 @@ import type {
   Arrowhead,
   BaseElement,
   Binding,
+  BindingAnchor,
   LinearElement,
   Point,
   PointTuple,
@@ -201,17 +202,32 @@ function normalizeBinding(raw: unknown): Binding | null {
   const elementId = stringOr(raw.elementId, '');
   if (elementId === '') return null;
 
-  const anchor = isRecord(raw.anchor) ? raw.anchor : {};
-  const mode = anchor.mode === 'fixed' ? 'fixed' : 'auto';
-
   return {
     elementId,
-    anchor:
-      mode === 'fixed'
-        ? { mode: 'fixed', u: numberOr(anchor.u, 0.5), v: numberOr(anchor.v, 0.5) }
-        : { mode: 'auto' },
+    anchor: normalizeAnchor(isRecord(raw.anchor) ? raw.anchor : {}),
     gap: Math.max(0, numberOr(raw.gap, 0)),
   };
+}
+
+/**
+ * An unrecognised mode reads as `auto`, the one anchor that needs no data.
+ *
+ * A focus point is clamped into the box. Resolution casts a ray *from* it, and
+ * the rectangular solver is only defined for an origin inside the box, so an
+ * out-of-range value would otherwise produce a tip on the wrong side of the
+ * shape rather than merely a slightly different one.
+ */
+function normalizeAnchor(anchor: Record<string, unknown>): BindingAnchor {
+  const u = numberOr(anchor.u, 0.5);
+  const v = numberOr(anchor.v, 0.5);
+  switch (anchor.mode) {
+    case 'fixed':
+      return { mode: 'fixed', u, v };
+    case 'focus':
+      return { mode: 'focus', u: Math.min(Math.max(u, 0), 1), v: Math.min(Math.max(v, 0), 1) };
+    default:
+      return { mode: 'auto' };
+  }
 }
 
 export const linearDefinition = (type: 'line' | 'arrow'): ElementDefinition<LinearElement> => ({

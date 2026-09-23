@@ -408,12 +408,8 @@ function defineSolid<T extends SolidElement>(type: T['type'], title: string): El
       return distanceToPolyline(local, [...outline, outline[0]!]) <= tolerance;
     },
 
-    outlineIntersect(el: T, direction: Point): Point {
-      return polygonOutlineIntersect(
-        silhouetteOf(el),
-        { x: el.width / 2, y: el.height / 2 },
-        direction,
-      );
+    outlineIntersect(el: T, direction: Point, origin: Point): Point | null {
+      return polygonOutlineIntersect(silhouetteOf(el), origin, direction);
     },
   };
 }

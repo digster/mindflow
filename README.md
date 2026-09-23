@@ -106,7 +106,7 @@ default — so any single element is interpretable in isolation.
 ```json
 {
   "type": "mindflow.board",
-  "schemaVersion": "1.5.0",
+  "schemaVersion": "1.6.0",
   "elements": [
     {
       "id": "el_q2WikW58Aw",
@@ -144,14 +144,14 @@ attaches to a shape, not *where* — the position is derived from the target's
 current geometry.
 
 So [`docs/07-rendering.md`](docs/07-rendering.md) specifies the algorithms too:
-auto-anchor resolution, elbow routing, curve smoothing, text wrapping, arrowhead
-geometry. Without those, a file containing a bound arrow could only be rendered by
+auto- and focus-anchor resolution, elbow routing, curve smoothing, text wrapping,
+arrowhead geometry. Without those, a file containing a bound arrow could only be rendered by
 MindFlow itself, which would defeat the point.
 
 **Start here:** [`docs/README.md`](docs/README.md) ·
 [format](docs/02-document-format.md) · [elements](docs/03-elements.md) ·
 [geometry](docs/04-coordinates.md) · [rendering algorithms](docs/07-rendering.md) ·
-[JSON Schema](docs/schema/mindflow-1.5.0.schema.json)
+[JSON Schema](docs/schema/mindflow-1.6.0.schema.json)
 
 ## Google Drive
 

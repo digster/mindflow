@@ -425,13 +425,31 @@ for.
 While dragging an arrow endpoint, any bindable shape within **12 scene units** of
 the pointer is highlighted in green. Releasing there creates a binding.
 
-Where the endpoint lands decides the anchor mode:
+Where the endpoint lands decides the anchor mode. With `u` and `v` the drop
+position normalised to the shape's box:
 
-- **Comfortably inside** the shape (normalised `u` and `v` both between 0.15 and
-  0.85) → an `auto` anchor, which tracks the other end and always attaches to the
-  nearest edge. This is the default behaviour people expect.
+- **Near the centre** (`|u − 0.5|` and `|v − 0.5|` both at most 0.1) → an `auto`
+  anchor, aimed through the exact centre. Dragging from the middle of a box
+  almost always means "from this box", and a radial arrow stays tidy as the
+  shapes move.
+- **Elsewhere comfortably inside** (`u` and `v` both between 0.15 and 0.85) → a
+  `focus` anchor that remembers the drop point. The tip lands where the drawn
+  line crosses the outline, and keeps aiming through that point as the shapes
+  move. This is what makes the start of an arrow stay where it was drawn from.
+  Before 1.6.0 every drop in this zone became `auto`, so all of them collapsed to
+  the same spot on the outline, facing the other shape's centre.
 - **Near or beyond the outline** → a `fixed` anchor pinned to that exact spot, for
   when a specific attachment point matters.
+
+Both zones are normalised rather than measured in scene units, so they scale with
+the shape and are as easy to hit on a small sticky as on a large frame.
+
+**Both ends on the same shape:** only `fixed` ends bind, and any other end is left
+free. An `auto` or `focus` end aims through its shape toward the other end, which
+means nothing when that end is inside the same shape: two focus ends would each
+point out past the opposite edge, reversing the arrow. So an arrow sketched
+between two spots inside a frame stays exactly as drawn, and an edge-to-edge loop
+on one shape still binds at both ends.
 
 The binding distance is generous on purpose: binding is the desired outcome far
 more often than not, and an unwanted binding is undone by dragging the end away.
