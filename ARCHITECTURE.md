@@ -226,6 +226,20 @@ nothing about what is touching it right now. The pinch arithmetic lives in
 can only drive two simultaneous contacts through raw CDP and the numbers deserve
 a unit test.
 
+**A pinch can zoom the board but never the page.** No single mechanism covers
+every browser, so there are three layers. The viewport meta covers mobile
+browsers. `touch-action: pan-x pan-y` on `html, body` covers every engine,
+including touchscreen laptops, whose desktop browsers ignore the meta. Cancelling
+WebKit's `gesture*` events ([`src/input/pageZoom.ts`](src/input/pageZoom.ts))
+covers iOS Safari, which ignores `user-scalable=no`. WebKit also resolves
+`touch-action` only up to the nearest scrolling container, so every rule in
+`app.css` that makes something scroll repeats `touch-action: pan-x pan-y`.
+`test/unit/pageZoom.test.ts` reads the stylesheet and fails if one does not,
+because Chromium would pass the e2e suite without it. The gesture guard is the
+one touch rule keyed off the *device* (`navigator.maxTouchPoints`), not the
+gesture. A gesture event does not say what produced it, and the device check is
+what leaves macOS Safari's trackpad pinch alone.
+
 **Paste has two entry points and one owner.** The Cmd/Ctrl+V keydown
 (`input/keyboard.ts`) and the native `paste` event (`app/app.ts`) can both fire
 for one press, and pasting is not idempotent. Neither calls `actions.paste()`

@@ -457,3 +457,15 @@ scroll were what made the two copies disagree.
 Chosen: (a), hyphen only, as format 1.6.1. The rule is Blink's as measured
 ("follows a letter" would have missed `2024-09`, `a--b` and `-foo`, which
 Blink also breaks).
+
+---
+
+## 2026-09-25 — Block page zoom on touch devices
+
+> block the site zoom on touch devices, not the board zoom.
+
+A pinch on the top bar or tool palette zoomed the whole page on a touchscreen
+(4× in Playwright's desktop-Chrome-with-touch project, which ignores the
+viewport meta, as iOS Safari does for a pinch). Blocked with `touch-action:
+pan-x pan-y` on the page and each scroller, WebKit `gesture*` cancellation on
+touch devices, and `maximum-scale=1`. Board pinch is unchanged.

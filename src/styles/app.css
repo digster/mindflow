@@ -94,6 +94,25 @@ body {
   margin: 0;
   overflow: hidden; /* The canvas owns all scrolling. */
   overscroll-behavior: none; /* Suppress pull-to-refresh and rubber-banding. */
+
+  /*
+   * Fingers may scroll, but never zoom the page. Without this a pinch that
+   * lands on the chrome (the top bar, a panel) scales the whole app instead of
+   * the board, and a double tap on a toolbar zooms in on it. What remains is a
+   * UI too big for the screen, with no control on it that can undo that.
+   *
+   * `user-scalable=no` in the viewport meta is not enough on its own: desktop
+   * browsers ignore the viewport meta, so a touchscreen laptop pinch-zooms
+   * regardless, and iOS Safari has ignored it since iOS 10.
+   *
+   * Chromium and Firefox apply this to everything beneath it, with scrolling
+   * containers still free to pan. WebKit starts again from `auto` at each
+   * scrolling container, so every rule below that makes one scroll repeats
+   * this line. A unit test holds them to it. The canvas narrows this further
+   * to `none` and does its own pan and pinch, and that is the only zoom a
+   * finger reaches. `src/input/pageZoom.ts` has the full picture.
+   */
+  touch-action: pan-x pan-y;
 }
 
 body {
@@ -552,6 +571,7 @@ textarea {
   min-height: 0;
   padding: 14px;
   overflow-y: auto;
+  touch-action: pan-x pan-y; /* No page zoom here either. See `html`. */
   /* A flick that reaches the end of the controls must not scroll the page. */
   overscroll-behavior: contain;
 }
@@ -841,6 +861,7 @@ textarea {
   max-height: 60vh;
   padding: 16px;
   overflow-y: auto;
+  touch-action: pan-x pan-y; /* No page zoom here either. See `html`. */
 }
 
 .mf-dialog-footer {
@@ -1134,6 +1155,7 @@ kbd {
   gap: 1px;
   max-height: min(360px, 60vh);
   overflow-y: auto;
+  touch-action: pan-x pan-y; /* No page zoom here either. See `html`. */
 }
 
 .mf-recent-item {
@@ -1271,6 +1293,7 @@ kbd {
   padding: 5px;
   margin: 0;
   overflow-y: auto;
+  touch-action: pan-x pan-y; /* No page zoom here either. See `html`. */
   list-style: none;
 }
 
@@ -1358,6 +1381,7 @@ kbd {
 .mf-fatal pre {
   padding: 12px;
   overflow-x: auto;
+  touch-action: pan-x pan-y; /* No page zoom here either. See `html`. */
   font-family: var(--mf-font-mono);
   font-size: 12px;
   text-align: left;
@@ -1378,6 +1402,7 @@ kbd {
     flex-direction: row;
     max-width: calc(100vw - 24px);
     overflow-x: auto;
+    touch-action: pan-x pan-y; /* No page zoom here either. See `html`. */
     transform: translateX(-50%);
   }
 

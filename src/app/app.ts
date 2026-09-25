@@ -20,6 +20,7 @@ import { layoutText } from '../render/shapes/shared.ts';
 import { InteractionController } from '../input/controller.ts';
 import { installKeyboardShortcuts, isTypingTarget } from '../input/keyboard.ts';
 import { createPasteGate } from '../input/pasteGate.ts';
+import { blockPageZoom } from '../input/pageZoom.ts';
 import { screenToScene } from '../model/geometry.ts';
 import { PALETTE } from '../model/defaults.ts';
 import { loadDocument, serializeDocument, type LoadResult } from '../model/document.ts';
@@ -208,6 +209,12 @@ export class MindflowApp {
         this.pushScene();
       }),
     );
+
+    // ---- Page zoom -------------------------------------------------------
+    // A pinch on a touchscreen zooms the board, never the page around it. The
+    // CSS and the viewport meta do most of this. This covers iOS Safari, which
+    // ignores both in places. See `input/pageZoom.ts` for which layer covers what.
+    this.disposers.push(blockPageZoom(document, navigator.maxTouchPoints > 0));
 
     // ---- Resize ----------------------------------------------------------
     const resizeObserver = new ResizeObserver(() => {

@@ -139,6 +139,7 @@ npm run check       # typecheck + test + build
 | Load leniency or validation | `src/model/document.ts` |
 | Undo behaviour | `src/store/commands.ts`, `src/store/history.ts` |
 | A gesture | `src/input/controller.ts` |
+| Page zoom on touch (must stay blocked) | `src/input/pageZoom.ts` + `touch-action` in `src/styles/app.css` |
 | Connector routing | `src/input/binding.ts` + `docs/07-rendering.md` |
 | A keyboard shortcut | `src/input/keyboard.ts` (and its `SHORTCUT_REFERENCE`) |
 | Drive behaviour | `src/io/drive/` + `docs/08-google-drive.md` |
