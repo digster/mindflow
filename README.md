@@ -49,7 +49,8 @@ between sessions.
 
 **Touch** — tap to select, drag to move, double-tap to edit text, long-press for
 the context menu, two-finger drag to pan and pinch to zoom. Hit targets and drag
-thresholds size themselves to whatever is doing the pointing.
+thresholds size themselves to whatever is doing the pointing. A pinch zooms the
+board, never the page: the toolbars stay put.
 
 **Connectors** — arrows that bind to shapes and re-route automatically when those
 shapes move. Straight, curved or elbow routing; five arrowhead styles.

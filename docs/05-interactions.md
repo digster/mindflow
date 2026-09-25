@@ -379,6 +379,22 @@ so the fingers returning to where they started returns the board exactly with
 them. Lifting either finger ends the gesture; the remaining one does not inherit
 a drag, which would lurch the board from wherever that finger had travelled to.
 
+**The page itself never zooms.** A pinch or a double tap anywhere else, such as
+the top bar, the tool palette or a panel, does nothing. Browsers would otherwise
+zoom the whole app, leaving a UI larger than the screen and no control that can
+undo it. Three layers block it, because each browser listens to a different one:
+
+| Layer | Stops | Where |
+|---|---|---|
+| `user-scalable=no, maximum-scale=1` in the viewport meta | Mobile Chromium and Firefox. Also the zoom iOS Safari starts by itself when a small-text field takes focus. | `src/index.template.html` |
+| `touch-action: pan-x pan-y` on the page, repeated on each scrolling container | Pinch and double-tap zoom in every engine, including a touchscreen laptop, whose desktop browser ignores the viewport meta. Panels still scroll. | `src/styles/app.css` |
+| Cancelling `gesturestart`, `gesturechange` and `gestureend` | iOS Safari, which ignores `user-scalable=no` for a pinch. | `src/input/pageZoom.ts` |
+
+The canvas is `touch-action: none` and does its own pan and pinch, above, so
+that is the only zoom a finger reaches. The gesture events are cancelled only on
+a device that reports touch points. macOS Safari sends the same events for a
+trackpad pinch, and that is left as it was.
+
 **Ending a text edit does not depend on focus.** See
 [Text editing](#text-editing).
 

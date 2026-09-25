@@ -504,3 +504,93 @@ test.describe('two-finger pan and pinch', () => {
     expect(await selectedCount(page)).toBe(1);
   });
 });
+
+/**
+ * The page itself must never zoom. A pinch belongs to the board. When the
+ * browser zooms the page instead, the whole app ends up larger than the screen
+ * and nothing on screen can undo it.
+ *
+ * This project is a desktop browser with a touchscreen, which ignores the
+ * viewport meta, as iOS Safari does for a pinch. So these tests prove the CSS
+ * `touch-action` layer on its own, not the meta. Before it, a pinch on the top
+ * bar left the page at 4x. The iOS-only gesture-event layer is unit-tested in
+ * `pageZoom.test.ts`, because Chromium has no gesture events.
+ */
+test.describe('page zoom', () => {
+  /**
+   * Two fingers landing either side of `centre`, in page coordinates, and
+   * spreading apart along `axis`. For targets outside the canvas.
+   */
+  async function spreadAt(page: Page, centre: { x: number; y: number }, axis: 'x' | 'y') {
+    const at = (offset: number, id: number) =>
+      axis === 'x'
+        ? { x: centre.x + offset, y: centre.y, id }
+        : { x: centre.x, y: centre.y + offset, id };
+
+    await dispatch(page, 'touchStart', [at(-20, 1), at(20, 2)]);
+    for (let step = 1; step <= 10; step += 1) {
+      const spread = 20 + step * 15;
+      await dispatch(page, 'touchMove', [at(-spread, 1), at(spread, 2)]);
+    }
+    await dispatch(page, 'touchEnd', []);
+  }
+
+  async function centreOf(page: Page, selector: string) {
+    const box = await page.locator(selector).boundingBox();
+    if (!box) throw new Error(`${selector} not found`);
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  }
+
+  /** How far the browser has zoomed the page. 1 means it has not. */
+  async function pageScale(page: Page) {
+    return page.evaluate(() => window.visualViewport?.scale ?? 1);
+  }
+
+  test('a pinch on the top bar zooms neither the page nor the board', async ({ page }) => {
+    const before = await viewport(page);
+
+    await spreadAt(page, await centreOf(page, '.mf-topbar'), 'x');
+
+    expect(await pageScale(page)).toBe(1);
+    expect(await viewport(page)).toEqual(before);
+  });
+
+  test('a pinch on the tool palette zooms neither the page nor the board', async ({ page }) => {
+    const before = await viewport(page);
+
+    await spreadAt(page, await centreOf(page, '.mf-tools'), 'y');
+
+    expect(await pageScale(page)).toBe(1);
+    expect(await viewport(page)).toEqual(before);
+  });
+
+  test('a pinch on the canvas zooms the board and not the page', async ({ page }) => {
+    const before = await viewport(page);
+
+    await pinch(page, [[400, 300], [500, 300]], [[350, 300], [550, 300]]);
+
+    expect(await pageScale(page)).toBe(1);
+    expect((await viewport(page)).zoom).toBeCloseTo(before.zoom * 2, 1);
+  });
+
+  test('a finger still scrolls the tool palette on a phone', async ({ page }) => {
+    // Page zoom is blocked with `touch-action`, which can also block scrolling
+    // if the wrong value is used. At phone width the palette is a horizontal
+    // scroller, and it is the one a thumb uses most.
+    await page.setViewportSize({ width: 390, height: 740 });
+    const tools = page.locator('.mf-tools');
+    const overflow = await tools.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflow, 'the palette must overflow for this test to mean anything').toBeGreaterThan(0);
+
+    const box = (await tools.boundingBox())!;
+    const y = box.y + box.height / 2;
+    await dispatch(page, 'touchStart', [{ x: box.x + box.width - 10, y }]);
+    for (let step = 1; step <= 10; step += 1) {
+      await dispatch(page, 'touchMove', [{ x: box.x + box.width - 10 - step * 20, y }]);
+    }
+    await dispatch(page, 'touchEnd', []);
+
+    await expect.poll(() => tools.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+    expect(await pageScale(page)).toBe(1);
+  });
+});

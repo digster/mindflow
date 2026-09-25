@@ -1131,3 +1131,42 @@ hook. Whether a `text` element wraps depends on `autoWidth`, so `wrapsText(el)`
 cannot be a flag. So is logic or wording only the type can state: `withText`
 re-measures a content-sized box, and `validate` returns draw's "a freehand
 stroke needs at least one point".
+
+## `user-scalable=no` does not stop the page zooming on a touchscreen
+
+**Symptom:** on a touchscreen, a pinch that lands on the top bar or the tool
+palette zooms the whole app instead of the board. The UI ends up larger than the
+screen, and no control on it can undo that. A pinch on the canvas was always
+fine.
+
+**Cause:** the viewport meta already said `user-scalable=no`, but it binds less
+than it appears to.
+
+- **Desktop browsers ignore the viewport meta entirely.** A touchscreen laptop,
+  or Playwright's `touch` project (Desktop Chrome with `hasTouch`), pinch-zooms
+  the page regardless. That project reproduced it: a pinch on the top bar left
+  `visualViewport.scale` at 4.
+- **iOS Safari has ignored `user-scalable=no` for a pinch since iOS 10.**
+- The canvas was safe only because of its own `touch-action: none`. Everything
+  else had the default `auto`, which allows pinch and double-tap zoom.
+
+**Fix:** `touch-action: pan-x pan-y` on `html, body`, and cancelling WebKit's
+`gesture*` events on a touch device (`input/pageZoom.ts`). `maximum-scale=1`
+was also added to the meta, for the zoom iOS starts by itself when a small-text
+field focuses.
+
+**Traps on the way:**
+
+- **`manipulation` is the wrong value.** It means `pan-x pan-y pinch-zoom`, so
+  it stops double-tap zoom and still allows pinch. `none` is wrong too: it stops
+  every panel scrolling. The e2e suite checks both, and each fails one of them.
+- **WebKit resets `touch-action` at every scrolling container.** Chromium and
+  Firefox carry a zoom restriction down past scrollers and re-enable only
+  panning. WebKit reads the spec literally and starts again from `auto`. So
+  every `overflow: auto` rule repeats the declaration. Chromium cannot show the
+  gap, so `test/unit/pageZoom.test.ts` reads `app.css` and requires it. The
+  phone-width tool palette is one of these scrollers, and it is the most tapped
+  element on an iPhone.
+- **Chromium keeps a page zoom across `reload()`** within the same context. A
+  probe that zooms the page and then reloads reads the old scale and blames the
+  next case. Use a fresh context per case.

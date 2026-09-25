@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <!--
+      Page zoom is off, because a pinch belongs to the board. The limits cover
+      mobile browsers, and also the zoom iOS Safari starts by itself when a field
+      with small text takes focus. Desktop browsers and iOS ignore these limits
+      for a user's pinch, so app.css and src/input/pageZoom.ts block that.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="color-scheme" content="light dark" />
     <title>MindFlow</title>
     <meta name="description" content="A static, serverless digital whiteboard with a fully documented save format." />
