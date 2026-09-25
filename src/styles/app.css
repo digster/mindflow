@@ -1140,6 +1140,24 @@ kbd {
   padding: 6px;
 }
 
+/* New board, above the list. A context-menu row, but led by an icon rather
+   than trailed by a shortcut, so it packs to the start. */
+.mf-recent-new {
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 8px 9px;
+  font-weight: 550;
+}
+
+.mf-recent-new:focus-visible {
+  background: var(--mf-surface-hover); /* Matches a focused board row. */
+}
+
+.mf-recent-new svg {
+  flex: 0 0 auto;
+  color: var(--mf-accent);
+}
+
 .mf-recent-heading {
   padding: 6px 8px 4px;
   font-size: 11px;

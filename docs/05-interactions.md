@@ -754,6 +754,10 @@ copy in this browser, newest first. *Recent boards…* in the command palette
 opens the same menu. How copies are stored, capped and recovered is specified
 in [06-persistence.md](06-persistence.md#autosave-and-recent-boards).
 
+- **New board** sits at the top of the menu, above the list. It does exactly
+  what the toolbar's New board button does, including asking first if the
+  current board has unsaved changes. It is offered even when the list is empty
+  or local storage is refused, since starting a board needs neither.
 - Each row shows the board's name, element count and when it last changed.
   **Unsaved** marks a board with changes that were never saved to a file or to
   Drive.
@@ -764,9 +768,11 @@ in [06-persistence.md](06-persistence.md#autosave-and-recent-boards).
 - The trash button removes a board's copy from this browser. It asks first only
   for a board marked unsaved. It appears on hover or focus where there is a
   mouse, and is always visible on touch.
-- The arrow keys move between boards and Enter opens the focused one. With
-  focus in the menu, unmodified keys stay in the menu: an arrow key does not
-  also nudge the selection behind it. Chords such as `Cmd+S` still work.
+- The arrow keys move between New board and the boards, and Enter activates
+  the focused one. Focus starts on the first board that can be reopened, or on
+  New board when there is none. With focus in the menu, unmodified keys stay in
+  the menu: an arrow key does not also nudge the selection behind it. Chords
+  such as `Cmd+S` still work.
 
 ## Undo
 

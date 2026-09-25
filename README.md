@@ -59,8 +59,9 @@ shapes move. Straight, curved or elbow routing; five arrowhead styles.
 export to PNG, SVG or JSON.
 
 **Recent boards** — every board you work on keeps a copy in the browser
-(IndexedDB). Click the logo at the top left to switch between up to ten of them;
-boards with changes never saved to a file are marked *Unsaved*. If the board on
+(IndexedDB). Click the logo at the top left to switch between up to ten of them
+or start a new one; boards with changes never saved to a file are marked
+*Unsaved*. If the board on
 screen had unsaved changes when a tab closed or crashed, the next launch offers
 it back. From `file://`, this depends on the browser allowing IndexedDB there
 (Chromium does).

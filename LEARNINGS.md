@@ -1013,6 +1013,13 @@ click. A test that clicks and immediately reads the document, or presses
 `Cmd+A`, sees the previous board. Use `expect.poll` on the document, as the
 recent-boards tests do.
 
+**The menu itself opens asynchronously too.** Clicking the logo awaits
+`autosave.recentBoards()`, which flushes any pending write first, before the
+popover exists. A key pressed straight after the click therefore reaches the
+board, not the menu, and the menu then appears with focus on its first board
+as if the key had never been pressed. Wait for the menu (for example
+`toBeFocused()` on the row focus should start on) before sending it keys.
+
 ---
 
 ## `npm run serve` and `npm run dev` overwrite the committed `index.html`

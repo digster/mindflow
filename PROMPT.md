@@ -469,3 +469,14 @@ A pinch on the top bar or tool palette zoomed the whole page on a touchscreen
 viewport meta, as iOS Safari does for a pinch). Blocked with `touch-action:
 pan-x pan-y` on the page and each scroller, WebKit `gesture*` cancellation on
 touch devices, and `maximum-scale=1`. Board pinch is unchanged.
+
+---
+
+## 2026-09-25 — New board in the recent-boards menu
+
+> there should also be an option to start a new board along with the recent
+> boards(within the dropdown).
+
+Added a New board row at the top of the logo's recent-boards menu. It runs the
+same action as the toolbar button, is offered even when the list is empty or
+storage is refused, and joins the menu's arrow-key list.

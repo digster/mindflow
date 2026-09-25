@@ -53,7 +53,8 @@ collapsed, then suffixed `.mindflow.json`. An empty name becomes `board`.
 
 Every board you work on keeps a copy in the browser, backed by **IndexedDB**.
 Those copies are what the **recent-boards menu** lists — click the logo at the
-left of the top bar, or run *Recent boards…* from the command palette.
+left of the top bar, or run *Recent boards…* from the command palette. The same
+menu also starts a new board.
 
 - Debounced 1200 ms after the last edit. A board is also written when it is
   opened, so a board opened from a file or from Drive appears in the menu too.

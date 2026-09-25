@@ -380,7 +380,7 @@ export const SHORTCUT_REFERENCE: { group: string; items: [string, string][] }[] 
       ['Cmd/Ctrl + S', 'Save'],
       ['Cmd/Ctrl + Shift + S', 'Save as'],
       ['Cmd/Ctrl + O', 'Open'],
-      ['Cmd/Ctrl + N', 'New board — if the browser allows it; use the toolbar otherwise'],
+      ['Cmd/Ctrl + N', 'New board — if the browser allows it; use the toolbar or the logo menu otherwise'],
       ['Cmd/Ctrl + Shift + E', 'Export'],
     ],
   },
