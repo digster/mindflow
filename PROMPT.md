@@ -435,3 +435,25 @@ out-of-scope branches remain.
 The canvas never hid the text under the editor, so both engines drew it. The
 note's tab-indented lines, the indents `wrapText` dropped, and a `select()`
 scroll were what made the two copies disagree.
+
+---
+
+## 2026-09-24 — Hyphen line breaks: canvas vs editor
+
+> In MindFlow, the canvas text wrapper and the DOM text editor break lines
+> differently around hyphens. `wrapText` […] breaks only at spaces, plus
+> character-breaking for a single over-wide word. The editor is a `<textarea>`
+> with `white-space: pre-wrap; overflow-wrap: break-word` […]. Chromium's
+> textarea also breaks after a hyphen […]. Task: decide how to make the two
+> agree, then implement it. […] Options: (a) Teach `wrapText` to also break
+> after a hyphen-minus that follows a letter, closer to UAX #14 […]. (b) Stop
+> the textarea breaking after hyphens […] showing U+2011 in the editor and
+> mapping it back on write […]. Ask the user which they prefer before
+> implementing […]. Then write a failing test first […]. Rebuild […], run
+> typecheck, test and playwright […]. Append the prompt to PROMPT.md and a
+> summary to memory/YYYY-MM-DD.md, then generate a commit message without
+> committing.
+
+Chosen: (a), hyphen only, as format 1.6.1. The rule is Blink's as measured
+("follows a letter" would have missed `2024-09`, `a--b` and `-foo`, which
+Blink also breaks).

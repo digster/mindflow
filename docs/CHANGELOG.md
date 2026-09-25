@@ -502,6 +502,83 @@ either shape moves, and may re-angle slightly when it does.
 
 ---
 
+## 1.6.1 — 2026-09-24
+
+Text also wraps after a hyphen. No field or file structure changes, and every
+1.6.0 file is a valid 1.6.1 file. What changes is where some lines break.
+
+### Changed
+
+**The text wrapping algorithm breaks after a hyphen-minus as well as at
+spaces.** Each word is first split after every hyphen a line may break after,
+keeping the hyphen on the part before it: `well-known` becomes `well-` and
+`known`. The greedy fill then works over those parts, joining a word's first
+part with a space and the rest with nothing. A line may break after a hyphen
+unless the next character is one of the following:
+
+- One of `! $ ) , . / : ; ? ] }`, the closing brackets and clause punctuation.
+- An ASCII digit, when no ASCII letter or digit comes before the hyphen. `-5`
+  and `(-5)` are minus signs, while `2024-09` and `ABCD-12` may break.
+- A non-ASCII character that is not a letter, such as a quotation mark, an
+  ellipsis or a non-ASCII digit. A non-ASCII letter also stays attached when the
+  hyphen opens its word.
+
+Specified in [07-rendering.md](07-rendering.md#hyphens).
+
+**Why.** MindFlow edits text in a `<textarea>` laid over the canvas, and the
+browser's line breaker has always broken after hyphens. The canvas did not.
+With a hyphenated word at the wrap edge, the two set the note on different
+lines, and the text below re-flowed the moment editing started or ended. The
+rule is the one Blink applies, measured in Chromium 152, so the editor and the
+canvas now agree in Chrome and Edge. Safari is expected to agree too, since
+Blink's line-breaking tables come from WebKit, but it has not been measured. On randomly generated hyphen-heavy text, the line
+count disagreed with the browser in 184 of 2,000 samples before this change and
+in 3 afterwards. All 3 were at widths of about five characters, where the
+browser's emergency breaking takes over.
+
+**Why only the hyphen.** Browsers break in other places too: after `?` before a
+letter (`page?id=5`), around dashes, before an opening bracket that follows
+closing punctuation, and between CJK characters. Those are rare in notes or
+already handled. The canvas breaks an over-wide run of CJK character by
+character, which lands in nearly the same places. Each would widen the
+specified algorithm for little gain, so they are left out. Matching one engine's
+tables exactly was never the goal, and engines differ here anyway. UAX #14
+itself never breaks between a hyphen and a digit, while Blink does.
+
+**Why a patch.** Wrapped lines are computed, never stored. The file's
+structure and every field's meaning are unchanged, and a 1.6.0 reader can
+render a 1.6.1 file. The only effect is that some line breaks differ.
+
+### Clarified
+
+These are rules the 1.6.0 text already implied, now written out in
+[07-rendering.md](07-rendering.md#whitespace). MindFlow's renderer now follows
+them.
+
+- **Tabs, form feeds and carriage returns render as one space.** A canvas does
+  this natively. An HTML or SVG renderer has to do it deliberately.
+- **A paragraph's leading spaces are indentation, and are drawn.** Read
+  literally, "the first word starts the line" keeps them. MindFlow's canvas
+  used to drop them whenever text wrapped.
+- **Exported SVG text carries `xml:space="preserve"`**, so runs of spaces
+  survive export.
+
+### Migration: 1.6.0 → 1.6.1
+
+Identity. Nothing in a file records where a line broke.
+
+### Notes for implementers
+
+- Split words on hyphens by code point, not by UTF-16 code unit, so that a
+  letter outside the Basic Multilingual Plane after a hyphen is tested whole.
+- A hyphen that ends its word is never a break point. The space after it
+  already is one.
+- Anything overlaying HTML text on MindFlow's rendering should expect the two
+  to break the same way. Where they still differ, a narrow box with emergency
+  breaking is the likely cause.
+
+---
+
 ## Unreleased
 
 Candidates under consideration, in rough priority order:

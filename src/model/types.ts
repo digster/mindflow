@@ -705,7 +705,7 @@ export interface MindflowDocument {
 }
 
 /** The schema version this build reads and writes natively. */
-export const CURRENT_SCHEMA_VERSION = '1.6.0';
+export const CURRENT_SCHEMA_VERSION = '1.6.1';
 
 /** Canonical filename extension for a board. */
 export const FILE_EXTENSION = '.mindflow.json';

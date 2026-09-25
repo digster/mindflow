@@ -519,6 +519,98 @@ describe('text wrapping whitespace', () => {
   });
 });
 
+/*
+ * The DOM text editor breaks after a hyphen the way every browser does, and
+ * the canvas used to break only at spaces: a hyphenated word at the wrap edge
+ * moved to the next line whole on the canvas but split in the editor, so the
+ * note re-flowed the moment editing started. The rule below is the one Blink
+ * applies, measured in Chromium 152; see docs/07-rendering.md.
+ *
+ * Each case picks a width at which breaking after the hyphen is the ONLY way
+ * the first line can hold more than its first word, so a wrong answer shows
+ * as a different split rather than passing by coincidence. 8.8 units a
+ * character, as above.
+ */
+describe('text wrapping after hyphens', () => {
+  const font = '400 16px sans-serif';
+
+  it('breaks after a hyphen inside a word, keeping the hyphen on the first line', () => {
+    // 'aaaa well-' is 88 wide; 'aaaa well-known' is 132.
+    expect(wrapText('aaaa well-known', 100, font, 16)).toEqual(['aaaa well-', 'known']);
+  });
+
+  it('moves the whole word down when not even its first part fits', () => {
+    // 'aaaaaa well-' is 105.6, past 95, so the break falls at the space; the
+    // word, 88 wide, then fits on the next line intact.
+    expect(wrapText('aaaaaa well-known', 95, font, 16)).toEqual(['aaaaaa', 'well-known']);
+  });
+
+  it('breaks between hyphens, and after one that opens a word', () => {
+    // 'aaaa xx--' is 79.2; 'aaaa xx--yy' is 96.8.
+    expect(wrapText('aaaa xx--yy', 85, font, 16)).toEqual(['aaaa xx--', 'yy']);
+    // '--flag': 'aaaa --' is 61.6 and fits; the whole, 96.8, does not.
+    expect(wrapText('aaaa --flag', 65, font, 16)).toEqual(['aaaa --', 'flag']);
+  });
+
+  it('breaks inside a date or range, where the hyphen follows a letter or digit', () => {
+    // 'aaaa 2024-' is 88; 'aaaa 2024-09' is 105.6.
+    expect(wrapText('aaaa 2024-09', 95, font, 16)).toEqual(['aaaa 2024-', '09']);
+    expect(wrapText('aaaa ABCD-12', 95, font, 16)).toEqual(['aaaa ABCD-', '12']);
+  });
+
+  it('never splits a minus sign from its number', () => {
+    // 'aaaa -' is 52.8 and would fit at 60; '-5cd' must still move down whole.
+    expect(wrapText('aaaa -5cd', 60, font, 16)).toEqual(['aaaa', '-5cd']);
+    // Nor when something other than a letter or digit comes before the hyphen.
+    expect(wrapText('aaaa (-5)', 65, font, 16)).toEqual(['aaaa', '(-5)']);
+    // Only ASCII letters and digits count: this is what the browser does.
+    expect(wrapText('aaaa é-5', 65, font, 16)).toEqual(['aaaa', 'é-5']);
+  });
+
+  it('never breaks before closing punctuation', () => {
+    // 'aaaa ab-' is 70.4 and fits at 75; the whole word is 96.8 and does not.
+    for (const next of '!$),./:;?]}') {
+      expect(wrapText(`aaaa ab-${next}cd`, 75, font, 16), `before "${next}"`).toEqual([
+        'aaaa',
+        `ab-${next}cd`,
+      ]);
+    }
+  });
+
+  it('breaks before a letter in any script, but not before other non-ASCII characters', () => {
+    expect(wrapText('aaaa ab-écd', 75, font, 16)).toEqual(['aaaa ab-', 'écd']);
+    expect(wrapText('aaaa ab-中cd', 75, font, 16)).toEqual(['aaaa ab-', '中cd']);
+    // A quotation mark, an ellipsis and a non-ASCII digit stay attached.
+    for (const next of ['«', '’', '…', '١']) {
+      expect(wrapText(`aaaa ab-${next}cd`, 75, font, 16), `before U+${next.codePointAt(0)!.toString(16)}`).toEqual([
+        'aaaa',
+        `ab-${next}cd`,
+      ]);
+    }
+  });
+
+  it('does not break before a non-ASCII letter when the hyphen opens the word', () => {
+    // 'aaaa -' is 52.8 and fits at 60; the whole word is 88.
+    expect(wrapText('aaaa -écd', 60, font, 16)).toEqual(['aaaa', '-écd']);
+  });
+
+  it('never breaks after a hyphen that ends a word', () => {
+    expect(wrapText('ab- cd', 1000, font, 16)).toEqual(['ab- cd']);
+    expect(wrapText('a-b c--d -e', 1000, font, 16)).toEqual(['a-b c--d -e']);
+  });
+
+  it('still breaks a part too wide for any line character by character', () => {
+    // Five characters (44) fit in 50, six (52.8) do not. The last chunk, 'aa-',
+    // leaves room for the 'b' after the hyphen, as a browser would.
+    expect(wrapText('aaaaaaaaaaaa-b', 50, font, 16)).toEqual(['aaaaa', 'aaaaa', 'aa-b']);
+  });
+
+  it('keeps a paragraph indent in front of a hyphenated first word', () => {
+    // '  well-' is 61.6; '  well-known' is 105.6.
+    expect(wrapText('  well-known', 70, font, 16)).toEqual(['  well-', 'known']);
+  });
+});
+
 describe('capability guards', () => {
   it('recognise exactly the types that declare the capability', () => {
     expect(isFrame(make('frame', 100, 100))).toBe(true);

@@ -106,7 +106,7 @@ default — so any single element is interpretable in isolation.
 ```json
 {
   "type": "mindflow.board",
-  "schemaVersion": "1.6.0",
+  "schemaVersion": "1.6.1",
   "elements": [
     {
       "id": "el_q2WikW58Aw",
@@ -151,7 +151,7 @@ MindFlow itself, which would defeat the point.
 **Start here:** [`docs/README.md`](docs/README.md) ·
 [format](docs/02-document-format.md) · [elements](docs/03-elements.md) ·
 [geometry](docs/04-coordinates.md) · [rendering algorithms](docs/07-rendering.md) ·
-[JSON Schema](docs/schema/mindflow-1.6.0.schema.json)
+[JSON Schema](docs/schema/mindflow-1.6.1.schema.json)
 
 ## Google Drive
 

@@ -16,6 +16,7 @@ import { drawOverlay } from '../render/overlay.ts';
 import { exportToPNG, exportToSVG } from '../render/export.ts';
 import { roughOutlineFor } from '../render/rough.ts';
 import { labelBoxOf } from '../model/registry.ts';
+import { layoutText } from '../render/shapes/shared.ts';
 import { InteractionController } from '../input/controller.ts';
 import { installKeyboardShortcuts, isTypingTarget } from '../input/keyboard.ts';
 import { createPasteGate } from '../input/pasteGate.ts';
@@ -848,6 +849,7 @@ export class MindflowApp {
     exportToSVG: typeof exportToSVG;
     roughOutlineFor: typeof roughOutlineFor;
     labelBoxOf: typeof labelBoxOf;
+    layoutText: typeof layoutText;
   } {
     return {
       store: this.store,
@@ -862,6 +864,10 @@ export class MindflowApp {
       // Same reasoning: a solid's label box is read by the canvas, this app's
       // text editor and the SVG exporter, and the suite asserts they agree.
       labelBoxOf,
+      // And line breaks: the canvas and SVG take theirs from `layoutText`, the
+      // text editor from the browser's own line breaker. The suite compares the
+      // two for the cases where they have disagreed, such as a hyphen at the edge.
+      layoutText,
     };
   }
 }

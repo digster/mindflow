@@ -109,15 +109,21 @@ Given `text`, a `maxWidth` in scene units, and a resolved font:
 3. Within each paragraph, split on single spaces into words. A paragraph's
    **leading spaces are indentation**: they belong to its first word and are
    drawn. `"  - item"` is the words `"  -"` and `"item"`.
-4. Greedily append words to the current line while the measured width of
-   `line + " " + word` is `<= maxWidth`. Otherwise flush the line and start a new
-   one. Greedy, not Knuth–Plass — simpler, faster, and what every browser and
-   canvas tool does. Spaces that fall at a break are dropped with it: a line
-   that starts because the previous one was full never starts with a space.
-5. If a single word is itself wider than `maxWidth`, break it **character by
-   character**, filling each line as far as it fits. This is what stops a long URL
-   overflowing its shape.
-6. Trailing spaces are not measured and do not affect breaking.
+4. Split each word after every hyphen a line may break after — see
+   [Hyphens](#hyphens) — into **parts**, keeping each hyphen on the part before
+   it. `well-known` is the parts `well-` and `known`. A word without such a
+   hyphen is a single part. *(Since 1.6.1.)*
+5. Greedily append parts to the current line while the measured width of the
+   result is `<= maxWidth`: `line + " " + part` for a word's first part, and
+   `line + part` for each later part of the same word. Otherwise flush the line
+   and start a new one with the part. Greedy, not Knuth–Plass — simpler,
+   faster, and what every browser and canvas tool does. Spaces that fall at a
+   break are dropped with it: a line that starts because the previous one was
+   full never starts with a space.
+6. If a single part is itself wider than `maxWidth`, break it **character by
+   character**, filling each line as far as it fits, and continue from the last
+   of those lines. This is what stops a long URL overflowing its shape.
+7. Trailing spaces are not measured and do not affect breaking.
 
 `maxWidth` is the host box minus padding on both sides:
 
@@ -154,6 +160,53 @@ still valid, and step 0 decides how they look.
 A Windows line ending (`\r\n`) leaves a carriage return at the end of each line,
 drawn as a trailing space. It is invisible for left-aligned text and shifts a
 centred or right-aligned line by half a space or one space.
+
+### Hyphens
+
+*(Since 1.6.1. Before that, lines broke only at spaces.)*
+
+A hyphen-minus (U+002D) that is not the last character of its word may be
+followed by a line break, with the hyphen staying at the end of the line. Two
+characters decide whether it may:
+
+- `after` is the code point that follows the hyphen.
+- `before` is the character in front of it. It counts as **absent** at the
+  start of a word, and when it is a paragraph indent's space, which step 3
+  glued onto the first word.
+
+| `after` | Break after the hyphen? |
+|---|---|
+| One of `! $ ) , . / : ; ? ] }` | Never |
+| An ASCII digit `0`–`9` | Only if `before` is an ASCII letter or digit |
+| Any other ASCII character, including another hyphen | Always |
+| A non-ASCII letter (Unicode general category `L`) | Only if `before` is present |
+| Any other non-ASCII character | Never |
+
+| Word | Parts |
+|---|---|
+| `well-known` | `well-` · `known` |
+| `2024-09-24` | `2024-` · `09-` · `24` |
+| `--verbose` | `-` · `-` · `verbose` |
+| `état-major` | `état-` · `major` |
+| `-5`, `(-5)`, `é-5` | unsplit: a minus sign, or no ASCII letter or digit before the hyphen |
+| `a-.b`, `x-)` | unsplit: closing punctuation follows |
+| `-école`, `a-«b»` | unsplit: a word-initial hyphen before a non-ASCII letter, or a quotation mark |
+| `ab-` | unsplit: the hyphen ends the word |
+
+**Why this rule.** MindFlow edits text in an HTML `<textarea>` laid over the
+canvas, so the browser's line breaker decides where the editor wraps. This is
+the rule Blink applies, measured in Chromium 152, so text wraps the same way on
+the canvas and in the editor in Chrome and Edge. Blink's line-breaking tables
+come from WebKit, so Safari is expected to agree, but that has not been
+measured. It is not
+UAX #14 verbatim. That standard never breaks between a hyphen and a digit
+(rule LB25), so an engine that follows it to the letter keeps `2024-09` whole.
+
+**What is deliberately not included.** Browsers also break after `?` before a
+letter, around en and em dashes, before an opening bracket that follows closing
+punctuation, and between CJK characters. None of these are break points here.
+For CJK, step 6 fills lines character by character, which lands in nearly the
+same places.
 
 ### Vertical placement
 

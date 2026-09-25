@@ -105,6 +105,66 @@ export function whitespaceAsDrawn(text: string): string {
 }
 
 /**
+ * What may follow a hyphen-minus with no line break between them: closing
+ * brackets and clause punctuation, so `a-.` or `x-)` never splits.
+ *
+ * This is the set Blink applies to ASCII text, measured in Chromium 152. Its
+ * tables come from WebKit, so Safari should agree, though that has not been
+ * measured. It matters because the DOM text editor is laid out by the browser's own
+ * line breaker, and every place this rule differs from it is a place where a
+ * note re-flows the moment editing starts.
+ */
+const NO_BREAK_AFTER_HYPHEN = new Set('!$),./:;?]}');
+
+/**
+ * Whether a line may break between a hyphen-minus and `after`, the character
+ * that follows it in the same word.
+ *
+ * `before`, the character in front of the hyphen, decides two cases:
+ *
+ *   - A DIGIT. `2024-09` and `ABCD-12` may break, but `-5`, `(-5)` and `x -5`
+ *     may not: a hyphen with no letter or digit before it reads as a minus sign.
+ *     Only ASCII letters and digits count, as in the browser.
+ *   - A NON-ASCII CHARACTER. A letter in any script may start the next line
+ *     (`état-` | `major`), unless the hyphen opens its word. Anything else stays
+ *     attached, such as a quotation mark, an ellipsis or a non-ASCII digit.
+ *
+ * A paragraph indent is glued onto the first word, so `before` can be a space.
+ * It is treated as no character at all, which is what it means there.
+ */
+function breaksAfterHyphen(before: string | undefined, after: string): boolean {
+  if (NO_BREAK_AFTER_HYPHEN.has(after)) return false;
+  const opensWord = before === undefined || before === ' ';
+  if (after >= '0' && after <= '9') return !opensWord && /[0-9A-Za-z]/.test(before);
+  if (after > '\u007f') return !opensWord && /\p{L}/u.test(after);
+  return true;
+}
+
+/**
+ * Splits one word at every hyphen a line may break after, keeping each hyphen
+ * on the part before it: `well-known` becomes `well-` and `known`.
+ */
+function hyphenParts(word: string): string[] {
+  if (!word.includes('-')) return [word];
+
+  const parts: string[] = [];
+  let start = 0;
+  // Stops one short of the end: a hyphen that ends its word has nothing after
+  // it to break before, and the space that follows is a break already.
+  for (let index = 0; index < word.length - 1; index++) {
+    if (word[index] !== '-') continue;
+    // A code point, not a code unit, so an astral letter is tested whole.
+    const after = String.fromCodePoint(word.codePointAt(index + 1) ?? 0);
+    if (breaksAfterHyphen(word[index - 1], after)) {
+      parts.push(word.slice(start, index + 1));
+      start = index + 1;
+    }
+  }
+  parts.push(word.slice(start));
+  return parts;
+}
+
+/**
  * Breaks `text` into rendered lines.
  *
  * THE ALGORITHM — specified here and mirrored in `docs/07-rendering.md`, because
@@ -116,14 +176,18 @@ export function whitespaceAsDrawn(text: string): string {
  *      an empty paragraph produces an empty line rather than being collapsed.
  *   2. Within a paragraph, split on single spaces into words. Spaces that
  *      open a paragraph are indentation and are kept.
- *   3. Greedily append words to the current line while the measured width of the
- *      line plus a space plus the word is <= `maxWidth`. Otherwise start a new
- *      line. (Greedy, not Knuth–Plass: simpler, faster, and what every browser
- *      and canvas tool does.)
- *   4. A single word wider than `maxWidth` is broken character by character,
+ *   3. Split each word after every hyphen a line may break after — see
+ *      {@link breaksAfterHyphen} — into parts, keeping each hyphen on the part
+ *      before it.
+ *   4. Greedily append parts to the current line while the measured width of
+ *      the result is <= `maxWidth`, joining a word's first part with a space
+ *      and its later parts with nothing. Otherwise start a new line. (Greedy,
+ *      not Knuth–Plass: simpler, faster, and what every browser and canvas tool
+ *      does.)
+ *   5. A single part wider than `maxWidth` is broken character by character,
  *      filling each line as far as it fits. This is what prevents a long URL
  *      from overflowing its shape.
- *   5. Trailing spaces are not measured and do not affect breaking.
+ *   6. Trailing spaces are not measured and do not affect breaking.
  *
  * `maxWidth <= 0` disables wrapping entirely; only rules 0 and 1 apply.
  */
@@ -150,34 +214,39 @@ export function wrapText(text: string, maxWidth: number, font: string, fontSize:
     let line = '';
 
     for (const word of words) {
-      const candidate = line === '' ? word : `${line} ${word}`;
-      if (measureTextWidth(candidate, font, fontSize) <= maxWidth) {
-        line = candidate;
-        continue;
-      }
-
-      // The candidate does not fit. Flush what we have, then deal with the word
-      // on its own — it may itself be too wide for a whole line.
-      if (line !== '') {
-        lines.push(line);
-        line = '';
-      }
-
-      if (measureTextWidth(word, font, fontSize) <= maxWidth) {
-        line = word;
-        continue;
-      }
-
-      let chunk = '';
-      for (const character of word) {
-        if (chunk !== '' && measureTextWidth(chunk + character, font, fontSize) > maxWidth) {
-          lines.push(chunk);
-          chunk = character;
-        } else {
-          chunk += character;
+      for (const [index, part] of hyphenParts(word).entries()) {
+        // A word rejoins the line with the space it was split on; the rest of a
+        // hyphenated word rejoins its own first part directly.
+        const joiner = index === 0 ? ' ' : '';
+        const candidate = line === '' ? part : `${line}${joiner}${part}`;
+        if (measureTextWidth(candidate, font, fontSize) <= maxWidth) {
+          line = candidate;
+          continue;
         }
+
+        // The candidate does not fit. Flush what we have, then deal with the part
+        // on its own — it may itself be too wide for a whole line.
+        if (line !== '') {
+          lines.push(line);
+          line = '';
+        }
+
+        if (measureTextWidth(part, font, fontSize) <= maxWidth) {
+          line = part;
+          continue;
+        }
+
+        let chunk = '';
+        for (const character of part) {
+          if (chunk !== '' && measureTextWidth(chunk + character, font, fontSize) > maxWidth) {
+            lines.push(chunk);
+            chunk = character;
+          } else {
+            chunk += character;
+          }
+        }
+        line = chunk;
       }
-      line = chunk;
     }
 
     lines.push(line);

@@ -267,6 +267,11 @@ These decisions make them agree, documented in
 5. **Whitespace is shown as drawn.** `whitespaceAsDrawn` in
    `render/shapes/shared.ts` turns tabs into the single space the canvas draws,
    on open and on paste.
+6. **The canvas breaks lines where the browser does.** `wrapText` breaks after
+   a hyphen by Blink's rule (`breaksAfterHyphen`, format 1.6.1), because the
+   editor's line breaks come from the browser and cannot be changed. The rule
+   is published in `docs/07-rendering.md#hyphens`, so this is a format decision,
+   not an editor tweak.
 
 On top of all that, **only one engine draws the text at a time.** While the
 editor is open, the renderer paints the element through

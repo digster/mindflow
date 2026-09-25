@@ -741,6 +741,111 @@ test.describe('text editing', () => {
     expect(await isDirty(page)).toBe(false);
   });
 
+  /**
+   * How many lines the open editor's textarea laid its text out on.
+   *
+   * Read from the real textarea rather than a lookalike div: collapsing its
+   * height makes `scrollHeight` report the text's own height (plus padding)
+   * instead of the note's. The height is put straight back.
+   */
+  async function editorLineCount(page: Page) {
+    return page.evaluate(() => {
+      const editor = document.querySelector('.mf-text-editor') as HTMLTextAreaElement;
+      const style = getComputedStyle(editor);
+      const height = editor.style.height;
+      editor.style.height = '0px';
+      const content = editor.scrollHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+      editor.style.height = height;
+      return Math.round(content / parseFloat(style.lineHeight));
+    });
+  }
+
+  test('a hyphenated word at the edge breaks where the editor breaks it', async ({ page }) => {
+    // The textarea, like any browser, breaks after a hyphen; the canvas used
+    // to break only at spaces. With a hyphenated word at the wrap edge the two
+    // broke the note differently, and the lines below re-flowed the moment
+    // editing started or ended.
+    await drawSticky(page);
+    const text = 'aaaa well-known xx';
+
+    // Size the note so line one holds 'aaaa well-' but not 'aaaa well-known',
+    // and line two holds 'known xx' but not 'well-known xx'. Breaking after the
+    // hyphen is then the only way to set the text on two lines rather than
+    // three, so the two engines cannot agree by coincidence. Measured in the
+    // page, because glyph widths depend on the fonts installed.
+    const fits = await page.evaluate((text) => {
+      type Sticky = Record<string, unknown> & {
+        width: number;
+        padding: number;
+        fontFamily: string;
+        fontSize: number;
+        fontWeight: number;
+        lineHeight: number;
+      };
+      const mf = (
+        window as unknown as {
+          mindflow: {
+            store: { document: { elements: Sticky[] }; load(result: unknown, origin: unknown): void };
+            layoutText(text: string, options: Record<string, unknown>): { width: number };
+          };
+        }
+      ).mindflow;
+      const document = structuredClone(mf.store.document);
+      const sticky = document.elements[0]!;
+      const measure = (value: string) =>
+        mf.layoutText(value, {
+          maxWidth: 0,
+          fontFamily: sticky.fontFamily,
+          fontSize: sticky.fontSize,
+          fontWeight: sticky.fontWeight,
+          lineHeight: sticky.lineHeight,
+        }).width;
+
+      const inner = Math.max(measure('aaaa well-'), measure('known xx')) + 2;
+      sticky.text = text;
+      sticky.width = inner + sticky.padding * 2;
+      mf.store.load({ document, warnings: [], preserved: [] }, { kind: 'local', name: 'board.mindflow.json' });
+      return inner < Math.min(measure('aaaa well-known'), measure('well-known xx'));
+    }, text);
+    expect(fits, 'no width separates the cases with the fonts on this machine').toBe(true);
+
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 130, box.y + 200);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+
+    // What the canvas draws, from the same function its renderer calls.
+    const canvasLines = await page.evaluate(() => {
+      type Sticky = {
+        text: string;
+        width: number;
+        padding: number;
+        fontFamily: string;
+        fontSize: number;
+        fontWeight: number;
+        lineHeight: number;
+      };
+      const mf = (
+        window as unknown as {
+          mindflow: {
+            store: { document: { elements: Sticky[] } };
+            layoutText(text: string, options: Record<string, unknown>): { lines: string[] };
+          };
+        }
+      ).mindflow;
+      const sticky = mf.store.document.elements[0]!;
+      return mf.layoutText(sticky.text, {
+        maxWidth: sticky.width - sticky.padding * 2,
+        fontFamily: sticky.fontFamily,
+        fontSize: sticky.fontSize,
+        fontWeight: sticky.fontWeight,
+        lineHeight: sticky.lineHeight,
+      }).lines;
+    });
+
+    expect(await editorLineCount(page)).toBe(canvasLines.length);
+    expect(canvasLines).toEqual(['aaaa well-', 'known xx']);
+  });
+
   test('pasted tabs arrive as spaces, and the paste can still be undone', async ({ page }) => {
     await drawSticky(page);
     const box = await canvasBox(page);

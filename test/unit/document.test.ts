@@ -576,7 +576,8 @@ describe('1.5.0 → 1.6.0: focus anchors', () => {
     const { document, warnings } = loadDocument(JSON.stringify(board));
     expect(warnings.find((warning) => warning.message.includes('1.5.0 → 1.6.0'))?.level).toBe('info');
     expect(warnings.filter((warning) => warning.level !== 'info')).toEqual([]);
-    expect(document.schemaVersion).toBe('1.6.0');
+    // The rest of the chain runs too, so the board lands on the current version.
+    expect(document.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect((document.elements[1] as LinearElement).startBinding?.anchor).toEqual({ mode: 'fixed', u: 1, v: 0.5 });
   });
 
@@ -595,6 +596,27 @@ describe('1.5.0 → 1.6.0: focus anchors', () => {
 
   it('reads an unknown mode as auto', () => {
     expect(startAnchor(connectorWith({ mode: 'magnetic', u: 0.2, v: 0.2 }))).toEqual({ mode: 'auto' });
+  });
+});
+
+/**
+ * 1.6.1 changes only how text wraps (it now also breaks after a hyphen).
+ * Wrapped lines are never stored, so a 1.6.0 board must come through with its
+ * text exactly as written — the new rule applies when it is drawn.
+ */
+describe('1.6.0 → 1.6.1: hyphen wrapping', () => {
+  it('upgrades a 1.6.0 board quietly and leaves its text alone', () => {
+    const text = 'a well-known, hyphen-heavy note from 2024-09-24';
+    const board = {
+      type: 'mindflow.board',
+      schemaVersion: '1.6.0',
+      elements: [{ id: 'el_note', type: 'sticky', x: 0, y: 0, width: 120, height: 120, text }],
+    };
+    const { document, warnings } = loadDocument(JSON.stringify(board));
+    expect(warnings.find((warning) => warning.message.includes('1.6.0 → 1.6.1'))?.level).toBe('info');
+    expect(warnings.filter((warning) => warning.level !== 'info')).toEqual([]);
+    expect(document.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect((document.elements[0] as { text: string }).text).toBe(text);
   });
 });
 

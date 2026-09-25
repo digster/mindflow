@@ -165,6 +165,56 @@ anything when the handler inserts the text itself.
 
 ---
 
+## The canvas has to break lines where the browser does, not where UAX #14 says
+
+**Symptom:** a note re-flowed the moment editing started. It happened whenever a
+hyphenated word sat at the wrap edge: `well-known` split in the editor but moved
+down whole on the canvas.
+
+**Cause:** the editor's line breaks come from the browser, and nothing a page
+can set changes them. There is no CSS switch that stops a break after a hyphen.
+So the canvas has to follow the browser, and "the browser" here is not the
+standard. Blink breaks `2024-` | `09`, `a-` | `-` | `b` and `-` | `foo`, while
+UAX #14 forbids the first two. A rule written from the standard would keep
+`2024-09` whole and still disagree with the editor there.
+
+**How the rule was found:** set text in a `width: 0` div with `white-space:
+pre-wrap; overflow-wrap: normal`. Every break opportunity then becomes an actual
+line break, and per-character `Range` rects show where they fell. Probing every
+ASCII pair this way gave Blink's table directly: after `-`, never before
+`! $ ) , . / : ; ? ] }`, and before a digit only when a letter or digit comes
+before the hyphen. The last part is Blink's `ShouldBreakAfter` minus-sign rule.
+A random fuzz of hyphen-heavy text against a real textarea went from 184 of 2,000
+line-count mismatches to 3.
+
+**Fixed in format 1.6.1**, because the wrapping algorithm is published. The
+rule lives in `breaksAfterHyphen` in `render/shapes/shared.ts`.
+
+---
+
+## Measuring layout: two traps that report plausible, wrong numbers
+
+**1. Under `prefers-reduced-motion`, every style change is a transition.**
+`app.css` has the common reset that sets `transition-duration: 0.01ms !important`
+on `*`. The initial `transition-property` is `all`, so that turns *every*
+property of *every* element into a 0.01ms transition. Set a `width` and read
+`getBoundingClientRect()` straight away, and you get the old width. The first
+assignment works, because nothing transitions from `auto`, which makes this
+look intermittent. It cost a fuzz run of hundreds of false mismatches before
+`getComputedStyle(x).transition` showed `1e-05s`. Any probe element that is
+restyled and then measured needs `transition: none`. Playwright defaults to no
+reduced motion, so the suite never sees it. A real user with the macOS
+setting does.
+
+**2. A textarea reused as a probe keeps its old scroll offset.** Assigning
+`value` moves the caret to the end and can scroll. After a shorter value,
+`scrollHeight` still reflects the old scroll, and reads a line or more too
+tall. Reset `scrollTop = 0` first, or use a fresh element. The e2e line-count
+helper is safe because it measures an editor that was just opened, whose scroll
+is 0.
+
+---
+
 ## The text editor focuses a frame late, and tests must wait for it
 
 `TextEditor.open` calls `focus()` inside a `requestAnimationFrame`, so the browser

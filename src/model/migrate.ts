@@ -10,7 +10,8 @@
  * transforms. They are not omitted: `needsMigration` triggers on any version
  * inequality, so a missing step would make every older board load with a "no
  * migration is available" warning, which reads as data loss. 1.5.0 is the first
- * to transform anything — it retired four element types. 1.6.0 is additive again.
+ * to transform anything — it retired four element types. 1.6.0 is additive again,
+ * and 1.6.1 changes only a rendering rule.
  *
  * ---------------------------------------------------------------------------
  * Adding a migration
@@ -134,6 +135,17 @@ const MIGRATIONS: Record<string, Migration> = {
   '1.5.0': {
     to: '1.6.0',
     description: 'Additive: the `focus` connector anchor mode.',
+    migrate: (document) => document,
+  },
+
+  /**
+   * Identity: 1.6.1 changes how text wraps, not what a file holds. Wrapped
+   * lines are computed at render time and never stored, so there is nothing to
+   * rewrite. A 1.6.0 board simply draws with the new line breaks.
+   */
+  '1.6.0': {
+    to: '1.6.1',
+    description: 'Text now also wraps after a hyphen, as it does in the text editor.',
     migrate: (document) => document,
   },
 };
