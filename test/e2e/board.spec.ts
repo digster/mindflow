@@ -51,6 +51,42 @@ async function getDocument(page: Page) {
   });
 }
 
+/**
+ * How many dark pixels the canvas itself painted inside a canvas-relative box,
+ * given in CSS pixels.
+ *
+ * Reads the canvas's own backing store, so the DOM text editor floating above
+ * it is invisible here — which is the point: this sees only what the canvas drew
+ * underneath. "Dark" is every channel below 110. Text in the default colour
+ * qualifies; a sticky's paper and soft shadow, the white board and the
+ * accent-coloured selection chrome do not.
+ *
+ * Waits two frames first, because a repaint is scheduled on the next animation
+ * frame rather than performed when the state changes.
+ */
+async function inkIn(page: Page, box: { x: number; y: number; width: number; height: number }) {
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  return page.evaluate((box) => {
+    const canvas = document.querySelector('.mf-canvas') as HTMLCanvasElement;
+    const scale = canvas.width / canvas.getBoundingClientRect().width;
+    const { data } = canvas
+      .getContext('2d')!
+      .getImageData(
+        Math.round(box.x * scale),
+        Math.round(box.y * scale),
+        Math.round(box.width * scale),
+        Math.round(box.height * scale),
+      );
+    let dark = 0;
+    for (let index = 0; index < data.length; index += 4) {
+      if (data[index]! < 110 && data[index + 1]! < 110 && data[index + 2]! < 110) dark++;
+    }
+    return dark;
+  }, box);
+}
+
 /** Which element the text editor is open on, if any. */
 async function editingId(page: Page) {
   return page.evaluate(
@@ -613,6 +649,125 @@ test.describe('text editing', () => {
     expect(text.text).toBe('Baseline');
     expect(text.width).toBeGreaterThan(0);
     expect(text.height).toBeGreaterThan(0);
+  });
+
+  /** A 300 x 200 sticky at (100, 100), deselected, so a double-click opens it. */
+  async function drawSticky(page: Page) {
+    await page.locator('[data-tool="sticky"]').click();
+    await drag(page, [100, 100], [400, 300]);
+    await page.keyboard.press('Escape');
+  }
+
+  /** The inside of `drawSticky`'s note, clear of its edges and selection handles. */
+  const NOTE_INTERIOR = { x: 110, y: 110, width: 280, height: 180 };
+
+  /**
+   * Gives the only element on the board `text`, as if the board had been opened
+   * from a file containing it.
+   *
+   * The way a tab reaches a note in practice is a board written by a script or
+   * pasted from another app. Typing cannot produce one: Tab in the editor moves
+   * focus instead.
+   */
+  async function loadWithText(page: Page, text: string) {
+    await page.evaluate((text) => {
+      const mf = (
+        window as unknown as {
+          mindflow: {
+            store: {
+              document: { elements: Record<string, unknown>[] };
+              load(result: unknown, origin: unknown): void;
+            };
+          };
+        }
+      ).mindflow;
+      const document = structuredClone(mf.store.document);
+      document.elements[0]!.text = text;
+      mf.store.load({ document, warnings: [], preserved: [] }, { kind: 'local', name: 'board.mindflow.json' });
+    }, text);
+  }
+
+  test('the canvas stops drawing the text the editor is covering', async ({ page }) => {
+    // With both engines drawing the same words, any disagreement between them —
+    // a tab, an indent, a different line break — showed as two offset copies,
+    // which on a long note looked like garbled text.
+    await drawSticky(page);
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 250, box.y + 200);
+    await typeIntoEditor(page, 'Written on the canvas');
+    await page.keyboard.press('Escape');
+    expect(await inkIn(page, NOTE_INTERIOR)).toBeGreaterThan(0);
+
+    await page.mouse.dblclick(box.x + 250, box.y + 200);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    expect(await inkIn(page, NOTE_INTERIOR)).toBe(0);
+
+    // And it comes back the moment editing ends.
+    await page.keyboard.press('Escape');
+    expect(await inkIn(page, NOTE_INTERIOR)).toBeGreaterThan(0);
+  });
+
+  test('opening a note that overflows its box does not scroll its text', async ({ page }) => {
+    // Selecting all of it scrolls the textarea to where the selection ends, so
+    // a long note's every line shifted up the instant editing began.
+    await drawSticky(page);
+    await loadWithText(page, Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join('\n'));
+
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 250, box.y + 200);
+    const editor = page.locator('.mf-text-editor');
+    await expect(editor).toBeFocused();
+
+    // The precondition, or this proves nothing: the text is taller than the note.
+    expect(await editor.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+    expect(await editor.evaluate((node) => node.scrollTop)).toBe(0);
+  });
+
+  test('a tab is shown as the single space the canvas draws', async ({ page }) => {
+    // A textarea advances a tab to the next 8-space tab stop; the canvas draws
+    // it as one space. Every tab-indented line of a pasted note jumped sideways
+    // as editing began.
+    await drawSticky(page);
+    await loadWithText(page, 'list\n\t- item');
+
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 250, box.y + 200);
+    await expect(page.locator('.mf-text-editor')).toHaveValue('list\n - item');
+
+    // Showing it differently is not an edit: the file keeps its tab until the
+    // note is actually changed.
+    await page.keyboard.press('Escape');
+    expect((await getDocument(page)).elements[0]?.text).toBe('list\n\t- item');
+    expect(await isDirty(page)).toBe(false);
+  });
+
+  test('pasted tabs arrive as spaces, and the paste can still be undone', async ({ page }) => {
+    await drawSticky(page);
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 250, box.y + 200);
+    const editor = page.locator('.mf-text-editor');
+    await expect(editor).toBeFocused();
+
+    const paste = () =>
+      page.evaluate(() => {
+        const data = new DataTransfer();
+        data.setData('text/plain', 'list\n\t- item');
+        document
+          .querySelector('.mf-text-editor')!
+          .dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+      });
+
+    await paste();
+    await expect(editor).toHaveValue('list\n - item');
+
+    // The textarea's own undo. Rewriting `value` to strip the tabs would have
+    // wiped its history, leaving Cmd+Z straight after a paste doing nothing.
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(editor).toHaveValue('');
+
+    await paste();
+    await page.keyboard.press('Escape');
+    expect((await getDocument(page)).elements[0]?.text).toBe('list\n - item');
   });
 });
 
@@ -1538,6 +1693,26 @@ test.describe('tables', () => {
     expect(table.cells[1]?.[1]).toBe('centre');
     // Nothing else moved.
     expect(table.cells[0]).toEqual(['', '', '']);
+  });
+
+  test('only the cell being edited disappears from the canvas', async ({ page }) => {
+    await drawTable(page);
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + 150, box.y + 120);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('MMM');
+    await page.keyboard.press('Tab');
+    await page.keyboard.type('MMM');
+    await page.keyboard.press('Escape');
+
+    // Each cell is 100 x 40; these stay 6px clear of the grid lines.
+    const first = { x: 106, y: 106, width: 88, height: 28 };
+    const second = { x: 206, y: 106, width: 88, height: 28 };
+
+    await page.mouse.dblclick(box.x + 150, box.y + 120);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    expect(await inkIn(page, first)).toBe(0);
+    expect(await inkIn(page, second)).toBeGreaterThan(0);
   });
 
   test('the editor covers the clicked cell, not the whole table', async ({ page }) => {

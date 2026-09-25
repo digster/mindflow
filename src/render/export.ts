@@ -249,8 +249,13 @@ function textToSvg(
     })
     .join('');
 
+  // `xml:space="preserve"` because SVG otherwise collapses runs of spaces and
+  // strips leading ones — an indented note would export flush-left, disagreeing
+  // with the canvas. Each tspan is one already-wrapped line with its tabs and
+  // other control whitespace already made spaces (`wrapText`), so there is
+  // nothing else for preserve mode to leave in.
   return (
-    `<text font-family="${escapeXml(FONT_STACKS[style.fontFamily])}" ` +
+    `<text xml:space="preserve" font-family="${escapeXml(FONT_STACKS[style.fontFamily])}" ` +
     `font-size="${round(style.fontSize)}" font-weight="${style.fontWeight}" ` +
     `fill="${escapeXml(style.color)}" text-anchor="${anchor}">${spans}</text>`
   );

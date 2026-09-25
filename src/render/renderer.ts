@@ -39,12 +39,24 @@ export interface RendererOptions {
   canvas: HTMLCanvasElement;
   /** Called after each frame, so overlays can draw on top in the same transform. */
   drawOverlay?: (render: RenderContext) => void;
+  /**
+   * What to paint in place of `element`, for transient UI state that must never
+   * reach the document. Returning the element itself paints it as stored.
+   *
+   * The text editor uses it to take the text it is covering off the canvas.
+   * Two layout engines drawing the same words can only ever agree to within
+   * a rounding error, and wherever they did not — a tab, an indent — the user
+   * saw two offset copies of their note. Painting a modified copy, rather than
+   * editing the document, keeps undo, autosave and "unsaved changes" blind to it.
+   */
+  displayed?: (element: MindflowElement) => MindflowElement;
 }
 
 export class Renderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly drawOverlay: ((render: RenderContext) => void) | undefined;
+  private readonly displayed: ((element: MindflowElement) => MindflowElement) | undefined;
 
   private frameHandle = 0;
   private needsPaint = false;
@@ -64,6 +76,7 @@ export class Renderer {
   constructor(options: RendererOptions) {
     this.canvas = options.canvas;
     this.drawOverlay = options.drawOverlay;
+    this.displayed = options.displayed;
 
     const ctx = this.canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('This browser does not support the Canvas 2D API.');
@@ -151,7 +164,7 @@ export class Renderer {
       // Culling: the dominant cost on a large board is drawing, not iterating,
       // so an AABB test per element pays for itself many times over.
       if (!aabbIntersects(elementWorldAABB(element), visible)) continue;
-      this.paintElement(element, render);
+      this.paintElement(this.displayed ? this.displayed(element) : element, render);
       drawn++;
     }
     this.lastDrawnCount = drawn;

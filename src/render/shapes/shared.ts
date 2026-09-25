@@ -85,14 +85,37 @@ export function measureTextWidth(text: string, font: string, fontSize: number): 
 // ---------------------------------------------------------------------------
 
 /**
+ * `text` with every tab, form feed and carriage return replaced by one space.
+ *
+ * This is what a canvas does anyway — the HTML text preparation algorithm turns
+ * all ASCII whitespace into U+0020 before drawing — so it changes nothing about
+ * how MindFlow renders. It is done explicitly for the two readers that would
+ * otherwise disagree with the canvas:
+ *
+ *   - the DOM text editor, where a `<textarea>` advances a tab to the next
+ *     8-space tab stop, so every tab-indented line jumped sideways the moment
+ *     editing began; and
+ *   - the SVG exporter, whose output is laid out by whatever reads the file.
+ *
+ * One character for one keeps any caret or selection offset into the text valid
+ * across the replacement, which the editor relies on.
+ */
+export function whitespaceAsDrawn(text: string): string {
+  return text.replace(/[\t\f\r]/g, ' ');
+}
+
+/**
  * Breaks `text` into rendered lines.
  *
  * THE ALGORITHM — specified here and mirrored in `docs/07-rendering.md`, because
  * an external renderer must reproduce it exactly to match MindFlow's output:
  *
+ *   0. Replace every tab, form feed and carriage return with a single space —
+ *      see {@link whitespaceAsDrawn}.
  *   1. Split on `\n` into paragraphs. Explicit breaks are always honoured, and
  *      an empty paragraph produces an empty line rather than being collapsed.
- *   2. Within a paragraph, split on single spaces into words.
+ *   2. Within a paragraph, split on single spaces into words. Spaces that
+ *      open a paragraph are indentation and are kept.
  *   3. Greedily append words to the current line while the measured width of the
  *      line plus a space plus the word is <= `maxWidth`. Otherwise start a new
  *      line. (Greedy, not Knuth–Plass: simpler, faster, and what every browser
@@ -102,10 +125,10 @@ export function measureTextWidth(text: string, font: string, fontSize: number): 
  *      from overflowing its shape.
  *   5. Trailing spaces are not measured and do not affect breaking.
  *
- * `maxWidth <= 0` disables wrapping entirely; only rule 1 applies.
+ * `maxWidth <= 0` disables wrapping entirely; only rules 0 and 1 apply.
  */
 export function wrapText(text: string, maxWidth: number, font: string, fontSize: number): string[] {
-  const paragraphs = text.split('\n');
+  const paragraphs = whitespaceAsDrawn(text).split('\n');
   if (maxWidth <= 0) return paragraphs;
 
   const lines: string[] = [];
@@ -116,7 +139,14 @@ export function wrapText(text: string, maxWidth: number, font: string, fontSize:
       continue;
     }
 
-    const words = paragraph.split(' ');
+    // A paragraph's leading spaces are glued onto its first word. The loop below
+    // reads an empty `line` as "no word placed yet", so on their own they would
+    // be taken for nothing and dropped — which is how an indented note used to
+    // lose its indent on the canvas while the DOM editor, like any textarea,
+    // kept it. Spaces at a soft wrap are still swallowed, as they are in CSS.
+    const indent = /^ */.exec(paragraph)?.[0] ?? '';
+    const words = paragraph.slice(indent.length).split(' ');
+    words[0] = indent + (words[0] ?? '');
     let line = '';
 
     for (const word of words) {

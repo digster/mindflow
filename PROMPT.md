@@ -418,3 +418,20 @@ and the SVG exporter's switch were left as follow-ups.
 Result: three flags (`frame`, `file`, `fillable`), two guards (`isFrame`,
 `hasFile`) and three hooks (`withText`, `wrapsText`, `validate`). Only the three
 out-of-scope branches remain.
+
+---
+
+## 2026-09-24 — Sticky text garbled while editing
+
+> [three screenshots: a long tab-indented sticky note rendered normally; the same
+> note double-clicked, with a second, offset copy of every indented line showing
+> through the selection; and with the caret active, garbled the same way]
+>
+> * this is about an issue when the text in a sticky is more, it does not happen
+>   when the content is less.
+> * in normal display the text appears fine but it appears garbled when - the
+>   sticky is double clicked to select or the cursor is active to type.
+
+The canvas never hid the text under the editor, so both engines drew it. The
+note's tab-indented lines, the indents `wrapText` dropped, and a `select()`
+scroll were what made the two copies disagree.

@@ -100,15 +100,20 @@ so an arbitrarily large value yields a stadium rather than invalid geometry. The
 
 Given `text`, a `maxWidth` in scene units, and a resolved font:
 
+0. Replace every tab (U+0009), form feed (U+000C) and carriage return (U+000D)
+   with a single space (U+0020). See [Whitespace](#whitespace).
 1. Split `text` on `\n` into paragraphs. Explicit breaks are always honoured, and
    an empty paragraph produces an empty line rather than being collapsed.
 2. If `maxWidth <= 0`, stop — the paragraphs are the lines. (This is the
    `autoWidth: true` case for `text` elements.)
-3. Within each paragraph, split on single spaces into words.
+3. Within each paragraph, split on single spaces into words. A paragraph's
+   **leading spaces are indentation**: they belong to its first word and are
+   drawn. `"  - item"` is the words `"  -"` and `"item"`.
 4. Greedily append words to the current line while the measured width of
    `line + " " + word` is `<= maxWidth`. Otherwise flush the line and start a new
    one. Greedy, not Knuth–Plass — simpler, faster, and what every browser and
-   canvas tool does.
+   canvas tool does. Spaces that fall at a break are dropped with it: a line
+   that starts because the previous one was full never starts with a space.
 5. If a single word is itself wider than `maxWidth`, break it **character by
    character**, filling each line as far as it fits. This is what stops a long URL
    overflowing its shape.
@@ -124,6 +129,31 @@ For a `text` element, `padding` is 0. For `sticky`, it is the element's `padding
 For a `label`, it is the label's `padding`. For a `table` cell, it is the table's
 `padding` and the host box is the **cell**, not the element — see
 [Tables](#tables).
+
+### Whitespace
+
+Spaces are drawn exactly as written. Runs of spaces are not collapsed, and a
+paragraph's leading spaces indent it (step 3). Every other whitespace character
+except `\n` is drawn as **one space**, whatever the renderer would do with it
+natively (step 0).
+
+For a tab, that is not what most text engines do:
+
+| Engine | A tab renders as |
+|---|---|
+| Canvas 2D `fillText` / `measureText` | One space. The HTML text preparation algorithm replaces all ASCII whitespace with U+0020, so a canvas renderer gets this rule for free. |
+| HTML/CSS with `white-space: pre` or `pre-wrap` | An advance to the next tab stop, 8 spaces apart by default. |
+| SVG with `xml:space="preserve"` | One space. |
+| SVG in the default whitespace mode | One space, but runs of spaces are then collapsed and leading ones stripped, which breaks the rule above. Emit `xml:space="preserve"`, as MindFlow's exporter does. |
+
+A tab-indented line therefore renders with a one-space indent. MindFlow's own
+text editor shows tabs as spaces and writes spaces back when the text is edited,
+so text last edited in MindFlow contains no tabs. A file that does contain them is
+still valid, and step 0 decides how they look.
+
+A Windows line ending (`\r\n`) leaves a carriage return at the end of each line,
+drawn as a trailing space. It is invisible for left-aligned text and shifts a
+centred or right-aligned line by half a space or one space.
 
 ### Vertical placement
 
@@ -161,6 +191,12 @@ written here.
 > correct for the difference; MindFlow's own text editor does exactly this, in
 > `src/ui/textEditor.ts`. Skipping it makes text drop by a fifth of an em the
 > moment editing begins.
+>
+> Two more things matter for such an overlay. First, show the text through the
+> [whitespace](#whitespace) rule, because a `<textarea>` advances a tab to a tab
+> stop. Second, stop drawing that text on the canvas while the overlay is open.
+> Two layout engines only ever agree to within rounding, and a difference that
+> is invisible in one copy of the text shows as two overlapping copies of it.
 
 ### Horizontal placement
 

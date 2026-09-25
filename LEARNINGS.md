@@ -117,6 +117,54 @@ be sure of that.
 
 ---
 
+## Never let both engines draw the same text
+
+**Symptom:** a long sticky note looked fine until it was double-clicked or had a
+caret in it. Then its indented lines showed as two overlapping, offset copies,
+which read as garbled text. Short notes looked fine.
+
+**Cause:** the text editor's header comment said the canvas hid the element
+being edited. The renderer never did. Both engines had always drawn the text,
+and it only looked like one copy because they usually agreed to the pixel.
+Long notes were simply more likely to contain something they disagree on:
+
+| | Canvas | `<textarea>` |
+|---|---|---|
+| Tab | One space (HTML text preparation turns all ASCII whitespace into U+0020) | Advance to the next 8-space tab stop |
+| Leading spaces of a paragraph | Dropped by `wrapText`, which read an empty line as "no word yet" | Kept |
+| Text taller than its box | Clipped at the top | `select()` scrolls it to where the selection ends |
+
+**Fix:** all four causes, because each one alone still shows.
+
+- The renderer's `displayed` option paints the element without the text under
+  the editor (`TextEditor.displayed`).
+- `whitespaceAsDrawn` is step 0 of `wrapText`, and is applied to the editor's
+  value.
+- `wrapText` glues a paragraph's indent onto its first word.
+- The editor resets `scrollTop` after `select()`.
+
+**The general lesson:** "make the two engines agree" is a goal to keep
+approaching, not a property to rely on. Anything that depends on two renderers
+matching exactly needs a fallback where a mismatch cannot double the content.
+Here that fallback is drawing only one copy.
+
+**Two traps in the tab fix:**
+
+- **Assigning `textarea.value` wipes its native undo history.** A paste that
+  needs converting is therefore reinserted with
+  `document.execCommand('insertText')`. It is deprecated, but it is still the
+  only insertion the textarea's own Cmd+Z can take back.
+- **Opening the editor must not write the converted text.** The editor only
+  *shows* spaces. The document keeps its tabs until someone actually types,
+  because opening a note is not an edit.
+
+A synthetic `ClipboardEvent('paste', { clipboardData })` built from a
+`DataTransfer` is enough to drive the paste handler in Playwright, with no
+clipboard permission needed. It has no default action, so it only proves
+anything when the handler inserts the text itself.
+
+---
+
 ## The text editor focuses a frame late, and tests must wait for it
 
 `TextEditor.open` calls `focus()` inside a `requestAnimationFrame`, so the browser

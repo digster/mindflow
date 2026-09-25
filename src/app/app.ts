@@ -104,6 +104,9 @@ export class MindflowApp {
           viewport: this.store.viewport,
           editing: this.store.getState().editingId !== null,
         }),
+      // The element under the open text editor is painted without the text the
+      // editor is showing, so there is only ever one copy of it on screen.
+      displayed: (element) => this.textEditor.displayed(element),
     });
 
     this.actions = new Actions({

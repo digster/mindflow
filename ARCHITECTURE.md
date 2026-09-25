@@ -254,7 +254,7 @@ The highest-risk code in the app: two independent text layout engines — Canvas
 and a real `<textarea>` — must produce identical line breaks and glyph positions,
 or text visibly jumps when editing starts and stops.
 
-Three decisions make them agree, documented in
+These decisions make them agree, documented in
 [`src/ui/textEditor.ts`](src/ui/textEditor.ts):
 
 1. **Font size is in scene units; zoom is a CSS transform.** Both engines lay out
@@ -262,6 +262,20 @@ Three decisions make them agree, documented in
 2. **Identical font stacks** on both sides.
 3. **Rotation about the box centre**, with the element positioned by its centre so
    scale and rotate leave it fixed.
+4. **The baseline is measured and corrected**, because CSS and the canvas place it
+   by different rules.
+5. **Whitespace is shown as drawn.** `whitespaceAsDrawn` in
+   `render/shapes/shared.ts` turns tabs into the single space the canvas draws,
+   on open and on paste.
+
+On top of all that, **only one engine draws the text at a time.** While the
+editor is open, the renderer paints the element through
+`TextEditor.displayed`. That returns a copy without the text under the editor:
+all of a note's text, but only one table cell's. The paper, the outline and the
+other cells stay on the canvas. It goes through the renderer's `displayed`
+option rather than the document, so undo, autosave and the dirty flag never see
+it. Agreement between the engines is best effort. This is what stops a small
+disagreement from showing up as two overlapping copies of the text.
 
 See [LEARNINGS.md](LEARNINGS.md) for the failure modes this replaced.
 

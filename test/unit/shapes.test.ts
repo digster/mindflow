@@ -45,7 +45,7 @@ import {
   toneColor,
   type SolidType,
 } from '../../src/render/shapes/solids.ts';
-import { FACE_SHADE, shadeColor } from '../../src/render/shapes/shared.ts';
+import { FACE_SHADE, shadeColor, wrapText } from '../../src/render/shapes/shared.ts';
 
 const POLYGONS: PolygonType[] = ['triangle', 'pentagon', 'hexagon', 'star', 'parallelogram'];
 const SOLIDS: SolidType[] = ['cube', 'cylinder', 'cone', 'pyramid'];
@@ -471,6 +471,51 @@ describe('text that sizes itself', () => {
     const sticky = getDefinition('sticky');
     expect(sticky.withText).toBeUndefined();
     expect(sticky.wrapsText).toBeUndefined();
+  });
+});
+
+/*
+ * Whitespace is where the canvas and the DOM text editor used to disagree: a
+ * tab drew as one space on the canvas and as an 8-space tab stop in the
+ * editor, and a paragraph's leading spaces were dropped by the canvas but kept
+ * by the editor. Wherever the two differed, an indented note split into two
+ * visibly offset copies the moment editing began.
+ *
+ * Under Node the width of a string is `length × fontSize × 0.55`, so at 16px
+ * every character is 8.8 units wide. The widths below are chosen from that.
+ */
+describe('text wrapping whitespace', () => {
+  const font = '400 16px sans-serif';
+
+  it('keeps the spaces that indent a paragraph', () => {
+    expect(wrapText('  - item', 1000, font, 16)).toEqual(['  - item']);
+    expect(wrapText('head\n  - item', 1000, font, 16)).toEqual(['head', '  - item']);
+  });
+
+  it('keeps indentation only on the first line when an indented paragraph wraps', () => {
+    // '  aaaa' is 52.8 wide and fits; '  aaaa bbbb' is 96.8 and does not.
+    expect(wrapText('  aaaa bbbb', 60, font, 16)).toEqual(['  aaaa', 'bbbb']);
+  });
+
+  it('still swallows the spaces where a line soft-wraps', () => {
+    // 'aaaa' is 35.2 wide; 'aaaa ' is 44, already past the limit, so the break
+    // falls inside the run of spaces and neither space may open the next line.
+    expect(wrapText('aaaa  bbbb', 40, font, 16)).toEqual(['aaaa', 'bbbb']);
+  });
+
+  it('draws a tab, form feed or carriage return as a single space', () => {
+    expect(wrapText('\t- item', 1000, font, 16)).toEqual([' - item']);
+    expect(wrapText('a\fb', 1000, font, 16)).toEqual(['a b']);
+    // A Windows line ending leaves a carriage return before each `\n`.
+    expect(wrapText('one\r\ntwo', 1000, font, 16)).toEqual(['one ', 'two']);
+  });
+
+  it('applies the same whitespace rule when wrapping is off', () => {
+    expect(wrapText('\t- item\n  - more', 0, font, 16)).toEqual([' - item', '  - more']);
+  });
+
+  it('keeps a paragraph made only of spaces', () => {
+    expect(wrapText('a\n   \nb', 1000, font, 16)).toEqual(['a', '   ', 'b']);
   });
 });
 

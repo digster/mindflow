@@ -2,9 +2,12 @@
  * In-place text editing.
  *
  * Canvas has no text input, so editing happens in a real `<textarea>` positioned
- * and transformed to sit exactly on top of where the canvas draws the text. The
- * element being edited is hidden from the canvas render for the duration, so the
- * user sees one piece of text, not two slightly-offset copies.
+ * and transformed to sit exactly on top of where the canvas draws the text. For
+ * the duration, the canvas paints the element WITHOUT that text — see
+ * {@link TextEditor.displayed} — so the user sees one piece of text, not two
+ * slightly-offset copies. The rest of the element (a note's paper, a shape's
+ * outline, a table's other cells) stays on the canvas, behind the transparent
+ * textarea.
  *
  * What is being edited is an element *and optionally a region within it* — a
  * table cell. Everything below works from a local-frame box rather than the
@@ -40,6 +43,10 @@
  *      flat `BASELINE_RATIO` ems — so the editor measures the CSS baseline and
  *      shifts itself onto the canvas's. See {@link applyTextOffset}.
  *
+ *   5. WHITESPACE IS SHOWN AS DRAWN. The canvas draws a tab as one space; a
+ *      textarea jumps it to the next tab stop. The editor therefore holds the
+ *      text through `whitespaceAsDrawn`, on open and on every paste.
+ *
  * See `LEARNINGS.md` for the failure modes this replaced.
  */
 
@@ -47,7 +54,7 @@ import type { MindflowElement, StickyElement, TextElement } from '../model/types
 import type { Store } from '../store/store.ts';
 import type { TextRegion } from '../model/registry.ts';
 import { getDefinition, labelBoxOf } from '../model/registry.ts';
-import { BASELINE_RATIO, FONT_STACKS, layoutText } from '../render/shapes/shared.ts';
+import { BASELINE_RATIO, FONT_STACKS, layoutText, whitespaceAsDrawn } from '../render/shapes/shared.ts';
 import { defaultLabel } from '../model/defaults.ts';
 import { localToWorld, sceneToScreen } from '../model/geometry.ts';
 import { replaceElements } from '../store/commands.ts';
@@ -229,6 +236,7 @@ export class TextEditor {
     });
 
     this.element.addEventListener('input', () => this.onInput());
+    this.element.addEventListener('paste', (event) => this.onPaste(event));
     this.element.addEventListener('blur', () => this.commit());
     this.element.addEventListener('keydown', (event) => this.onKeyDown(event));
     // A click inside the editor must not reach the canvas and dismiss it. This
@@ -312,7 +320,9 @@ export class TextEditor {
     this.store.setEditing(element.id);
 
     this.element.hidden = false;
-    this.element.value = style.text;
+    // Shown as the canvas draws it. Only shown: nothing is written back unless
+    // the user actually types, so opening a note never rewrites its tabs.
+    this.element.value = whitespaceAsDrawn(style.text);
     this.applyStyle(style, element);
     this.position(element);
     this.listenForDismissal();
@@ -340,11 +350,19 @@ export class TextEditor {
       // over the board, and a finger cannot then place the caret without first
       // dismissing them. A caret at the end is what tapping into a field does
       // everywhere else on a touch device.
+      // This one is left to scroll: on a note that overflows its box, the end is
+      // where the person is about to type, and they have to be able to see it.
       const end = this.element.value.length;
       this.element.setSelectionRange(end, end);
       return;
     }
     this.element.select();
+    // `select()` scrolls a textarea whose text overflows it to where the
+    // selection ends, synchronously — shifting every line of a long note up by
+    // the overflow the instant editing starts, away from where the canvas had
+    // it. Putting the scroll back keeps the text still; the caret-following the
+    // browser does as soon as someone types or moves the caret is untouched.
+    this.element.scrollTop = 0;
   }
 
   /** Repositions the editor after a pan or zoom. */
@@ -352,6 +370,29 @@ export class TextEditor {
     if (!this.editingId) return;
     const element = this.store.document.elements.find((candidate) => candidate.id === this.editingId);
     if (element) this.position(element);
+  }
+
+  /**
+   * `element` as the canvas should paint it: without the text this editor is
+   * covering, if it is the element being edited, and untouched otherwise.
+   *
+   * The canvas and the textarea are two layout engines, and everything else in
+   * this file exists to make them agree. They can only ever agree to within a
+   * rounding error, though, and until this existed both drew the text: wherever
+   * they differed — a tab, an indent, a line broken at a different word — the
+   * user saw two offset copies, which on a long note read as garbled text.
+   *
+   * Blanked with `withText`, so the region, the text body or the label is found
+   * by exactly the rules an edit is written back by: a table loses only the
+   * cell under the editor. `reflow: false` because only the glyphs should go —
+   * a type sized by its content must not shrink around the missing text.
+   *
+   * Called for every element on every frame, so the common case is one id
+   * comparison.
+   */
+  displayed(element: MindflowElement): MindflowElement {
+    if (element.id !== this.editingId) return element;
+    return this.withText(element, '', this.regionKey, { reflow: false });
   }
 
   private applyStyle(style: EditingStyle, element: MindflowElement): void {
@@ -474,17 +515,62 @@ export class TextEditor {
     const element = this.store.document.elements.find((candidate) => candidate.id === this.editingId);
     if (!element) return;
 
+    // A safety net for whatever `onPaste` did not see — text dragged in, say.
+    // Rewriting `value` wipes the textarea's own undo history, which is why
+    // paste avoids needing this; the swap is one character for one, so the
+    // caret can be put straight back where it was.
+    const drawn = whitespaceAsDrawn(this.element.value);
+    if (drawn !== this.element.value) {
+      const { selectionStart, selectionEnd, selectionDirection } = this.element;
+      this.element.value = drawn;
+      this.element.setSelectionRange(selectionStart, selectionEnd, selectionDirection);
+    }
+
     const next = this.withText(element, this.element.value, this.regionKey);
     this.store.execute(replaceElements(this.store.document, [next], 'Edit text', true), true);
     this.touched = true;
     this.position(next);
   }
 
-  /** Returns a copy of `element` carrying `text`, resized if it grows. */
+  /**
+   * Converts pasted tabs to spaces before they land.
+   *
+   * Pasting is how tabs actually arrive — typing cannot produce one, since Tab
+   * moves focus — and a note pasted from another app is often tab-indented.
+   * Only a paste that needs converting is intercepted; everything else is left
+   * to the browser.
+   *
+   * Inserted with `execCommand('insertText')`, deprecated as it is, because it
+   * is still the only way to put text into a textarea that its own undo stack
+   * records. Cmd+Z straight after a paste has to take the paste back out. It
+   * fires `input` itself, so `onInput` runs as for any other edit. If a browser
+   * ever refuses it, `setRangeText` inserts the text without the undo entry.
+   */
+  private onPaste(event: ClipboardEvent): void {
+    const pasted = event.clipboardData?.getData('text/plain') ?? '';
+    const drawn = whitespaceAsDrawn(pasted);
+    if (drawn === pasted) return;
+
+    event.preventDefault();
+    if (document.execCommand('insertText', false, drawn)) return;
+
+    const { selectionStart, selectionEnd } = this.element;
+    this.element.setRangeText(drawn, selectionStart, selectionEnd, 'end');
+    this.onInput();
+  }
+
+  /**
+   * Returns a copy of `element` carrying `text`.
+   *
+   * With `reflow` (the default) a type sized by its content re-derives its box,
+   * as it must when the text is really changing. Without it the box is left
+   * exactly as it is, which is what {@link displayed} needs.
+   */
   private withText(
     element: MindflowElement,
     text: string,
     regionKey: string | null,
+    { reflow = true }: { reflow?: boolean } = {},
   ): MindflowElement {
     const definition = getDefinition(element.type);
     const capabilities = definition.capabilities;
@@ -499,7 +585,8 @@ export class TextEditor {
     // own `withText`. Without the hook the box is left alone, which is right for
     // a sticky note: its text wraps inside the box the user sized.
     if (capabilities.text) {
-      return definition.withText?.(element as never, text) ?? ({ ...element, text } as MindflowElement);
+      const plain = { ...element, text } as MindflowElement;
+      return reflow ? (definition.withText?.(element as never, text) ?? plain) : plain;
     }
 
     const label = element.label ?? defaultLabel();
