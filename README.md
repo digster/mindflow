@@ -31,9 +31,10 @@ diamond, triangle, pentagon, hexagon, star, parallelogram, and the solids — cu
 cylinder, cone and pyramid. Flat shapes can render clean or hand-drawn.
 
 **Editing** — move, resize and rotate (including correct rotated resizing),
-multi-select, marquee, grouping, frames that clip and move their contents, align
-and distribute, z-order, in-place text editing, full undo/redo, clipboard with
-cross-tab support, and a style clipboard that copies appearance without content.
+multi-select, marquee, grouping, frames that clip and move their contents (and
+rename in place with a double-click on the name), align and distribute, z-order,
+in-place text editing, full undo/redo, clipboard with cross-tab support, and a
+style clipboard that copies appearance without content.
 
 **Tables** — cell-by-cell editing with `Tab` to move on, draggable column and row
 dividers, and insert/delete for rows and columns from the right-click menu.
@@ -47,7 +48,7 @@ Types can offer their own palette: a sticky note shows paper tones, not pastels.
 single button (`Cmd \`) when a smaller screen needs the room — remembered
 between sessions.
 
-**Touch** — tap to select, drag to move, double-tap to edit text, long-press for
+**Touch** — tap to select, drag to move, double-tap to edit text or a frame's name, long-press for
 the context menu, two-finger drag to pan and pinch to zoom. Hit targets and drag
 thresholds size themselves to whatever is doing the pointing. A pinch zooms the
 board, never the page: the toolbars stay put.

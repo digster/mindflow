@@ -82,7 +82,7 @@ it uses the capability type guards next to `capabilitiesOf`:
 |---|---|---|
 | `isConnector(el)` | `LinearElement` | re-routing, delete clean-up, paste remapping, validation, style panel |
 | `isPathElement(el)` | `PathElement` | resize, coordinate rounding |
-| `isFrame(el)` | `FrameElement` | `model/frames.ts`, SVG clip paths, the style panel's name row |
+| `isFrame(el)` | `FrameElement` | `model/frames.ts`, SVG clip paths, the style panel's name row, renaming on the canvas |
 | `hasFile(el)` | `ImageElement` | the image cache, copy, file-reference validation |
 
 A flag cannot prove its type's fields, so `contract.test.ts` creates one element
@@ -297,6 +297,34 @@ it. Agreement between the engines is best effort. This is what stops a small
 disagreement from showing up as two overlapping copies of the text.
 
 See [LEARNINGS.md](LEARNINGS.md) for the failure modes this replaced.
+
+### Renaming a frame
+
+A frame's name gets its own, much smaller editor,
+[`src/ui/frameNameEditor.ts`](src/ui/frameNameEditor.ts), rather than a mode of
+`TextEditor`. The name is one line in fixed typography, so the control is an
+`<input>`, sized to the text on each keystroke. Nothing reads the name while it
+is being typed, so there are no transient edits to rewind, and committing
+writes one "Rename frame" command. It keeps the rules above that matter: the
+renderer paints the frame without its name while the editor is open
+(`displayed`, composed with the text editor's in `app.ts`), the editor sets
+`editingId` so a press on the canvas commits it, and it closes itself on an
+outside press (`listenForOutsidePress` in `ui/dom.ts`, shared with
+`TextEditor`). Every path that ends an edit calls `App.commitEditing`, which
+commits both editors, since at most one is open.
+
+Two decisions are specific to it:
+
+- **The name is picked separately, not hit-tested.** It is drawn above the
+  frame's box, and extending `hitTest` there would break the AABB pre-rejection
+  that culling and picking rely on. `frameNameAt` and `frameToRename` in
+  `input/hitTest.ts` test a double-click against `frameNameBox` from
+  `render/shapes/frame.ts`, the one description of where the name is, which the
+  canvas also draws from. A single click on the name still selects nothing.
+- **The baseline is measured on an input.** An `<input>` places its line by
+  different rules from the `<div>` probe the text editor uses, so the editor
+  measures its own, with `line-height: normal` so that there is no fractional
+  centring for painting to round. See LEARNINGS.md.
 
 ## Developer workflows
 

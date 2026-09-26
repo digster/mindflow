@@ -340,6 +340,26 @@ test.describe('selecting and dragging by touch', () => {
     expect(await editingId(page)).not.toBeNull();
   });
 
+  test("a double tap on a frame's name opens the name editor", async ({ page }) => {
+    // The same route as a double tap into a note, which is the only one a
+    // finger has: the name tab is outside the frame's box, so it has to be
+    // found by the double-tap path and not only by `dblclick`.
+    await page.locator('[data-tool="frame"]').click();
+    const box = await canvasBox(page);
+    await page.mouse.move(box.x + 100, box.y + 100);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 500, box.y + 400, { steps: 8 });
+    await page.mouse.up();
+    await page.keyboard.press('Escape');
+
+    await doubleTap(page, [112, 89]);
+
+    const editor = page.locator('.mf-frame-name-editor');
+    await expect(editor).toBeFocused();
+    await expect(editor).toHaveValue('Frame');
+    expect(await editingId(page)).not.toBeNull();
+  });
+
   test('two separate taps do not open the editor', async ({ page }) => {
     await stickyWithMouse(page, [200, 200], [400, 400]);
     await tap(page, [300, 300]);

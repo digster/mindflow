@@ -58,7 +58,7 @@ import { BASELINE_RATIO, FONT_STACKS, layoutText, whitespaceAsDrawn } from '../r
 import { defaultLabel } from '../model/defaults.ts';
 import { localToWorld, sceneToScreen } from '../model/geometry.ts';
 import { replaceElements } from '../store/commands.ts';
-import { IS_COARSE_POINTER, el } from './dom.ts';
+import { IS_COARSE_POINTER, el, listenForOutsidePress } from './dom.ts';
 
 /** Typography for the element being edited, whether it lives in `text` or `label`. */
 interface EditingStyle {
@@ -214,8 +214,17 @@ export class TextEditor {
    */
   private original: MindflowElement | null = null;
   private committed = false;
-  /** Pending registration of the outside-press listener; see `listenForDismissal`. */
-  private dismissalTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Stops the outside-press listener that commits the edit.
+   *
+   * Blur was the only automatic commit path, and blur is a convention rather
+   * than a guarantee: whether pressing a toolbar button moves focus out of a
+   * textarea differs between platforms, and on a touch screen a tap on the
+   * canvas may not move focus at all. `app.ts` already worked around this for
+   * "New board" and for loading a file; this closes the general case, the way
+   * `Popover` does for menus. The timing rules are in `listenForOutsidePress`.
+   */
+  private stopDismissal: (() => void) | null = null;
   /**
    * Whether any keystroke actually reached the document this session.
    *
@@ -243,52 +252,6 @@ export class TextEditor {
     // also stops the window-level listener below from seeing it, since that one
     // is registered on the bubble phase.
     this.element.addEventListener('pointerdown', (event) => event.stopPropagation());
-  }
-
-  /**
-   * Commits when a press lands anywhere outside the editor.
-   *
-   * Blur was the only automatic commit path, and blur is a convention rather
-   * than a guarantee: whether pressing a toolbar button moves focus out of a
-   * textarea differs between platforms, and on a touch screen a tap on the
-   * canvas may not move focus at all. `app.ts` already worked around this for
-   * "New board" and for loading a file; this closes the general case, the way
-   * `Popover` does for menus.
-   *
-   * Registered on the BUBBLE phase, not capture, so a press on the canvas is
-   * handled once — by the controller, which also needs to swallow it so the
-   * dismissing tap does not start a gesture.
-   */
-  private onWindowPointerDown = (event: PointerEvent): void => {
-    if (this.element.contains(event.target as Node)) return;
-    this.commit();
-  };
-
-  /**
-   * Starts listening for the press that dismisses — but not until the press
-   * that OPENED the editor has finished propagating.
-   *
-   * The text tool opens the editor from the canvas's own `pointerdown` handler,
-   * and that event is still bubbling towards `window`. Registering the listener
-   * synchronously means the opening press immediately dismisses the editor it
-   * just opened. A microtask is not enough either: the event dispatcher drains
-   * the microtask queue between listeners, so the handler would still run for
-   * the same event. A task boundary is the first point at which the current
-   * event is genuinely finished.
-   */
-  private listenForDismissal(): void {
-    this.dismissalTimer = setTimeout(() => {
-      this.dismissalTimer = null;
-      if (this.editingId !== null) window.addEventListener('pointerdown', this.onWindowPointerDown);
-    }, 0);
-  }
-
-  private stopListeningForDismissal(): void {
-    if (this.dismissalTimer !== null) {
-      clearTimeout(this.dismissalTimer);
-      this.dismissalTimer = null;
-    }
-    window.removeEventListener('pointerdown', this.onWindowPointerDown);
   }
 
   get isEditing(): boolean {
@@ -325,7 +288,10 @@ export class TextEditor {
     this.element.value = whitespaceAsDrawn(style.text);
     this.applyStyle(style, element);
     this.position(element);
-    this.listenForDismissal();
+    // The text tool opens the editor from the canvas's own `pointerdown`, which
+    // is still bubbling; the helper waits it out.
+    this.stopDismissal?.();
+    this.stopDismissal = listenForOutsidePress(this.element, () => this.commit());
 
     // Focus synchronously, inside the gesture that opened the editor. iOS
     // Safari raises the soft keyboard only for a `focus()` that happens in a
@@ -666,7 +632,8 @@ export class TextEditor {
     this.editingId = null;
     this.regionKey = null;
     this.original = null;
-    this.stopListeningForDismissal();
+    this.stopDismissal?.();
+    this.stopDismissal = null;
     // Blur before hiding. Hiding a textarea that is still `document.activeElement`
     // leaves the soft keyboard up on iOS — a caret that is, as far as the user
     // can tell, still active. The `committed` flag above makes the `blur`

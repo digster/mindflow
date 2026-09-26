@@ -480,3 +480,14 @@ touch devices, and `maximum-scale=1`. Board pinch is unchanged.
 Added a New board row at the top of the logo's recent-boards menu. It runs the
 same action as the toolbar button, is offered even when the list is empty or
 storage is refused, and joins the menu's arrow-key list.
+
+---
+
+## 2026-09-26 — Rename a frame from its header
+
+> [Screenshot of a frame with its "Frame" header above the top-left corner]
+> Allow renaming the frame header.
+
+Double-clicking (or double-tapping) a frame's name, or its border, now opens an
+in-place `<input>` on the name. Enter, Escape or a press elsewhere commits it as
+one "Rename frame" undo step. The style panel's name row stays.

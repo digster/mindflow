@@ -182,7 +182,10 @@ members — it re-clips them.
 
 **Hit-testing:** the interior is click-through, so contents stay reachable. The
 frame is hit only near its border, within the usual tolerance. Its `name` is
-decorative and is not part of the hit region.
+not part of the hit region, since it lies outside the box. MindFlow does let a
+double-click on the name rename the frame, through a separate check that leaves
+the hit region as it is; see
+[05-interactions.md](05-interactions.md#renaming-on-the-canvas).
 
 **Dangling references:** a `frameId` naming an element that is absent or is not a
 frame should be treated as `null`. A reader that clips to a missing frame would

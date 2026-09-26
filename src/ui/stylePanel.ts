@@ -195,16 +195,15 @@ export class StylePanel {
     const linear = selected.find(isConnector);
     const anyFillable = capabilities.some((capability) => capability.fillable);
 
-    // A frame's name is edited here rather than on the canvas: the name is drawn
-    // outside the frame's box, so it cannot be part of the hit region without
-    // putting hitTest at odds with the AABB pre-rejection every caller relies on.
+    // A frame's name can also be edited on the canvas, by double-clicking its
+    // name tab or its border. This row stays because it is the one place the
+    // name can be read and typed without aiming at a 13px label, at any zoom.
     if (selected.length === 1 && isFrame(first)) {
       this.body.append(this.nameRow(first));
     }
 
-    // Structure controls for a single table, alongside the frame name row above
-    // and for the same reason: these are edits with nowhere else to live. The
-    // per-cell versions (insert *here*, delete *this* row) are on the context
+    // Structure controls for a single table: edits with nowhere else to live
+    // in the canvas's own chrome. The per-cell versions (insert *here*, delete *this* row) are on the context
     // menu, where the click itself says which cell is meant.
     if (selected.length === 1 && first.type === 'table') {
       for (const row of this.tableRows(first as TableElement)) this.body.append(row);
