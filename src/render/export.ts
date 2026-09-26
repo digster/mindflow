@@ -35,7 +35,7 @@ import type { RenderContext } from '../model/registry.ts';
 import { drawElement, isFrame, labelBoxOf } from '../model/registry.ts';
 import { clamp, degToRad, unionAABB } from '../model/geometry.ts';
 import { roughOutlineFor } from './rough.ts';
-import { FRAME_NAME_GAP, FRAME_NAME_SIZE } from './shapes/frame.ts';
+import { FRAME_NAME_COLOR, FRAME_NAME_GAP, FRAME_NAME_SIZE, FRAME_NAME_WEIGHT } from './shapes/frame.ts';
 import { isPolygonType, polygonVertices } from './shapes/polygons.ts';
 import { isSolidType, solidFaces, toneColor } from './shapes/solids.ts';
 import { cellBox, cellFontWeight, columnEdges, rowEdges } from './shapes/table.ts';
@@ -413,7 +413,8 @@ function elementToSvg(element: MindflowElement, document: MindflowDocument): str
       // FRAME_NAME_GAP above the top edge. See docs/03-elements.md.
       const name =
         `<text x="0" y="${round(-FRAME_NAME_GAP)}" font-family="${escapeXml(FONT_STACKS.sans)}" ` +
-        `font-size="${FRAME_NAME_SIZE}" font-weight="600" fill="#6b7280">${escapeXml(frame.name)}</text>`;
+        `font-size="${FRAME_NAME_SIZE}" font-weight="${FRAME_NAME_WEIGHT}" fill="${FRAME_NAME_COLOR}">` +
+        `${escapeXml(frame.name)}</text>`;
       return box + name;
     }
 

@@ -254,7 +254,7 @@ that needs a lighter pen.
 ## Frames
 
 A **frame** is a named region that clips and moves its contents. Draw one with the
-frame tool (`F`), and rename it in the style panel.
+frame tool (`F`). Rename it by double-clicking its name, or in the style panel.
 
 - **Membership is decided on drop.** When an element is released, it joins the
   topmost frame whose box contains the element's **centre**, and leaves whatever
@@ -272,10 +272,40 @@ frame tool (`F`), and rename it in the style panel.
   contents stay selectable. The frame is grabbed by its **border**.
 - **Frames are not rotatable**, and do not nest.
 
-The frame's name renders above its top-left corner, outside the box. It is
-deliberately not clickable — it sits outside the element's own bounding box, and
-extending the hit region there would put hit-testing at odds with the bounds every
-other part of the app uses for culling and selection.
+### Renaming on the canvas
+
+The frame's name renders above its top-left corner, outside the box.
+**Double-clicking the name** (or double-tapping it) opens an editor on it, with
+the name selected. **Double-clicking the frame's border** does the same, which is
+the only way to name a frame whose name is empty, since that frame draws no name
+to point at.
+
+| Key | Effect |
+|---|---|
+| `Enter` | Finish renaming. |
+| `Escape` | Finish renaming, **keeping** what was typed, as in the text editor. |
+| Click or tap elsewhere | Finish renaming. The press does nothing else. |
+
+- **One undo step**, labelled "Rename frame". Opening the editor and closing it
+  without a change, or typing the same name back, is not an edit and does not
+  mark the board unsaved.
+- **The name is one line.** The editor is an `<input>`, sized to the name as it
+  is typed, so no newline can reach the file. A tab becomes a space, which is
+  how the canvas draws it anyway.
+- **Only the editor shows the name while it is open.** The canvas stops drawing
+  it, as it does for text under the text editor, so a small disagreement between
+  the two cannot show as two copies. The editor puts its text's baseline on the
+  canvas's, measured rather than assumed.
+- **The name is still not part of the hit region.** A single click on it does
+  not select the frame, and a drag there does not move it. The name sits outside
+  the element's own bounding box, and extending the hit region there would put
+  hit-testing at odds with the bounds every other part of the app uses for
+  culling and selection. Only a double-click looks at it, through a separate
+  check against the name's box.
+- **What is on top wins.** If another element is drawn over the name, a
+  double-click there edits that element instead. The frame's own members never
+  count: they are clipped to the frame's box, and the name is outside it.
+- Locked and hidden frames cannot be renamed this way, like every other pick.
 
 ## Modifiers during a drag
 
@@ -339,7 +369,7 @@ a stylus or a trackpad keeps the precise thresholds.
 |---|---|
 | Tap | Select, or place the active tool's shape. |
 | Drag | Move, resize, marquee — as with a mouse, past the 8px threshold. |
-| Double tap | Edit text, the touch equivalent of a double click. |
+| Double tap | Edit text, or a frame's name: the touch equivalent of a double click. |
 | Long press | Open the context menu. |
 | Two-finger drag | Pan. |
 | Pinch | Zoom, about the midpoint of the two fingers. |
@@ -478,7 +508,9 @@ undo restores both the shape and its connections in one step.
 Double-clicking an element that can hold text opens an in-place editor. For `text`
 and `sticky` elements this edits their `text`; for a `table` it edits **the cell
 that was double-clicked**; for every other type it edits the `label`, creating one
-if the element does not have it yet.
+if the element does not have it yet. A `frame` holds no text of its own, so
+double-clicking one edits its **name** instead; see
+[Renaming on the canvas](#renaming-on-the-canvas).
 
 | Key | Effect |
 |---|---|

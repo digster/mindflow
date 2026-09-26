@@ -32,6 +32,7 @@ import { showFindBar } from '../ui/findBar.ts';
 import { buildCommands } from './commands.ts';
 import { StylePanel } from '../ui/stylePanel.ts';
 import { TextEditor } from '../ui/textEditor.ts';
+import { FrameNameEditor } from '../ui/frameNameEditor.ts';
 import { showContextMenu } from '../ui/contextMenu.ts';
 import { closePopover } from '../ui/popover.ts';
 import { openColorPopover } from '../ui/colorPicker.ts';
@@ -84,6 +85,7 @@ export class MindflowApp {
   private readonly appCallbacks: ToolbarCallbacks;
   private readonly stylePanel: StylePanel;
   private readonly textEditor: TextEditor;
+  private readonly frameNameEditor: FrameNameEditor;
   private readonly autosave: Autosave;
   private readonly disposers: (() => void)[] = [];
 
@@ -106,9 +108,9 @@ export class MindflowApp {
           viewport: this.store.viewport,
           editing: this.store.getState().editingId !== null,
         }),
-      // The element under the open text editor is painted without the text the
-      // editor is showing, so there is only ever one copy of it on screen.
-      displayed: (element) => this.textEditor.displayed(element),
+      // The element under an open editor is painted without the text the editor
+      // is showing, so there is only ever one copy of it on screen.
+      displayed: (element) => this.frameNameEditor.displayed(this.textEditor.displayed(element)),
     });
 
     this.actions = new Actions({
@@ -118,12 +120,14 @@ export class MindflowApp {
     });
 
     this.textEditor = new TextEditor(this.store);
+    this.frameNameEditor = new FrameNameEditor(this.store);
 
     this.controller = new InteractionController({
       canvas: this.canvas,
       store: this.store,
       onEditText: (element, regionKey) => this.textEditor.open(element, regionKey),
-      onCommitText: () => this.textEditor.commit(),
+      onRenameFrame: (frame) => this.frameNameEditor.open(frame),
+      onCommitText: () => this.commitEditing(),
       onOverlayChange: () => this.renderer.invalidate(),
       onRequestImage: (point) => void this.insertImageAtPoint(point),
       onContextMenu: ({ scene, screen, hit }) =>
@@ -171,7 +175,13 @@ export class MindflowApp {
         'main',
         { class: 'mf-main' },
         this.toolbar.toolbarElement,
-        el('div', { class: 'mf-canvas-wrap' }, this.canvas, this.textEditor.element),
+        el(
+          'div',
+          { class: 'mf-canvas-wrap' },
+          this.canvas,
+          this.textEditor.element,
+          this.frameNameEditor.element,
+        ),
         this.stylePanel.element,
       ),
     );
@@ -201,6 +211,7 @@ export class MindflowApp {
         }
         if (reason === 'viewport' || reason === 'load') {
           this.textEditor.reposition();
+          this.frameNameEditor.reposition();
         }
         if (reason === 'selection' || reason === 'document' || reason === 'load') {
           this.stylePanel.sync();
@@ -220,6 +231,7 @@ export class MindflowApp {
     const resizeObserver = new ResizeObserver(() => {
       this.renderer.resize();
       this.textEditor.reposition();
+      this.frameNameEditor.reposition();
     });
     resizeObserver.observe(this.canvas);
     this.disposers.push(() => resizeObserver.disconnect());
@@ -243,7 +255,7 @@ export class MindflowApp {
         onCommandPalette: () => this.openCommandPalette(),
         onFind: () => showFindBar(this.store, this.actions),
         onToggleStylePanel: () => this.stylePanel.toggleCollapsed(),
-        onCommitText: () => this.textEditor.commit(),
+        onCommitText: () => this.commitEditing(),
         onPasteShortcut: () => pasteGate.shortcut(),
       }),
     );
@@ -265,7 +277,7 @@ export class MindflowApp {
     // which is what stops Cmd+V pasting twice. One that arrives after the
     // fallback has already pasted is claimed and discarded instead.
     const onPaste = (event: ClipboardEvent) => {
-      if (isTypingTarget(event.target) || this.textEditor.isEditing) return;
+      if (isTypingTarget(event.target) || this.textEditor.isEditing || this.frameNameEditor.isEditing) return;
       event.preventDefault();
       if (!pasteGate.native()) return;
 
@@ -390,6 +402,17 @@ export class MindflowApp {
     }
   }
 
+  /**
+   * Ends whichever in-place edit is open, writing what was typed: a note's or
+   * a shape's text, or a frame's name. At most one is open at a time, and
+   * committing a closed editor does nothing, so every path that ends an edit
+   * calls this rather than choosing.
+   */
+  private commitEditing(): void {
+    this.textEditor.commit();
+    this.frameNameEditor.commit();
+  }
+
   // -------------------------------------------------------------------------
   // Board lifecycle
   // -------------------------------------------------------------------------
@@ -400,7 +423,7 @@ export class MindflowApp {
     // out of a textarea is a platform convention, not a guarantee — macOS
     // browsers traditionally do not focus buttons on click. Left open, the
     // editor floats over the incoming board still showing the old one's text.
-    this.textEditor.commit();
+    this.commitEditing();
     // Same argument for a popover: a context menu still listing "Ungroup" for
     // elements that no longer exist would act on a stale selection.
     closePopover();
@@ -462,7 +485,7 @@ export class MindflowApp {
     // Before confirmDiscard, not after: a pending edit is part of the board
     // being left, so it has to land before the user is asked whether losing the
     // board's changes is acceptable. See applyLoad for why blur is not enough.
-    this.textEditor.commit();
+    this.commitEditing();
     closePopover();
     if (!(await this.confirmDiscard())) return;
     this.images.clear();
@@ -584,7 +607,7 @@ export class MindflowApp {
   private async openRecent(board: RecentBoard): Promise<void> {
     // Same order as `newBoard`, and for the same reason: a pending text edit is
     // part of the board being left, so it lands before the user is asked.
-    this.textEditor.commit();
+    this.commitEditing();
     closePopover();
     if (!(await this.confirmDiscard())) return;
     if (await this.loadRecent(board)) toast(`Opened ${board.name}`);

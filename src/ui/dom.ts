@@ -106,3 +106,44 @@ export const IS_COARSE_POINTER =
   typeof window !== 'undefined' &&
   (window.matchMedia?.('(pointer: coarse)').matches === true ||
     (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0));
+
+/**
+ * Calls `onOutside` for the next presses that land outside `inside`, until the
+ * returned function is called. For an in-place editor that has to close itself
+ * when the user moves on.
+ *
+ * Blur is not enough to end an edit. Whether pressing a button moves focus
+ * out of a field is a platform convention, and on a touch screen a tap on the
+ * canvas may not move focus at all. See "Blur is a platform convention" in
+ * LEARNINGS.md.
+ *
+ * Two timing rules, each of which broke something once:
+ *
+ *   - Registered a TASK later. The press that opened the editor is usually
+ *     still bubbling towards `window`, and a listener added synchronously
+ *     would dismiss the editor it just opened. A microtask is not enough: the
+ *     dispatcher drains the microtask queue between listeners, so the handler
+ *     would still run for the same event.
+ *   - On the BUBBLE phase, not capture, so a press on the canvas is handled
+ *     once, by the controller, which also swallows it so the dismissing press
+ *     does not start a gesture.
+ *
+ * `inside` should stop its own `pointerdown` from propagating, or a press in
+ * the editor would bubble here too. The containment check is a second guard.
+ */
+export function listenForOutsidePress(inside: HTMLElement, onOutside: () => void): () => void {
+  const onPointerDown = (event: PointerEvent): void => {
+    if (inside.contains(event.target as Node)) return;
+    onOutside();
+  };
+  let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    timer = null;
+    window.addEventListener('pointerdown', onPointerDown);
+  }, 0);
+
+  return () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    window.removeEventListener('pointerdown', onPointerDown);
+  };
+}

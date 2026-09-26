@@ -57,34 +57,38 @@ async function getDocument(page: Page) {
  *
  * Reads the canvas's own backing store, so the DOM text editor floating above
  * it is invisible here — which is the point: this sees only what the canvas drew
- * underneath. "Dark" is every channel below 110. Text in the default colour
- * qualifies; a sticky's paper and soft shadow, the white board and the
- * accent-coloured selection chrome do not.
+ * underneath. "Dark" is every channel below `below`, 110 by default. Text in the
+ * default colour qualifies; a sticky's paper and soft shadow, the white board
+ * and the accent-coloured selection chrome do not. A frame's grey name needs
+ * 140, which its lighter grey border still does not reach.
  *
  * Waits two frames first, because a repaint is scheduled on the next animation
  * frame rather than performed when the state changes.
  */
-async function inkIn(page: Page, box: { x: number; y: number; width: number; height: number }) {
+async function inkIn(page: Page, box: { x: number; y: number; width: number; height: number }, below = 110) {
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   );
-  return page.evaluate((box) => {
-    const canvas = document.querySelector('.mf-canvas') as HTMLCanvasElement;
-    const scale = canvas.width / canvas.getBoundingClientRect().width;
-    const { data } = canvas
-      .getContext('2d')!
-      .getImageData(
-        Math.round(box.x * scale),
-        Math.round(box.y * scale),
-        Math.round(box.width * scale),
-        Math.round(box.height * scale),
-      );
-    let dark = 0;
-    for (let index = 0; index < data.length; index += 4) {
-      if (data[index]! < 110 && data[index + 1]! < 110 && data[index + 2]! < 110) dark++;
-    }
-    return dark;
-  }, box);
+  return page.evaluate(
+    ({ box, below }) => {
+      const canvas = document.querySelector('.mf-canvas') as HTMLCanvasElement;
+      const scale = canvas.width / canvas.getBoundingClientRect().width;
+      const { data } = canvas
+        .getContext('2d')!
+        .getImageData(
+          Math.round(box.x * scale),
+          Math.round(box.y * scale),
+          Math.round(box.width * scale),
+          Math.round(box.height * scale),
+        );
+      let dark = 0;
+      for (let index = 0; index < data.length; index += 4) {
+        if (data[index]! < below && data[index + 1]! < below && data[index + 2]! < below) dark++;
+      }
+      return dark;
+    },
+    { box, below },
+  );
 }
 
 /** Which element the text editor is open on, if any. */
@@ -2563,6 +2567,205 @@ test.describe('frames', () => {
 
     expect(svg).toContain('<clipPath');
     expect(svg).toContain('clip-path="url(#frame-');
+  });
+});
+
+test.describe('renaming a frame on the canvas', () => {
+  const NAME_EDITOR = '.mf-frame-name-editor';
+
+  /**
+   * A point on the name tab of a frame drawn from (100, 100), canvas-relative:
+   * a few pixels into the text and between its baseline (94) and cap height.
+   */
+  const ON_NAME: [number, number] = [112, 89];
+
+  /** The strip above the frame's top-left corner that the name is drawn in. */
+  const NAME_STRIP = { x: 100, y: 80, width: 60, height: 16 };
+
+  /** The frame's name is `#6b7280`, which `inkIn`'s default threshold ignores. */
+  const NAME_INK = 140;
+
+  async function drawFrame(page: Page) {
+    await page.locator('[data-tool="frame"]').click();
+    await drag(page, [100, 100], [500, 400]);
+    await page.keyboard.press('Escape');
+  }
+
+  async function doubleClickAt(page: Page, [x, y]: [number, number]) {
+    const box = await canvasBox(page);
+    await page.mouse.dblclick(box.x + x, box.y + y);
+  }
+
+  async function frameOf(page: Page) {
+    const doc = await getDocument(page);
+    return doc.elements.find((element) => element.type === 'frame') as { id: string; name: string };
+  }
+
+  test('double-clicking the name opens an editor on it, with the name selected', async ({ page }) => {
+    await drawFrame(page);
+    await doubleClickAt(page, ON_NAME);
+
+    const editor = page.locator(NAME_EDITOR);
+    await expect(editor).toBeFocused();
+    await expect(editor).toHaveValue('Frame');
+    // Selected, so typing replaces it.
+    expect(await editor.evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd])).toEqual([
+      0, 5,
+    ]);
+
+    const frame = await frameOf(page);
+    expect(await editingId(page)).toBe(frame.id);
+    expect(await selectedCount(page)).toBe(1);
+  });
+
+  test('Enter writes the new name as one undo step', async ({ page }) => {
+    await drawFrame(page);
+    await doubleClickAt(page, ON_NAME);
+    await expect(page.locator(NAME_EDITOR)).toBeFocused();
+
+    // Every letter here is also a tool shortcut on the canvas. None may leak.
+    await page.keyboard.type('Sprint 12');
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator(NAME_EDITOR)).toBeHidden();
+    expect((await frameOf(page)).name).toBe('Sprint 12');
+    expect(await editingId(page)).toBeNull();
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { mindflow: { store: { getState(): { activeTool: string } } } }).mindflow.store.getState()
+            .activeTool,
+      ),
+    ).toBe('select');
+
+    // One undo takes the whole rename back, and the next one removes the frame:
+    // nothing else was put on the stack.
+    await page.keyboard.press('ControlOrMeta+z');
+    expect((await frameOf(page)).name).toBe('Frame');
+    await page.keyboard.press('ControlOrMeta+z');
+    expect((await getDocument(page)).elements).toHaveLength(0);
+  });
+
+  test('Escape keeps what was typed, as it does in the text editor', async ({ page }) => {
+    await drawFrame(page);
+    await doubleClickAt(page, ON_NAME);
+    await expect(page.locator(NAME_EDITOR)).toBeFocused();
+
+    await page.keyboard.type('Backlog');
+    await page.keyboard.press('Escape');
+
+    await expect(page.locator(NAME_EDITOR)).toBeHidden();
+    expect((await frameOf(page)).name).toBe('Backlog');
+    // The Escape went to the editor, not on to the board's deselect.
+    expect(await selectedCount(page)).toBe(1);
+  });
+
+  test('a press on the canvas ends the edit, and does nothing else', async ({ page }) => {
+    await drawFrame(page);
+    await doubleClickAt(page, ON_NAME);
+    await expect(page.locator(NAME_EDITOR)).toBeFocused();
+    await page.keyboard.type('Roadmap');
+
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 800, box.y + 600);
+
+    await expect(page.locator(NAME_EDITOR)).toBeHidden();
+    expect((await frameOf(page)).name).toBe('Roadmap');
+    // A click on empty canvas would clear the selection. The press that
+    // dismisses an editor does not also act.
+    expect(await selectedCount(page)).toBe(1);
+  });
+
+  test('opening and closing without a change is not an edit', async ({ page }) => {
+    await drawFrame(page);
+    await markClean(page);
+
+    await doubleClickAt(page, ON_NAME);
+    await expect(page.locator(NAME_EDITOR)).toBeFocused();
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator(NAME_EDITOR)).toBeHidden();
+    expect(await isDirty(page)).toBe(false);
+  });
+
+  test('the canvas stops drawing the name while it is being edited', async ({ page }) => {
+    // Two engines drawing the same text is how the sticky-note doubling
+    // happened; see LEARNINGS.md. The editor shows the name, so the canvas
+    // must not.
+    await drawFrame(page);
+    expect(await inkIn(page, NAME_STRIP, NAME_INK)).toBeGreaterThan(0);
+
+    await doubleClickAt(page, ON_NAME);
+    await expect(page.locator(NAME_EDITOR)).toBeFocused();
+    expect(await inkIn(page, NAME_STRIP, NAME_INK)).toBe(0);
+
+    await page.keyboard.press('Enter');
+    expect(await inkIn(page, NAME_STRIP, NAME_INK)).toBeGreaterThan(0);
+  });
+
+  test('double-clicking the border names a frame that has none', async ({ page }) => {
+    // With an empty name there is no tab to double-click.
+    await page.locator('[data-tool="frame"]').click();
+    await drag(page, [100, 100], [500, 400]);
+    const panelInput = page.locator('.mf-style-panel input[aria-label="Frame name"]');
+    await panelInput.fill('');
+    await panelInput.press('Enter');
+    await page.keyboard.press('Escape');
+    expect(await inkIn(page, NAME_STRIP, NAME_INK)).toBe(0);
+
+    await doubleClickAt(page, [300, 400]);
+
+    const editor = page.locator(NAME_EDITOR);
+    await expect(editor).toBeFocused();
+    await expect(editor).toHaveValue('');
+    await expect(editor).toHaveAttribute('placeholder', /\S/);
+
+    await page.keyboard.type('Ideas');
+    await page.keyboard.press('Enter');
+    expect((await frameOf(page)).name).toBe('Ideas');
+  });
+
+  test('sits on the name, and follows the board when it zooms', async ({ page }) => {
+    await drawFrame(page);
+    await doubleClickAt(page, ON_NAME);
+    const editor = page.locator(NAME_EDITOR);
+    await expect(editor).toBeFocused();
+
+    const canvas = await canvasBox(page);
+    const at1 = await editor.boundingBox();
+    // Left edge within a few pixels of the name's (the editor has a little
+    // padding for its outline), and wholly above the frame's top edge.
+    expect(Math.abs(at1!.x - (canvas.x + 100))).toBeLessThanOrEqual(5);
+    expect(at1!.y + at1!.height).toBeLessThanOrEqual(canvas.y + 100);
+
+    await page.evaluate(() =>
+      (
+        window as unknown as { mindflow: { store: { setViewport(v: { x: number; y: number; zoom: number }): void } } }
+      ).mindflow.store.setViewport({ x: 0, y: 0, zoom: 2 }),
+    );
+
+    const at2 = await editor.boundingBox();
+    expect(Math.abs(at2!.x - (canvas.x + 200))).toBeLessThanOrEqual(10);
+    expect(at2!.y + at2!.height).toBeLessThanOrEqual(canvas.y + 200);
+    expect(at2!.height).toBeCloseTo(at1!.height * 2, 0);
+    // Zooming is not an edit, so the editor stays open.
+    await expect(editor).toBeFocused();
+  });
+
+  test('grows with the name as it is typed', async ({ page }) => {
+    // An input narrower than its text scrolls it sideways, away from where the
+    // canvas drew it.
+    await drawFrame(page);
+    await doubleClickAt(page, ON_NAME);
+    const editor = page.locator(NAME_EDITOR);
+    await expect(editor).toBeFocused();
+
+    const before = (await editor.boundingBox())!.width;
+    await page.keyboard.type('A much longer name for this frame');
+    const after = (await editor.boundingBox())!.width;
+
+    expect(after).toBeGreaterThan(before * 3);
+    expect(await editor.evaluate((input: HTMLInputElement) => input.scrollWidth <= input.clientWidth)).toBe(true);
   });
 });
 

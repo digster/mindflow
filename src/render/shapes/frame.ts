@@ -15,10 +15,12 @@
  *    so it needs no new concept.
  *
  * 3. **The name is drawn OUTSIDE the box**, above the top-left corner, where it
- *    does not cover content. It is decorative: it is not part of the hit region,
- *    because extending the hit region above the element's own bounding box would
- *    put `hitTest` at odds with the AABB pre-rejection every caller relies on.
- *    Renaming happens in the style panel instead.
+ *    does not cover content. It is not part of the hit region, because extending
+ *    the hit region above the element's own bounding box would put `hitTest` at
+ *    odds with the AABB pre-rejection every caller relies on. So a click on the
+ *    name does not select or drag the frame. A double-click on it does rename
+ *    it: `frameNameAt` in `input/hitTest.ts` picks the tab separately, from
+ *    {@link frameNameBox}, and only the double-click path asks.
  */
 
 import type { ElementDefinition, ElementInit, RenderContext } from '../../model/registry.ts';
@@ -26,11 +28,40 @@ import { registerElement } from '../../model/registry.ts';
 import type { BaseElement, FrameElement, Point } from '../../model/types.ts';
 import { DEFAULT_STYLE, newElementId } from '../../model/defaults.ts';
 import { distanceToPolyline } from '../../model/geometry.ts';
-import { fontString, paintPath, stringOr } from './shared.ts';
+import { BASELINE_RATIO, fontString, measureTextWidth, paintPath, stringOr } from './shared.ts';
 
 /** Gap between the frame's top edge and the baseline of its name, in scene units. */
 export const FRAME_NAME_GAP = 6;
 export const FRAME_NAME_SIZE = 13;
+export const FRAME_NAME_WEIGHT = 600;
+export const FRAME_NAME_COLOR = '#6b7280';
+/** The name's canvas font. Always `sans`: a frame has no typography fields. */
+export const FRAME_NAME_FONT = fontString('sans', FRAME_NAME_SIZE, FRAME_NAME_WEIGHT);
+
+/**
+ * Where the name tab sits, in the frame's LOCAL frame: left-aligned to the
+ * frame's left edge, one line of `FRAME_NAME_SIZE` whose baseline is
+ * `FRAME_NAME_GAP` above the top edge, and as wide as the name measures.
+ *
+ * The line's top is `BASELINE_RATIO` em above the baseline, the rule every
+ * other text block uses, so the box covers the glyphs without depending on
+ * which typeface `sans` resolved to. An empty name draws nothing and has no
+ * width.
+ *
+ * The one description of where the name is. The canvas draws at its baseline,
+ * a double-click is tested against it, and the name editor overlays it. Those
+ * are separate readers, and reading one box is what keeps the name from
+ * jumping when editing starts (see "Three renderers read a label's box" in
+ * LEARNINGS.md). The SVG exporter shares the constants.
+ */
+export function frameNameBox(frame: FrameElement): { x: number; y: number; width: number; height: number } {
+  return {
+    x: 0,
+    y: -FRAME_NAME_GAP - FRAME_NAME_SIZE * BASELINE_RATIO,
+    width: frame.name === '' ? 0 : measureTextWidth(frame.name, FRAME_NAME_FONT, FRAME_NAME_SIZE),
+    height: FRAME_NAME_SIZE,
+  };
+}
 
 export const frameDefinition: ElementDefinition<FrameElement> = {
   type: 'frame',
@@ -47,7 +78,8 @@ export const frameDefinition: ElementDefinition<FrameElement> = {
     bindable: true,
     connector: false,
     // The only module that sets this. Membership, clipping, moving and deleting
-    // with members, and the name row in the style panel all ask `isFrame`.
+    // with members, the name row in the style panel and renaming on the canvas
+    // all ask `isFrame`.
     frame: true,
     file: false,
     fillable: true,
@@ -99,8 +131,8 @@ export const frameDefinition: ElementDefinition<FrameElement> = {
 
     if (el.name === '') return;
     ctx.save();
-    ctx.fillStyle = '#6b7280';
-    ctx.font = fontString('sans', FRAME_NAME_SIZE, 600);
+    ctx.fillStyle = FRAME_NAME_COLOR;
+    ctx.font = FRAME_NAME_FONT;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(el.name, 0, -FRAME_NAME_GAP);

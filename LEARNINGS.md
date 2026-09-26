@@ -1177,3 +1177,37 @@ field focuses.
 - **Chromium keeps a page zoom across `reload()`** within the same context. A
   probe that zooms the page and then reloads reads the old scale and blames the
   next case. Use a fresh context per case.
+
+## An `<input>` does not put its text where a `<div>` of the same font does
+
+**Symptom:** the frame name editor's text sat one pixel below the name the
+canvas had drawn, so the name visibly dropped when renaming started. The editor
+had been placed with the text editor's `cssBaselineOffset`, which measures a
+`<div>` line box of the same font and `line-height`.
+
+**Cause:** Chromium lays a single-line input's text out at the font's *normal*
+line height, whatever `line-height` says, and centres that line in the input's
+box. At 13px with `line-height: 1.25`, the box was 16.25px and the line 15px, so
+the text started 0.625px down. A `<div>` puts the same leading on the ascent
+side floored, at 0. Painting then rounded the input's fractional offset to a
+whole pixel.
+
+**Fix:** measure the input itself, and give it nothing to centre.
+
+- An inline-block `<input>` sits on its line by its text's baseline in every
+  engine. A zero-sized `vertical-align: baseline` marker beside it lands on that
+  baseline, so `marker.top − input.top` is the offset. This is
+  `inputBaselineOffset` in `ui/frameNameEditor.ts`.
+- `line-height: normal` and no set height. The box is then exactly one line
+  tall, the baseline is the font's (integer) ascent, and there is no fraction
+  left for painting to round. Measuring the marker with `line-height: 1.25`
+  still left the text 0.375px low, which is 2px at 4× zoom.
+
+**How it was found:** screenshot the name before and during editing, then
+compare the ink bounding boxes of grey pixels. At 4× zoom they now match to the
+pixel, with the same ink count. A focus ring and a selection highlight are ink
+too, so hide both before capturing.
+
+**The general lesson:** any DOM overlay that has to match canvas text needs its
+baseline measured on the same kind of element it is. A probe of a different
+element measures a different layout algorithm.

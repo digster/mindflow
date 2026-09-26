@@ -822,6 +822,33 @@ textarea {
   display: none;
 }
 
+/* Renames a frame on its name tab. Font, size, colour, padding, width and
+   transform are set from src/ui/frameNameEditor.ts, which owns the geometry.
+   content-box so that the width it sets is the text's. */
+.mf-frame-name-editor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  box-sizing: content-box;
+  margin: 0;
+  transform-origin: 0 0;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  outline: none;
+  box-shadow: 0 0 0 1px var(--mf-accent);
+}
+
+.mf-frame-name-editor::placeholder {
+  color: inherit;
+  opacity: 0.5;
+}
+
+.mf-frame-name-editor[hidden] {
+  display: none;
+}
+
 /* --------------------------------------------------------------------------
    Dialogs
    -------------------------------------------------------------------------- */

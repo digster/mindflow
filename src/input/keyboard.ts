@@ -47,7 +47,7 @@ export interface KeyboardOptions {
   onFind: () => void;
   /** Collapses or expands the style panel. */
   onToggleStylePanel: () => void;
-  /** Closes the text editor, writing whatever was typed. */
+  /** Closes whichever editor is open (text or frame name), writing whatever was typed. */
   onCommitText: () => void;
   /**
    * Cmd/Ctrl+V on the board. Not `actions.paste()` directly: the browser may

@@ -28,6 +28,7 @@
 import type {
   DrawElement,
   ElementId,
+  FrameElement,
   LinearElement,
   MindflowElement,
   Point,
@@ -73,6 +74,7 @@ import {
   elementAt,
   elementsInBox,
   elementsByIds,
+  frameToRename,
 } from './hitTest.ts';
 import { reassignFrames, withFrameMembers } from '../model/frames.ts';
 import { computeSnap } from './snapping.ts';
@@ -158,7 +160,13 @@ export interface ControllerOptions {
    */
   onEditText: (element: MindflowElement, regionKey: string | null) => void;
   /**
-   * Closes the text editor, writing whatever was typed.
+   * Opens the name editor on a frame's name tab. A frame has no text of its
+   * own for `onEditText` to open, so its name is what a double-click edits.
+   */
+  onRenameFrame: (frame: FrameElement) => void;
+  /**
+   * Closes whichever editor is open (the text editor or a frame's name
+   * editor), writing whatever was typed.
    *
    * A callback rather than a store flag because closing the editor is a DOM
    * operation the controller must not reach into, and because the flag alone was
@@ -1215,7 +1223,8 @@ export class InteractionController {
 
   /**
    * Opens the text editor on whatever is under `scene`, on the region that was
-   * pointed at when the type has regions.
+   * pointed at when the type has regions, or the name editor when that is a
+   * frame's name tab or border.
    *
    * Split out of the `dblclick` handler so a double TAP can reach it. `dblclick`
    * is synthesised from two compatibility click pairs, which a touchscreen does
@@ -1224,9 +1233,20 @@ export class InteractionController {
    */
   private editTextAt(scene: Point): void {
     const { store } = this.options;
-    const hit = elementAt(store.document, scene, store.viewport.zoom, {
-      tolerancePx: this.tolerancePx(),
-    });
+    const { zoom } = store.viewport;
+    const options = { tolerancePx: this.tolerancePx() };
+
+    // Asked first, because the name tab is drawn outside the frame's box where
+    // `elementAt` never looks. `frameToRename` decides between the tab and
+    // anything painted over it.
+    const frame = frameToRename(store.document, scene, zoom, options);
+    if (frame) {
+      store.setSelection([frame.id]);
+      this.options.onRenameFrame(frame);
+      return;
+    }
+
+    const hit = elementAt(store.document, scene, zoom, options);
     if (!hit) return;
 
     const definition = getDefinition(hit.type);
