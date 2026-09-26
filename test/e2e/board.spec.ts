@@ -2909,6 +2909,13 @@ test.describe('recent boards', () => {
       .locator('.mf-recent-item')
       .filter({ has: page.locator('.mf-recent-name').getByText(name, { exact: true }) });
   const openMenu = (page: Page) => page.getByRole('button', { name: 'Recent boards' }).click();
+  // Scoped to the menu: the toolbar's New board button has the same name.
+  const newBoardItem = (page: Page) => menu(page).getByRole('button', { name: 'New board' });
+  /** The board's identity, which starting a new board must replace. */
+  const boardId = (page: Page) =>
+    page.evaluate(
+      () => (window as unknown as { mindflow: { store: { document: { id: string } } } }).mindflow.store.document.id,
+    );
 
   /** Draws `count` rectangles and names the board, so it has something to list. */
   async function makeBoard(page: Page, name: string, count = 1) {
@@ -3114,6 +3121,79 @@ test.describe('recent boards', () => {
     expect(after[0]).toMatchObject({ x: before!.x, y: before!.y });
   });
 
+  test.describe('New board', () => {
+    test('is offered, and focused, even when there are no recent boards', async ({ page }) => {
+      const before = await boardId(page);
+
+      await openMenu(page);
+      await expect(menu(page)).toContainText('No recent boards yet');
+      // Nothing else in the menu can be acted on, so it holds focus.
+      await expect(newBoardItem(page)).toBeFocused();
+
+      // A clean board has nothing to lose: no question, a fresh board, no menu.
+      await page.keyboard.press('Enter');
+      await expect(menu(page)).toHaveCount(0);
+      await expect(page.locator('dialog.mf-dialog')).toHaveCount(0);
+      await expect.poll(() => boardId(page)).not.toBe(before);
+    });
+
+    test('asks before leaving unsaved work, and the board it leaves stays listed', async ({ page }) => {
+      await makeBoard(page, 'Draft');
+      const before = await boardId(page);
+
+      // The menu closes for the question, and cancelling keeps the board as it was.
+      await openMenu(page);
+      await newBoardItem(page).click();
+      await expect(menu(page)).toHaveCount(0);
+      await expect(page.getByRole('dialog', { name: 'Leave unsaved changes?' })).toBeVisible();
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      expect((await getDocument(page)).elements).toHaveLength(1);
+      expect(await boardId(page)).toBe(before);
+
+      await openMenu(page);
+      await newBoardItem(page).click();
+      await page.getByRole('button', { name: 'Continue' }).click();
+
+      await expect.poll(async () => (await getDocument(page)).elements.length).toBe(0);
+      expect((await getDocument(page)).meta.name).toBe('Untitled board');
+      // A fresh identity, or the new board would overwrite the old one's copy.
+      expect(await boardId(page)).not.toBe(before);
+      expect(await isDirty(page)).toBe(false);
+
+      await openMenu(page);
+      await expect(row(page, 'Draft').locator('.mf-recent-tag--unsaved')).toBeVisible();
+    });
+
+    test('sits above the boards, one ArrowUp from where focus starts', async ({ page }) => {
+      await makeBoard(page, 'Older');
+      await waitForStored(page, 'Older', 1);
+      await newBoard(page);
+      await makeBoard(page, 'Newer');
+      const before = await boardId(page);
+
+      await openMenu(page);
+      const newBox = await newBoardItem(page).boundingBox();
+      const firstRowBox = await menu(page).locator('.mf-recent-item').first().boundingBox();
+      expect(newBox!.y + newBox!.height).toBeLessThanOrEqual(firstRowBox!.y);
+
+      // Focus still starts on the first board that can be reopened, since
+      // switching is what the menu is mostly for...
+      await expect(row(page, 'Older').locator('.mf-recent-open')).toBeFocused();
+      // ...and New board is part of the same arrow-key list.
+      await page.keyboard.press('ArrowUp');
+      await expect(newBoardItem(page)).toBeFocused();
+      await page.keyboard.press('ArrowDown');
+      await expect(row(page, 'Older').locator('.mf-recent-open')).toBeFocused();
+      await page.keyboard.press('Home');
+      await expect(newBoardItem(page)).toBeFocused();
+
+      await page.keyboard.press('Enter');
+      await page.getByRole('dialog').getByRole('button', { name: 'Continue' }).click();
+      await expect.poll(async () => (await getDocument(page)).elements.length).toBe(0);
+      expect(await boardId(page)).not.toBe(before);
+    });
+  });
+
   test.describe('on startup', () => {
     test('offers back unsaved work, and declining keeps it listed without asking again', async ({ page }) => {
       await makeBoard(page, 'Left open');
@@ -3241,6 +3321,19 @@ test.describe('recent boards', () => {
       // Nothing is kept, so the prompt must not promise a copy.
       await makeBoard(page, 'Nowhere to go');
       await page.getByRole('button', { name: 'New board' }).click();
+      await expect(page.getByRole('dialog', { name: 'Discard unsaved changes?' })).toBeVisible();
+      await page.getByRole('button', { name: 'Discard' }).click();
+      expect((await getDocument(page)).elements).toHaveLength(0);
+    });
+
+    test('still offers New board in the menu', async ({ page }) => {
+      // Starting a board needs no storage, so losing the list must not lose it.
+      await makeBoard(page, 'Nowhere to go');
+      await openMenu(page);
+      await expect(menu(page)).toContainText('unavailable');
+      await expect(newBoardItem(page)).toBeFocused();
+
+      await newBoardItem(page).click();
       await expect(page.getByRole('dialog', { name: 'Discard unsaved changes?' })).toBeVisible();
       await page.getByRole('button', { name: 'Discard' }).click();
       expect((await getDocument(page)).elements).toHaveLength(0);

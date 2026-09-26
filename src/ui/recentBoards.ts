@@ -2,13 +2,14 @@
  * The recent-boards menu, opened from the logo at the left of the top bar.
  *
  * Lists every board that still has a copy in this browser (see `io/autosave.ts`)
- * and reopens one on click. Deliberately a popover rather than a modal: it is a
- * quick switcher, anchored to the thing that opened it, and should cost one
- * click to dismiss — the same weight as the shape flyout next door.
+ * and reopens one on click, under a New board action. Deliberately a popover
+ * rather than a modal: it is a quick switcher, anchored to the thing that opened
+ * it, and should cost one click to dismiss — the same weight as the shape flyout
+ * next door.
  *
- * The module only renders. Opening, removing and every confirmation belong to
- * the app, which owns the board lifecycle, so this menu cannot drift from what
- * New board or Open do.
+ * The module only renders. Opening, starting, removing and every confirmation
+ * belong to the app, which owns the board lifecycle, so this menu cannot drift
+ * from what the toolbar's New board or Open do.
  */
 
 import type { RecentBoard } from '../io/autosave.ts';
@@ -23,6 +24,8 @@ export interface RecentBoardsMenuOptions {
   boards: readonly RecentBoard[] | null;
   /** The board on screen. Listed, but not reopenable or removable. */
   currentId: string;
+  /** Starts a blank board — the same action as the toolbar's New board. */
+  onNew: () => void;
   onOpen: (board: RecentBoard) => void;
   onRemove: (board: RecentBoard) => void;
 }
@@ -36,7 +39,31 @@ export function showRecentBoardsMenu(options: RecentBoardsMenuOptions): Popover 
     label: 'Recent boards',
   });
 
-  popover.element.append(el('div', { class: 'mf-recent-heading', text: 'Recent boards' }));
+  // New board sits first, above the list, so it is always in the same place
+  // right under the logo however many boards follow — and it is offered even
+  // when there are none, or when storage is refused, since starting a board
+  // does not depend on either. The app closes the menu and asks about unsaved
+  // work exactly as the toolbar button does.
+  const newButton = el(
+    'button',
+    {
+      class: 'mf-menu-item mf-recent-new',
+      type: 'button',
+      title: 'Start a new, blank board',
+      onclick: () => {
+        popover.close();
+        options.onNew();
+      },
+    },
+    icon(ICONS.newBoard, 16),
+    el('span', { text: 'New board' }),
+  ) as HTMLButtonElement;
+
+  popover.element.append(
+    newButton,
+    el('div', { class: 'mf-menu-separator', role: 'separator' }),
+    el('div', { class: 'mf-recent-heading', text: 'Recent boards' }),
+  );
 
   const { boards } = options;
   if (boards === null || boards.length === 0) {
@@ -49,6 +76,9 @@ export function showRecentBoardsMenu(options: RecentBoardsMenuOptions): Popover 
             : 'No recent boards yet. Boards you work on in this browser will appear here.',
       }),
     );
+    // The only thing left to act on, so it takes focus: the menu stays usable
+    // from the keyboard, and Escape still hands focus back to the logo.
+    newButton.focus();
     return popover;
   }
 
@@ -127,8 +157,8 @@ export function showRecentBoardsMenu(options: RecentBoardsMenuOptions): Popover 
     }),
   );
 
-  // Arrow keys step through the boards, the same as every other list in the
-  // app; Tab still reaches the remove buttons in between.
+  // Arrow keys step through New board and the boards, the same as every other
+  // list in the app; Tab still reaches the remove buttons in between.
   //
   // Unlike the palette, focus moves onto the rows themselves, and a remove
   // button can hold it. So the index follows focus rather than only the arrows,
@@ -137,22 +167,27 @@ export function showRecentBoardsMenu(options: RecentBoardsMenuOptions): Popover 
   //
   // `Popover` already keeps these keys from reaching the app's shortcuts, so
   // arrowing here cannot also nudge the selection behind the menu.
+  const items = [newButton, ...openButtons];
   let index = 0;
   popover.element.addEventListener('focusin', (event) => {
-    const focused = openButtons.indexOf(event.target as HTMLButtonElement);
+    const focused = items.indexOf(event.target as HTMLButtonElement);
     if (focused !== -1) index = focused;
   });
   installListNavigation({
     target: popover.element,
-    items: () => openButtons,
+    items: () => items,
     getIndex: () => index,
-    setIndex: (next) => openButtons[next]?.focus(),
+    setIndex: (next) => items[next]?.focus(),
     activate: () => {
       const focused = document.activeElement;
       if (focused instanceof HTMLButtonElement && popover.element.contains(focused)) focused.click();
     },
   });
-  openButtons[0]?.focus();
+  // Focus starts on the first board that can be reopened, not on New board:
+  // switching is what the menu is mostly opened for, and New board is one
+  // ArrowUp (or Home) away. With only the current board listed, New board is
+  // the one thing left to act on.
+  (openButtons[0] ?? newButton).focus();
 
   return popover;
 }

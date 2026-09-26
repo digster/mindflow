@@ -575,6 +575,7 @@ export class MindflowApp {
       anchor: this.toolbar.brandButton,
       boards,
       currentId: this.store.document.id,
+      onNew: () => void this.newBoard(),
       onOpen: (board) => void this.openRecent(board),
       onRemove: (board) => void this.removeRecent(board),
     });
