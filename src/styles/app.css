@@ -305,6 +305,57 @@ textarea {
   height: 28px;
 }
 
+/* ---- Save button ------------------------------------------------------------
+   The button holds both glyphs in one grid cell, and `.is-busy` swaps the disk
+   for a spinning arc while a save is in flight. The swap waits 150ms. A local
+   save usually finishes well inside that, and a spinner shown for a frame reads
+   as a glitch, not as progress. A Drive round trip takes longer, so it shows.
+   The unbusy rules have no transition, so the disk comes back the moment the
+   save finishes. A save shorter than the delay changes nothing on screen. */
+.mf-save-button > svg {
+  grid-area: 1 / 1;
+}
+
+.mf-save-spinner {
+  opacity: 0;
+}
+
+.mf-save-button.is-busy {
+  cursor: progress;
+}
+
+/* Not clickable while busy, so no hover or press feedback either. */
+.mf-save-button.is-busy:is(:hover, :active) {
+  color: var(--mf-text-muted);
+  background: transparent;
+}
+
+.mf-save-button.is-busy .mf-save-glyph {
+  opacity: 0;
+  transition: opacity 0s 150ms;
+}
+
+.mf-save-button.is-busy .mf-save-spinner {
+  opacity: 1;
+  transition: opacity 0s 150ms;
+  transform-origin: center;
+  animation: mf-spin 0.8s linear infinite;
+}
+
+@keyframes mf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The reduced-motion fallback. It animates stroke-opacity, not opacity, so it
+   cannot fight the delayed opacity swap above. */
+@keyframes mf-pulse {
+  50% {
+    stroke-opacity: 0.3;
+  }
+}
+
 .mf-button {
   padding: 7px 14px;
   font-size: 13px;
@@ -1483,5 +1534,13 @@ kbd {
   *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+  }
+
+  /* The reset above would turn the save spinner's endless spin into a flicker
+     at 0.01ms a turn. A slow pulse still says "working" without any motion.
+     The more specific selector wins over the `*` reset, since both are
+     !important. */
+  .mf-save-button.is-busy .mf-save-spinner {
+    animation: mf-pulse 1.6s ease-in-out infinite !important;
   }
 }

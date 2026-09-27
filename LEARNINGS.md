@@ -1211,3 +1211,43 @@ too, so hide both before capturing.
 **The general lesson:** any DOM overlay that has to match canvas text needs its
 baseline measured on the same kind of element it is. A probe of a different
 element measures a different layout algorithm.
+
+## The global reduced-motion reset turns an endless spinner into a flicker
+
+**Symptom:** none yet, because it was caught before shipping. `app.css` ends with
+the usual reset, `animation-duration: 0.01ms !important` on `*` under
+`prefers-reduced-motion: reduce`. The Save button's spinner is `animation:
+mf-spin 0.8s linear infinite`. Under the reset it would complete a turn every
+0.01ms, so each painted frame shows a random angle. That is a jittering arc,
+which is more motion than before, not less.
+
+**Fix:** a more specific rule inside the same media query, also `!important`
+(`.mf-save-button.is-busy .mf-save-spinner`). Among `!important` declarations
+specificity still decides, so it beats the `*` reset. It swaps the spin for a
+slow `stroke-opacity` pulse, which still says "working" without moving.
+
+Two details that matter:
+
+- **Pulse `stroke-opacity`, not `opacity`.** The spinner is revealed by a
+  delayed `opacity` transition, which keeps a quick save from flashing it. An
+  animation on the same property would have to be combined with that
+  transition by the cascade's origin rules (animations above normal
+  declarations, transitions above both). That combination is easy to get
+  wrong and was not verified. Putting the two on different properties means
+  they cannot interact at all.
+- **Any future infinite animation needs the same treatment.** The reset is
+  right for one-shot transitions and wrong for anything `infinite`.
+
+## `aria-disabled` needs writing out, and Playwright will not click it
+
+- `button.toggleAttribute('aria-disabled', true)` writes `aria-disabled=""`.
+  ARIA treats an empty value as the default, `false`. Use
+  `setAttribute('aria-disabled', 'true')` and `removeAttribute`.
+- Playwright's actionability check treats `aria-disabled="true"` as *not
+  enabled*. `locator.click()` then waits out the whole 30s test timeout rather
+  than failing fast. A test that means "a person clicks it anyway" needs
+  `click({ force: true })`.
+- `aria-disabled` rather than `disabled` was deliberate for the Save button. A
+  button that becomes `disabled` while focused loses focus to `<body>`. Someone
+  who pressed Enter on Save would then have lost their place when the save
+  finished. The click handler ignores the busy state itself.

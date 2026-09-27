@@ -29,6 +29,9 @@ interface ToolSpec {
 /** Where the flyout's last pick is remembered between sessions. */
 const SHAPE_STORAGE_KEY = 'mindflow.shapeTool';
 
+const SAVE_TITLE = `Save — ${MOD_KEY}S`;
+const SAVING_TITLE = 'Saving…';
+
 const TOOLS: ToolSpec[] = [
   { id: 'select', icon: 'select', label: 'Select', shortcut: 'V' },
   { id: 'pan', icon: 'pan', label: 'Pan', shortcut: 'H' },
@@ -80,6 +83,9 @@ export class Toolbar {
   private undoButton!: HTMLButtonElement;
   private redoButton!: HTMLButtonElement;
   private dirtyDot!: HTMLElement;
+  private saveButton!: HTMLButtonElement;
+  /** A save is in flight. Session state owned by the app, not the store. */
+  private saving = false;
   /** The shape the flyout slot is currently showing. */
   private slotShape: ShapeToolId = 'diamond';
   private slotButton!: HTMLButtonElement;
@@ -290,6 +296,7 @@ export class Toolbar {
 
     this.undoButton = this.iconButton('undo', `Undo — ${MOD_KEY}Z`, () => this.store.undo());
     this.redoButton = this.iconButton('redo', `Redo — ${MOD_KEY}⇧Z`, () => this.store.redo());
+    this.saveButton = this.buildSaveButton();
 
     this.zoomLabel = el('button', {
       class: 'mf-zoom-label',
@@ -335,7 +342,7 @@ export class Toolbar {
         // users will watch open a browser window instead would be a lie.
         this.iconButton('newBoard', 'New board', this.callbacks.onNew),
         this.iconButton('open', `Open — ${MOD_KEY}O`, this.callbacks.onOpen),
-        this.iconButton('save', `Save — ${MOD_KEY}S`, this.callbacks.onSave),
+        this.saveButton,
         this.iconButton('download', `Export — ${MOD_KEY}⇧E`, this.callbacks.onExport),
         this.iconButton('drive', 'Google Drive', this.callbacks.onDrive),
         el('div', { class: 'mf-tool-divider' }),
@@ -370,6 +377,64 @@ export class Toolbar {
       icon(ICONS.palette),
     ) as HTMLButtonElement;
     return button;
+  }
+
+  /**
+   * The Save button, which turns into a spinner while a save is in flight.
+   *
+   * It holds both glyphs from the start, stacked in one grid cell, and the
+   * stylesheet swaps them on `.is-busy`, after a short delay so that a quick
+   * local save never flashes a spinner for a frame. Keeping both in the DOM is
+   * what lets that delay be a single CSS transition. Replacing the icon would
+   * need a timer to delay it and a second one to cancel it.
+   * See `.mf-save-button` in `app.css`.
+   */
+  private buildSaveButton(): HTMLButtonElement {
+    const glyph = icon(ICONS.save);
+    glyph.classList.add('mf-save-glyph');
+    const spinner = icon(ICONS.saving);
+    spinner.classList.add('mf-save-spinner');
+
+    return el(
+      'button',
+      {
+        class: 'mf-icon-button mf-save-button',
+        type: 'button',
+        title: SAVE_TITLE,
+        'aria-label': SAVE_TITLE,
+        'aria-busy': 'false',
+        'data-action': 'save',
+        // A click on the spinner is nearly always the second half of a double
+        // click, so it is dropped. Cmd/Ctrl+S and the command palette still
+        // queue a follow-up save (see `app/saveQueue.ts`), since pressing those
+        // again usually means "and save what I just changed".
+        onclick: () => {
+          if (!this.saving) this.callbacks.onSave();
+        },
+      },
+      glyph,
+      spinner,
+    ) as HTMLButtonElement;
+  }
+
+  /**
+   * Shows or clears the in-progress state on the Save button.
+   *
+   * `aria-disabled` rather than `disabled`: a disabled button drops keyboard
+   * focus, so someone who pressed Enter on it would lose their place when the
+   * save finished. The click handler ignores it while busy instead.
+   */
+  setSaving(saving: boolean): void {
+    this.saving = saving;
+    const title = saving ? SAVING_TITLE : SAVE_TITLE;
+    this.saveButton.classList.toggle('is-busy', saving);
+    this.saveButton.setAttribute('aria-busy', String(saving));
+    // Written out: `toggleAttribute` would leave `aria-disabled=""`, which ARIA
+    // reads as false.
+    if (saving) this.saveButton.setAttribute('aria-disabled', 'true');
+    else this.saveButton.removeAttribute('aria-disabled');
+    this.saveButton.title = title;
+    this.saveButton.setAttribute('aria-label', title);
   }
 
   private iconButton(name: IconName, title: string, onClick: () => void): HTMLButtonElement {

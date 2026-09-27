@@ -491,3 +491,18 @@ storage is refused, and joins the menu's arrow-key list.
 Double-clicking (or double-tapping) a frame's name, or its border, now opens an
 in-place `<input>` on the name. Enter, Escape or a press elsewhere commits it as
 one "Rename frame" undo step. The style panel's name row stays.
+
+---
+
+## 2026-09-27 — A spinner on the Save button while a save is in flight
+
+> After clicking on the save icon, let's say the board is being saved to Google
+> Drive, there should be some animation playing in place of the save button to
+> signify that the update is in process.
+
+While a save runs, the Save button swaps its disk icon for a spinning arc and
+reads *Saving…* (`aria-busy`). The swap waits 150 ms, so quick local saves never
+flash it, and it pulses instead of spinning under reduced motion. Saves now run
+one at a time through `src/app/saveQueue.ts`. Presses made meanwhile collapse
+into one follow-up, which also stops two quick saves of a new board from
+creating two Drive files.

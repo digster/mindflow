@@ -25,6 +25,7 @@ import { screenToScene } from '../model/geometry.ts';
 import { PALETTE } from '../model/defaults.ts';
 import { loadDocument, serializeDocument, type LoadResult } from '../model/document.ts';
 import { Actions } from './actions.ts';
+import { createSaveQueue } from './saveQueue.ts';
 import { Toolbar, type ToolbarCallbacks } from '../ui/toolbar.ts';
 import { showCommandPalette } from '../ui/commandPalette.ts';
 import { showRecentBoardsMenu } from '../ui/recentBoards.ts';
@@ -88,6 +89,11 @@ export class MindflowApp {
   private readonly frameNameEditor: FrameNameEditor;
   private readonly autosave: Autosave;
   private readonly disposers: (() => void)[] = [];
+  /**
+   * Runs saves one at a time and drives the Save button's spinner. Every entry
+   * point that writes the board goes through `requestSave`. See `saveQueue.ts`.
+   */
+  private readonly saves = createSaveQueue((busy) => this.toolbar.setSaving(busy));
 
   /** Cached Drive folder for the session, so we resolve it once. */
   private driveFolder: { id: string; name: string } | null = null;
@@ -520,7 +526,27 @@ export class MindflowApp {
   }
 
   /** Saves back to wherever the board came from, or prompts when it is new. */
-  private async save(saveAs = false): Promise<void> {
+  private save(saveAs = false): Promise<void> {
+    return this.requestSave(() => this.writeBoard(saveAs));
+  }
+
+  /**
+   * Hands a save to the queue, bound to the board on screen now.
+   *
+   * A request made during another save waits its turn. If the user has moved
+   * to a different board by the time it runs, it is dropped. Otherwise it
+   * would save a board nobody asked to save, or open a file picker out of
+   * nowhere.
+   */
+  private requestSave(write: () => Promise<void>): Promise<void> {
+    const boardId = this.store.document.id;
+    return this.saves.request(async () => {
+      if (this.store.document.id !== boardId) return;
+      await write();
+    });
+  }
+
+  private async writeBoard(saveAs: boolean): Promise<void> {
     const state = this.store.getState();
     const document = this.store.documentForSave();
 
@@ -790,7 +816,7 @@ export class MindflowApp {
       const boards = await listBoards(this.driveFolder.id);
       showDriveDialog(this.driveFolder.name, boards, {
         onOpen: (board) => void this.openFromDrive(board),
-        onSaveHere: () => void this.saveToDrive(),
+        onSaveHere: () => void this.requestSave(() => this.saveToDrive()),
         onDelete: (board) => void this.deleteFromDrive(board),
         onDisconnect: () => void this.disconnectDrive(),
         onOpenFolder: () => {

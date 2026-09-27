@@ -830,7 +830,12 @@ restyle and reorder alike.
 - Dialogs use the native `<dialog>` element, which supplies focus trapping, the
   top layer, and Escape-to-close.
 - Notifications are announced via `role="status"` with `aria-live="polite"`.
-- `prefers-reduced-motion` disables all transitions.
+- While a save is running, the Save button reports `aria-busy="true"` and
+  `aria-disabled="true"`, and its label becomes *Saving…*. It keeps keyboard
+  focus throughout. See [06-persistence.md](06-persistence.md#while-a-save-is-running).
+- `prefers-reduced-motion` disables all transitions and animations. The one
+  exception is the save spinner, which pulses in place instead of turning, so
+  a slow save still shows that it is working.
 - `prefers-color-scheme` selects a full dark theme.
 
 **Known limitation:** canvas content itself is not exposed to screen readers.

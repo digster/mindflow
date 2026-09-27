@@ -144,6 +144,7 @@ npm run check       # typecheck + test + build
 | Connector routing | `src/input/binding.ts` + `docs/07-rendering.md` |
 | A keyboard shortcut | `src/input/keyboard.ts` (and its `SHORTCUT_REFERENCE`) |
 | Drive behaviour | `src/io/drive/` + `docs/08-google-drive.md` |
+| Save ordering, or the Save button's spinner | `src/app/saveQueue.ts`, `requestSave` in `src/app/app.ts`, `setSaving` in `src/ui/toolbar.ts` |
 | Anything visual in the chrome | `src/styles/app.css` |
 | An icon | `scripts/build-icons.mjs`, then `npm run icons` |
 | Which colours a type offers | `palette` on its registry definition |

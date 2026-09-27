@@ -201,6 +201,33 @@ on screen, and only if its copy is unsaved. The marker is written on every
 `load`, and once startup has decided. See
 [`docs/06-persistence.md`](docs/06-persistence.md#autosave-and-recent-boards).
 
+### Explicit saves run one at a time
+
+Every path that writes the board goes through `App.requestSave` into
+[`src/app/saveQueue.ts`](src/app/saveQueue.ts). Those paths are the Save button,
+`Cmd+S`, `Cmd+Shift+S`, the command palette, and the Drive dialog's *Save this
+board here*. The queue's `busy` flag drives the Save button's spinner through
+`Toolbar.setSaving`. The flag is session state, so it lives in the app, not in
+the store.
+
+- **Serialised, not parallel.** A new board's first Drive save creates a file,
+  so two overlapping saves would create two. The spinner also needs one clear
+  "in progress" rather than a count.
+- **Requests made during a save collapse into one follow-up**, and the latest
+  replaces the rest. Each task reads the board when it starts, so one extra
+  write covers every press.
+- **The first task starts synchronously**, inside the click or keydown.
+  `showSaveFilePicker` and the Google sign-in popup both need the user's
+  gesture to still be active. A follow-up runs later, outside the gesture. That
+  is fine for a board that already has a handle or a Drive token. Otherwise it
+  fails with the usual toast.
+- **A queued request is bound to the board id** it was made on, and is dropped
+  if a different board is on screen when it would run.
+- DOM-free, like the paste gate, so the orderings are unit-tested with
+  hand-resolved promises (`test/unit/saveQueue.test.ts`). The e2e suite fakes
+  the file picker with a write the test finishes by hand, because Drive cannot
+  be reached from `file://`.
+
 ## Interaction
 
 [`src/input/controller.ts`](src/input/controller.ts) is a single explicit gesture
