@@ -106,6 +106,34 @@ export interface AppState {
   origin: BoardOrigin;
 }
 
+/**
+ * Which board state a save is writing. Taken at the moment the save snapshots
+ * the board, and handed back to {@link Store.completeSave} when it lands.
+ */
+export interface SaveTicket {
+  readonly boardId: string;
+  /**
+   * Which *instance* of a board was on screen. Every load and every new board
+   * starts a new one, even when the same board id is reopened.
+   */
+  readonly generation: number;
+  /** Counts every change that makes the board dirty. */
+  readonly revision: number;
+}
+
+/**
+ * What a landed save recorded. See {@link Store.completeSave}.
+ *
+ * - `clean`: the board on screen is exactly what was written, and is now saved.
+ * - `edited`: the board on screen changed while the save ran. It keeps its
+ *   unsaved changes but now saves back to where the file was written.
+ * - `left-as-saved`: the user moved to another board, which was not touched.
+ *   The board that was written was left exactly as written.
+ * - `left`: the user moved to another board, which was not touched. The board
+ *   that was written may have changed before it was left, or it cannot be told.
+ */
+export type SaveOutcome = 'clean' | 'edited' | 'left-as-saved' | 'left';
+
 export type StoreListener = (state: AppState, reason: ChangeReason) => void;
 
 /**
@@ -130,6 +158,14 @@ export class Store {
   private state: AppState;
   private listeners = new Set<StoreListener>();
   readonly history = new History();
+
+  // Save bookkeeping, for `completeSave`. Nothing renders these counters, so
+  // they stay out of `AppState`. The generation never repeats, so a ticket can
+  // never be mistaken for a later board instance.
+  private generation = 0;
+  private revision = 0;
+  /** The board most recently replaced by a load or a new board, as it was then. */
+  private departed: SaveTicket | null = null;
 
   constructor(document: MindflowDocument = createDocument()) {
     this.state = {
@@ -186,7 +222,7 @@ export class Store {
 
     this.state.document = next;
     if (!transient) this.history.push(command);
-    this.state.dirty = true;
+    this.markEdited();
 
     // Fractional z-indices can converge after enough insertions in one spot.
     // Checking here means the repair happens automatically, off the hot path of
@@ -206,7 +242,7 @@ export class Store {
     const next = this.history.undo(this.state.document);
     if (!next) return false;
     this.state.document = next;
-    this.state.dirty = true;
+    this.markEdited();
     this.pruneSelection();
     this.emit('document');
     return true;
@@ -216,10 +252,19 @@ export class Store {
     const next = this.history.redo(this.state.document);
     if (!next) return false;
     this.state.document = next;
-    this.state.dirty = true;
+    this.markEdited();
     this.pruneSelection();
     this.emit('document');
     return true;
+  }
+
+  /**
+   * Records an edit: the board is dirty, and any save already in flight is
+   * now writing an older version of it.
+   */
+  private markEdited(): void {
+    this.state.dirty = true;
+    this.revision++;
   }
 
   /**
@@ -317,6 +362,7 @@ export class Store {
 
   /** Replaces the whole document, e.g. after opening a file. */
   load(result: LoadResult, origin: BoardOrigin): void {
+    this.replaceBoard();
     this.state.document = result.document;
     this.state.preserved = result.preserved;
     this.state.selection = new Set();
@@ -330,6 +376,7 @@ export class Store {
 
   reset(name?: string): void {
     const document = createDocument(name);
+    this.replaceBoard();
     this.state.document = document;
     this.state.preserved = [];
     this.state.selection = new Set();
@@ -346,8 +393,20 @@ export class Store {
     this.emit('origin');
   }
 
+  /**
+   * Remembers the board being replaced, then starts a new board instance.
+   * Called before the state changes, so it records the board as it was left.
+   */
+  private replaceBoard(): void {
+    this.departed = this.saveTicket();
+    this.generation++;
+  }
+
   /** Flags unsaved changes without going through a command. */
   markDirty(): void {
+    // Counted even when already dirty: whatever prompted the call may differ
+    // from what a save in flight is writing.
+    this.revision++;
     if (this.state.dirty) return;
     this.state.dirty = true;
     this.emit('document');
@@ -371,16 +430,68 @@ export class Store {
       ...this.state.document,
       files: { ...this.state.document.files, ...Object.fromEntries(entries) },
     };
-    this.state.dirty = true;
+    this.markEdited();
     this.emit('document');
   }
 
-  /** Called after a successful save. Folds the live viewport into the document. */
+  /**
+   * Marks the board on screen saved. Folds the live viewport into the document.
+   *
+   * A save that awaits anything must go through `completeSave` instead, since
+   * the board on screen may no longer be the one it wrote.
+   */
   markSaved(origin?: BoardOrigin): void {
     this.state.document = { ...this.state.document, viewport: { ...this.state.viewport } };
     this.state.dirty = false;
     if (origin) this.state.origin = origin;
     this.emit('saved');
+  }
+
+  /**
+   * Identifies the board a save is about to write. Take it in the same
+   * synchronous step as `documentForSave`, so the two describe the same state.
+   */
+  saveTicket(): SaveTicket {
+    return { boardId: this.state.document.id, generation: this.generation, revision: this.revision };
+  }
+
+  /**
+   * Records a save that has just landed, written to `origin`.
+   *
+   * A save can land long after it took its ticket: a Drive round trip takes
+   * seconds, and the Save button's spinner invites working on meanwhile.
+   * Marking whatever is on screen as saved was wrong in two ways. Edits made
+   * during the save lost their dirty flag although the file did not contain
+   * them. And a board opened during the save took the old board's origin, so
+   * its next save overwrote the old board's file. So:
+   *
+   * - The same board instance, unchanged: saved as usual (`clean`).
+   * - The same instance, edited since: the origin is recorded, because the
+   *   file now exists there. For a first save to Drive, forgetting the new file
+   *   id would make the next save create a second file. The board stays dirty
+   *   (`edited`), and emits `origin`, not `saved`.
+   * - A different instance (another board, a new board, or the same board
+   *   reopened): nothing on screen is touched. The result says whether the
+   *   board was left exactly as written, which is when its recent-boards copy
+   *   matches the file (`left-as-saved`). That is only knowable when it was the
+   *   most recent board left and no board with its id is open again.
+   */
+  completeSave(ticket: SaveTicket, origin: BoardOrigin): SaveOutcome {
+    if (ticket.generation !== this.generation) {
+      const departed = this.departed;
+      const leftAsWritten =
+        departed !== null &&
+        departed.generation === ticket.generation &&
+        departed.revision === ticket.revision &&
+        this.state.document.id !== ticket.boardId;
+      return leftAsWritten ? 'left-as-saved' : 'left';
+    }
+    if (ticket.revision !== this.revision) {
+      this.setOrigin(origin);
+      return 'edited';
+    }
+    this.markSaved(origin);
+    return 'clean';
   }
 
   /** The document as it should be written to disk, with the live viewport folded in. */

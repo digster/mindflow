@@ -145,6 +145,7 @@ npm run check       # typecheck + test + build
 | A keyboard shortcut | `src/input/keyboard.ts` (and its `SHORTCUT_REFERENCE`) |
 | Drive behaviour | `src/io/drive/` + `docs/08-google-drive.md` |
 | Save ordering, or the Save button's spinner | `src/app/saveQueue.ts`, `requestSave` in `src/app/app.ts`, `setSaving` in `src/ui/toolbar.ts` |
+| What a finished save records (dirty flag, origin, recent copy) | `completeSave` in `src/store/store.ts`, `recordSave` in `src/app/app.ts` |
 | Anything visual in the chrome | `src/styles/app.css` |
 | An icon | `scripts/build-icons.mjs`, then `npm run icons` |
 | Which colours a type offers | `palette` on its registry definition |

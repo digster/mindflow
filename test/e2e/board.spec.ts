@@ -3591,9 +3591,10 @@ test.describe('saving', () => {
   const finishWrite = (page: Page) =>
     page.evaluate(() => (window as unknown as { __saves: { finish(): void } }).__saves.finish());
 
-  async function drawSomething(page: Page) {
+  /** Draws a rectangle. The tool reverts to Select afterwards, so it is picked each time. */
+  async function drawSomething(page: Page, from: [number, number] = [100, 100], to: [number, number] = [220, 180]) {
     await page.locator('[data-tool="rectangle"]').click();
-    await drag(page, [100, 100], [220, 180]);
+    await drag(page, from, to);
   }
 
   test('shows a spinner in place of the Save icon until the save finishes', async ({ page }) => {
@@ -3687,6 +3688,98 @@ test.describe('saving', () => {
     await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
     // The follow-up belonged to the board that was left, so it never ran.
     expect(await writes(page)).toBe(1);
+  });
+
+  const originKind = (page: Page) =>
+    page.evaluate(
+      () =>
+        (window as unknown as { mindflow: { store: { getState(): { origin: { kind: string } } } } }).mindflow.store.getState()
+          .origin.kind,
+    );
+
+  const currentBoardId = (page: Page) =>
+    page.evaluate(() => (window as unknown as { mindflow: { store: { document: { id: string } } } }).mindflow.store.document.id);
+
+  /** Leaves the board on screen for a new one, confirming the unsaved-changes prompt. */
+  async function leaveForNewBoard(page: Page) {
+    await page.getByRole('button', { name: 'New board' }).click();
+    await page.getByRole('dialog', { name: 'Leave unsaved changes?' }).getByRole('button', { name: 'Continue' }).click();
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(0);
+  }
+
+  test('keeps edits made during a save marked unsaved', async ({ page }) => {
+    // The file holds the board as it was when the save began, not the rectangle
+    // drawn while it was uploading.
+    await fakeFilePicker(page);
+    await drawSomething(page);
+
+    await saveButton(page).click();
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'true');
+    await drawSomething(page, [300, 100], [420, 180]);
+    await finishWrite(page);
+
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
+    expect(await isDirty(page)).toBe(true);
+    await expect(page.locator('.mf-dirty-dot')).toHaveClass(/is-visible/);
+    // It still learns where it was saved, so the next save goes to the same file.
+    expect(await originKind(page)).toBe('local');
+  });
+
+  test('does not hand the saved board’s file to a board opened during the save', async ({ page }) => {
+    // Otherwise the new board's next Cmd+S would overwrite the old board's file.
+    await fakeFilePicker(page);
+    await drawSomething(page);
+
+    await saveButton(page).click();
+    await leaveForNewBoard(page);
+    await finishWrite(page);
+
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
+    expect(await originKind(page)).toBe('new');
+    expect(await isDirty(page)).toBe(false);
+  });
+
+  test('clears the unsaved tag of a board left exactly as it was being saved', async ({ page }) => {
+    await fakeFilePicker(page);
+    await drawSomething(page);
+    const savedId = await currentBoardId(page);
+
+    await saveButton(page).click();
+    // Leaving writes the board's copy as unsaved, since the save has not landed.
+    await leaveForNewBoard(page);
+    await expect
+      .poll(async () => (await storedBoards(page)).find((board) => board.boardId === savedId)?.unsaved)
+      .toBe(true);
+
+    await finishWrite(page);
+
+    await expect
+      .poll(async () => (await storedBoards(page)).find((board) => board.boardId === savedId)?.unsaved)
+      .toBe(false);
+  });
+
+  test('keeps the unsaved tag of a board edited during its save, then left', async ({ page }) => {
+    // Its copy holds a rectangle the file does not.
+    await fakeFilePicker(page);
+    await drawSomething(page);
+    const savedId = await currentBoardId(page);
+
+    await saveButton(page).click();
+    await drawSomething(page, [300, 100], [420, 180]);
+    await leaveForNewBoard(page);
+    await finishWrite(page);
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
+
+    // Autosave writes in call order. Once a later write from the new board has
+    // landed, anything the finished save queued has landed too.
+    await drawSomething(page);
+    const newId = await currentBoardId(page);
+    await expect
+      .poll(async () => (await storedBoards(page)).some((board) => board.boardId === newId), { timeout: 5000 })
+      .toBe(true);
+
+    const saved = (await storedBoards(page)).find((board) => board.boardId === savedId);
+    expect(saved).toMatchObject({ unsaved: true, elementCount: 2 });
   });
 
   test('never flashes the spinner for a save quicker than the reveal delay', async ({ page }) => {

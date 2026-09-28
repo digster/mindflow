@@ -506,3 +506,19 @@ flash it, and it pulses instead of spinning under reduced motion. Saves now run
 one at a time through `src/app/saveQueue.ts`. Presses made meanwhile collapse
 into one follow-up, which also stops two quick saves of a new board from
 creating two Drive files.
+
+---
+
+## 2026-09-28 — Saves that finish after the board changed
+
+> Work on the suggested task now.
+
+(The task: a save that lands late marked whatever board was on screen as saved.
+Edits made during the save lost their dirty flag, and a board opened during the
+save took the old board's file, so its next save would overwrite it.)
+
+Saves now take a `SaveTicket` (board id, generation, revision) alongside their
+snapshot, and `Store.completeSave` records only what was actually written.
+Edits made meanwhile stay unsaved while the new origin is remembered. A board
+opened meanwhile is left alone. A board left exactly as saved gets its
+recent-boards copy's *Unsaved* tag cleared.

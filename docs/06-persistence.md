@@ -36,7 +36,23 @@ local save may wait on the file picker. While one is running:
   of a double click. The button stays focusable (`aria-disabled`, not
   `disabled`) so keyboard focus is not lost.
 - **A waiting save belongs to its board.** If the user has moved to a different
-  board by the time it would run, it is dropped.
+  board by the time it would run, it is dropped. Reopening the same board from
+  Recent boards counts as moving away, since the reopened copy has no file
+  behind it.
+- **A finished save records only what it wrote.** It notes the board's state
+  when it begins writing. When it finishes, the board on screen may no longer
+  be in that state:
+
+  | When the save finishes | What is recorded |
+  |---|---|
+  | The same board, unchanged | Saved, as usual. |
+  | The same board, edited since the save began | The board **stays unsaved**, since the file lacks those edits. It does learn where it was saved, so the next save updates that file. A first save to Drive therefore never creates a second file. |
+  | A different board, or the same board reopened | **Nothing on screen changes.** The new board keeps its own origin and unsaved state, so its next save cannot overwrite the file just written. |
+
+  In the last case, the board that was saved was left while the save was still
+  running, so its copy under Recent boards was written as *Unsaved*. If it was
+  left exactly as saved, that tag is cleared. Otherwise it stays, because the
+  copy holds edits the file does not.
 
 Reference implementation: [`src/app/saveQueue.ts`](../src/app/saveQueue.ts).
 

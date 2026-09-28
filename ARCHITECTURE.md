@@ -221,8 +221,22 @@ the store.
   gesture to still be active. A follow-up runs later, outside the gesture. That
   is fine for a board that already has a handle or a Drive token. Otherwise it
   fails with the usual toast.
-- **A queued request is bound to the board id** it was made on, and is dropped
-  if a different board is on screen when it would run.
+- **A queued request is bound to the board instance** it was made on (the
+  ticket's generation, below). It is dropped if a different board, or the
+  same board reopened, is on screen when it would run.
+- **A landed save checks what it wrote before recording anything.** A save
+  takes a `SaveTicket` from the store in the same synchronous step as
+  `documentForSave` (`App.snapshotForSave`), and hands it back to
+  `Store.completeSave` when it lands. The ticket holds the board id, a
+  *generation*, bumped by every `load` and `reset` (so a reopened board is a
+  new instance), and a *revision*, bumped by every change that dirties the
+  board. `completeSave` marks the board saved only when both still match. With
+  the same generation but a newer revision, it records the origin and leaves
+  the board dirty. With a new generation it touches nothing. It remembers the
+  last board replaced, which is how the app can tell that one was left exactly
+  as written and clear its recent-boards `unsaved` flag. The counters are not
+  in `AppState`, because nothing renders them. `markSaved` survives for callers
+  that do not await, such as tests.
 - DOM-free, like the paste gate, so the orderings are unit-tested with
   hand-resolved promises (`test/unit/saveQueue.test.ts`). The e2e suite fakes
   the file picker with a write the test finishes by hand, because Drive cannot
