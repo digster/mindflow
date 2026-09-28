@@ -17,6 +17,45 @@ Reference implementation: [`src/io/`](../src/io/),
 `Cmd+S` always means "save back to where this board came from".
 `Cmd+Shift+S` always prompts.
 
+### While a save is running
+
+A save can take a noticeable time. A Drive save is a network round trip, and a
+local save may wait on the file picker. While one is running:
+
+- **The Save button shows a spinner** in place of its icon, and its label reads
+  *Saving…* (`aria-busy="true"`). The swap waits 150 ms, so a quick local save
+  shows no spinner at all. With `prefers-reduced-motion` the spinner pulses
+  instead of turning.
+- **Saves never overlap.** A save requested during another one (`Cmd+S`, the
+  command palette, or *Save this board here* in the Drive dialog) waits for it,
+  then runs. Any number of requests made meanwhile collapse into **one**
+  follow-up save, which reads the board when it starts and so includes every
+  change made in between. This is what stops two quick saves of a new board
+  from creating two Drive files.
+- **A click on the spinner does nothing.** It is almost always the second half
+  of a double click. The button stays focusable (`aria-disabled`, not
+  `disabled`) so keyboard focus is not lost.
+- **A waiting save belongs to its board.** If the user has moved to a different
+  board by the time it would run, it is dropped. Reopening the same board from
+  Recent boards counts as moving away, since the reopened copy has no file
+  behind it.
+- **A finished save records only what it wrote.** It notes the board's state
+  when it begins writing. When it finishes, the board on screen may no longer
+  be in that state:
+
+  | When the save finishes | What is recorded |
+  |---|---|
+  | The same board, unchanged | Saved, as usual. |
+  | The same board, edited since the save began | The board **stays unsaved**, since the file lacks those edits. It does learn where it was saved, so the next save updates that file. A first save to Drive therefore never creates a second file. |
+  | A different board, or the same board reopened | **Nothing on screen changes.** The new board keeps its own origin and unsaved state, so its next save cannot overwrite the file just written. |
+
+  In the last case, the board that was saved was left while the save was still
+  running, so its copy under Recent boards was written as *Unsaved*. If it was
+  left exactly as saved, that tag is cleared. Otherwise it stays, because the
+  copy holds edits the file does not.
+
+Reference implementation: [`src/app/saveQueue.ts`](../src/app/saveQueue.ts).
+
 ## Local files
 
 Two mechanisms, chosen by feature detection.

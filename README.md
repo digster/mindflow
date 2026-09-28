@@ -57,7 +57,9 @@ board, never the page: the toolbars stay put.
 shapes move. Straight, curved or elbow routing; five arrowhead styles.
 
 **Files** — save and load `.mindflow.json` locally, drag-and-drop to open,
-export to PNG, SVG or JSON.
+export to PNG, SVG or JSON. A slow save, such as one to Google Drive, turns the
+Save button into a spinner until it finishes. Pressing Save again meanwhile
+queues one follow-up save and never starts a second one alongside.
 
 **Recent boards** — every board you work on keeps a copy in the browser
 (IndexedDB). Click the logo at the top left to switch between up to ten of them

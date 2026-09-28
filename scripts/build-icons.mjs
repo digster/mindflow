@@ -84,6 +84,9 @@ export const MANIFEST = {
   menu: 'menu',
   newBoard: 'file-plus',
   save: 'save',
+  // Shown in place of `save` while a save is in flight. Rotated by the
+  // stylesheet: the glyph is an open arc, so it reads as a spinner once turning.
+  saving: 'loader-circle',
   open: 'folder-open',
   download: 'download',
   drive: 'cloud',

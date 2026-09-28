@@ -1211,3 +1211,89 @@ too, so hide both before capturing.
 **The general lesson:** any DOM overlay that has to match canvas text needs its
 baseline measured on the same kind of element it is. A probe of a different
 element measures a different layout algorithm.
+
+## The global reduced-motion reset turns an endless spinner into a flicker
+
+**Symptom:** none yet, because it was caught before shipping. `app.css` ends with
+the usual reset, `animation-duration: 0.01ms !important` on `*` under
+`prefers-reduced-motion: reduce`. The Save button's spinner is `animation:
+mf-spin 0.8s linear infinite`. Under the reset it would complete a turn every
+0.01ms, so each painted frame shows a random angle. That is a jittering arc,
+which is more motion than before, not less.
+
+**Fix:** a more specific rule inside the same media query, also `!important`
+(`.mf-save-button.is-busy .mf-save-spinner`). Among `!important` declarations
+specificity still decides, so it beats the `*` reset. It swaps the spin for a
+slow `stroke-opacity` pulse, which still says "working" without moving.
+
+Two details that matter:
+
+- **Pulse `stroke-opacity`, not `opacity`.** The spinner is revealed by a
+  delayed `opacity` transition, which keeps a quick save from flashing it. An
+  animation on the same property would have to be combined with that
+  transition by the cascade's origin rules (animations above normal
+  declarations, transitions above both). That combination is easy to get
+  wrong and was not verified. Putting the two on different properties means
+  they cannot interact at all.
+- **Any future infinite animation needs the same treatment.** The reset is
+  right for one-shot transitions and wrong for anything `infinite`.
+
+## `aria-disabled` needs writing out, and Playwright will not click it
+
+- `button.toggleAttribute('aria-disabled', true)` writes `aria-disabled=""`.
+  ARIA treats an empty value as the default, `false`. Use
+  `setAttribute('aria-disabled', 'true')` and `removeAttribute`.
+- Playwright's actionability check treats `aria-disabled="true"` as *not
+  enabled*. `locator.click()` then waits out the whole 30s test timeout rather
+  than failing fast. A test that means "a person clicks it anyway" needs
+  `click({ force: true })`.
+- `aria-disabled` rather than `disabled` was deliberate for the Save button. A
+  button that becomes `disabled` while focused loses focus to `<body>`. Someone
+  who pressed Enter on Save would then have lost their place when the save
+  finished. The click handler ignores the busy state itself.
+
+## A save that lands later must not mark "whatever is on screen" saved
+
+**Symptom:** found by reading the code, not reported. Both save paths awaited
+the write and then called `store.markSaved(origin)`. That acts on the board on
+screen *when the write finishes*. A Drive save takes seconds, and with a
+spinner on the Save button people keep working. So:
+
+- Edits made during the save lost their dirty flag, although the file did
+  not contain them. The dirty dot, the `beforeunload` guard and the
+  recent-boards *Unsaved* tag all stopped protecting them.
+- A board opened during the save took the *old* board's origin and went
+  clean. Its next Cmd+S would overwrite the old board's file or Drive copy.
+
+**Fix:** a `SaveTicket` (board id, generation, revision) taken in the same
+synchronous step as the snapshot, and handed to `Store.completeSave` when the
+write lands. See ARCHITECTURE.md › Explicit saves.
+
+Details that are easy to get wrong:
+
+- **Board id is not enough to recognise the board.** Reopening a board from
+  the recent list gives the same id, but the copy deliberately comes back with
+  no file behind it. The generation, bumped on every `load`/`reset`, is what
+  tells the instances apart.
+- **Take the ticket before the first `await`.** `saveToDrive` used to read
+  `documentForSave()` and the origin *after* awaiting `resolveFolder()`. Today
+  the folder is always cached by the time a Drive board is saved, so that
+  await never happened in practice. Had it, a slow folder lookup could have
+  written one board's content under another board's file id.
+- **Recording the origin while staying dirty matters.** For a first save to
+  Drive, the file now exists. Forgetting its id would make the next save
+  create a second file.
+- **Rewriting a recent-boards copy is only safe when nothing newer can be in
+  it.** `Autosave.schedule` *replaces* a pending snapshot with the same board
+  id. If a late save rewrote the copy of a board that was open again, it
+  could drop that board's pending edits. So the copy is cleared only for the
+  board most recently left, and only when no board with its id is on screen.
+
+**The general lesson:** anything that completes asynchronously into the store
+has to prove it is still talking about the same board instance, not just the
+same board id.
+
+**E2E aside:** after a shape is drawn the tool reverts to Select, so a second
+`drag` in a test is a marquee, not another rectangle. That quietly made an
+"edit during the save" test edit nothing. Pick the tool again before each
+shape.

@@ -3544,6 +3544,289 @@ test.describe('recent boards', () => {
   });
 });
 
+test.describe('saving', () => {
+  /**
+   * The Save button's spinner is there for slow saves, and in practice that
+   * means Drive. Drive cannot be reached from `file://`, but every save goes
+   * through the same queue and the same button. So these tests fake the File
+   * System Access pickers and give them a write the test finishes by hand
+   * (`__saves.finish()`), or after `delayMs`.
+   */
+  async function fakeFilePicker(page: Page, options: { delayMs?: number } = {}) {
+    await page.addInitScript((delayMs: number | null) => {
+      const pending: (() => void)[] = [];
+      const saves = {
+        writes: 0,
+        finish: () => pending.shift()?.(),
+      };
+      const handle = {
+        name: 'Board.mindflow.json',
+        queryPermission: async () => 'granted',
+        requestPermission: async () => 'granted',
+        createWritable: async () => ({
+          write: async () => {},
+          close: () =>
+            new Promise<void>((resolve) => {
+              saves.writes++;
+              if (delayMs === null) pending.push(resolve);
+              else setTimeout(resolve, delayMs);
+            }),
+        }),
+      };
+      Object.assign(window, {
+        __saves: saves,
+        showSaveFilePicker: async () => handle,
+        showOpenFilePicker: async () => [handle],
+      });
+    }, options.delayMs ?? null);
+    await page.reload();
+    await page.waitForFunction(() => 'mindflow' in window);
+  }
+
+  const saveButton = (page: Page) => page.locator('[data-action="save"]');
+
+  const writes = (page: Page) =>
+    page.evaluate(() => (window as unknown as { __saves: { writes: number } }).__saves.writes);
+
+  const finishWrite = (page: Page) =>
+    page.evaluate(() => (window as unknown as { __saves: { finish(): void } }).__saves.finish());
+
+  /** Draws a rectangle. The tool reverts to Select afterwards, so it is picked each time. */
+  async function drawSomething(page: Page, from: [number, number] = [100, 100], to: [number, number] = [220, 180]) {
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, from, to);
+  }
+
+  test('shows a spinner in place of the Save icon until the save finishes', async ({ page }) => {
+    await fakeFilePicker(page);
+    await drawSomething(page);
+
+    await saveButton(page).click();
+
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'true');
+    await expect(saveButton(page)).toHaveAttribute('aria-disabled', 'true');
+    await expect(saveButton(page)).toHaveAccessibleName('Saving…');
+    await expect(saveButton(page).locator('.mf-save-spinner')).toHaveCSS('opacity', '1');
+    await expect(saveButton(page).locator('.mf-save-spinner')).toHaveCSS('animation-name', 'mf-spin');
+    await expect(saveButton(page).locator('.mf-save-glyph')).toHaveCSS('opacity', '0');
+    // Still unsaved: nothing claims success before the write lands.
+    expect(await isDirty(page)).toBe(true);
+
+    await finishWrite(page);
+
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
+    await expect(saveButton(page)).not.toHaveAttribute('aria-disabled');
+    await expect(saveButton(page)).toHaveAccessibleName(/^Save — /);
+    await expect(saveButton(page).locator('.mf-save-glyph')).toHaveCSS('opacity', '1');
+    await expect(saveButton(page).locator('.mf-save-spinner')).toHaveCSS('opacity', '0');
+    await expect(page.locator('.mf-toast', { hasText: 'Saved Board.mindflow.json' })).toBeVisible();
+    expect(await isDirty(page)).toBe(false);
+  });
+
+  test('keeps keyboard focus on the button while it is busy', async ({ page }) => {
+    // Why `aria-disabled` and not `disabled`: a disabled button drops focus.
+    await fakeFilePicker(page);
+    await drawSomething(page);
+
+    await saveButton(page).focus();
+    await page.keyboard.press('Enter');
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'true');
+    await expect(saveButton(page)).toBeFocused();
+
+    await finishWrite(page);
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
+    await expect(saveButton(page)).toBeFocused();
+  });
+
+  test('ignores a second click on the spinner', async ({ page }) => {
+    await fakeFilePicker(page);
+    await drawSomething(page);
+
+    await saveButton(page).click();
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'true');
+    // Forced: Playwright will not click an `aria-disabled` button, but a person can.
+    await saveButton(page).click({ force: true });
+
+    await finishWrite(page);
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
+    expect(await writes(page)).toBe(1);
+  });
+
+  test('runs a save requested mid-save after it, and spins throughout', async ({ page }) => {
+    await fakeFilePicker(page);
+    await drawSomething(page);
+
+    await saveButton(page).click();
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'true');
+    await page.keyboard.press('Control+s');
+    await page.keyboard.press('Control+s');
+    // Queued behind the running save, not started beside it.
+    expect(await writes(page)).toBe(1);
+
+    await finishWrite(page);
+    await expect.poll(() => writes(page)).toBe(2);
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'true');
+
+    await finishWrite(page);
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
+    // Two presses during the save collapse into one follow-up.
+    expect(await writes(page)).toBe(2);
+  });
+
+  test('drops a queued save once the user has moved to another board', async ({ page }) => {
+    await fakeFilePicker(page);
+    await drawSomething(page);
+
+    await saveButton(page).click();
+    await page.keyboard.press('Control+s');
+    await page.getByRole('button', { name: 'New board' }).click();
+    // Still unsaved while the write is in flight, so leaving asks first.
+    await page.getByRole('dialog', { name: 'Leave unsaved changes?' }).getByRole('button', { name: 'Continue' }).click();
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(0);
+
+    await finishWrite(page);
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
+    // The follow-up belonged to the board that was left, so it never ran.
+    expect(await writes(page)).toBe(1);
+  });
+
+  const originKind = (page: Page) =>
+    page.evaluate(
+      () =>
+        (window as unknown as { mindflow: { store: { getState(): { origin: { kind: string } } } } }).mindflow.store.getState()
+          .origin.kind,
+    );
+
+  const currentBoardId = (page: Page) =>
+    page.evaluate(() => (window as unknown as { mindflow: { store: { document: { id: string } } } }).mindflow.store.document.id);
+
+  /** Leaves the board on screen for a new one, confirming the unsaved-changes prompt. */
+  async function leaveForNewBoard(page: Page) {
+    await page.getByRole('button', { name: 'New board' }).click();
+    await page.getByRole('dialog', { name: 'Leave unsaved changes?' }).getByRole('button', { name: 'Continue' }).click();
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(0);
+  }
+
+  test('keeps edits made during a save marked unsaved', async ({ page }) => {
+    // The file holds the board as it was when the save began, not the rectangle
+    // drawn while it was uploading.
+    await fakeFilePicker(page);
+    await drawSomething(page);
+
+    await saveButton(page).click();
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'true');
+    await drawSomething(page, [300, 100], [420, 180]);
+    await finishWrite(page);
+
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
+    expect(await isDirty(page)).toBe(true);
+    await expect(page.locator('.mf-dirty-dot')).toHaveClass(/is-visible/);
+    // It still learns where it was saved, so the next save goes to the same file.
+    expect(await originKind(page)).toBe('local');
+  });
+
+  test('does not hand the saved board’s file to a board opened during the save', async ({ page }) => {
+    // Otherwise the new board's next Cmd+S would overwrite the old board's file.
+    await fakeFilePicker(page);
+    await drawSomething(page);
+
+    await saveButton(page).click();
+    await leaveForNewBoard(page);
+    await finishWrite(page);
+
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
+    expect(await originKind(page)).toBe('new');
+    expect(await isDirty(page)).toBe(false);
+  });
+
+  test('clears the unsaved tag of a board left exactly as it was being saved', async ({ page }) => {
+    await fakeFilePicker(page);
+    await drawSomething(page);
+    const savedId = await currentBoardId(page);
+
+    await saveButton(page).click();
+    // Leaving writes the board's copy as unsaved, since the save has not landed.
+    await leaveForNewBoard(page);
+    await expect
+      .poll(async () => (await storedBoards(page)).find((board) => board.boardId === savedId)?.unsaved)
+      .toBe(true);
+
+    await finishWrite(page);
+
+    await expect
+      .poll(async () => (await storedBoards(page)).find((board) => board.boardId === savedId)?.unsaved)
+      .toBe(false);
+  });
+
+  test('keeps the unsaved tag of a board edited during its save, then left', async ({ page }) => {
+    // Its copy holds a rectangle the file does not.
+    await fakeFilePicker(page);
+    await drawSomething(page);
+    const savedId = await currentBoardId(page);
+
+    await saveButton(page).click();
+    await drawSomething(page, [300, 100], [420, 180]);
+    await leaveForNewBoard(page);
+    await finishWrite(page);
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
+
+    // Autosave writes in call order. Once a later write from the new board has
+    // landed, anything the finished save queued has landed too.
+    await drawSomething(page);
+    const newId = await currentBoardId(page);
+    await expect
+      .poll(async () => (await storedBoards(page)).some((board) => board.boardId === newId), { timeout: 5000 })
+      .toBe(true);
+
+    const saved = (await storedBoards(page)).find((board) => board.boardId === savedId);
+    expect(saved).toMatchObject({ unsaved: true, elementCount: 2 });
+  });
+
+  test('never flashes the spinner for a save quicker than the reveal delay', async ({ page }) => {
+    await fakeFilePicker(page, { delayMs: 60 });
+    await drawSomething(page);
+
+    // Samples every frame from before the click until well after the save.
+    const sampled = page.evaluate(
+      () =>
+        new Promise<{ busySeen: boolean; maxOpacity: number }>((resolve) => {
+          const button = document.querySelector('[data-action="save"]')!;
+          const spinner = button.querySelector('.mf-save-spinner')!;
+          const result = { busySeen: false, maxOpacity: 0 };
+          const end = performance.now() + 500;
+          const sample = () => {
+            result.busySeen ||= button.getAttribute('aria-busy') === 'true';
+            result.maxOpacity = Math.max(result.maxOpacity, Number(getComputedStyle(spinner).opacity));
+            if (performance.now() < end) requestAnimationFrame(sample);
+            else resolve(result);
+          };
+          sample();
+        }),
+    );
+    await saveButton(page).click();
+
+    // It did go busy, but not for long enough to show.
+    expect(await sampled).toEqual({ busySeen: true, maxOpacity: 0 });
+    await expect(page.locator('.mf-toast', { hasText: 'Saved Board.mindflow.json' })).toBeVisible();
+  });
+
+  test('pulses instead of spinning when the user prefers reduced motion', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await fakeFilePicker(page);
+    await drawSomething(page);
+
+    await saveButton(page).click();
+
+    const spinner = saveButton(page).locator('.mf-save-spinner');
+    await expect(spinner).toHaveCSS('opacity', '1');
+    await expect(spinner).toHaveCSS('animation-name', 'mf-pulse');
+    await expect(spinner).toHaveCSS('animation-duration', '1.6s');
+
+    await finishWrite(page);
+    await expect(saveButton(page)).toHaveAttribute('aria-busy', 'false');
+  });
+});
+
 test.describe('performance', () => {
   test('stays responsive with 2,000 elements', async ({ page }) => {
     // Viewport culling is the one optimisation implemented, and this is the

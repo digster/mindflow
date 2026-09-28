@@ -173,6 +173,12 @@ avoids.
 A `401` drops the cached token and retries **once** with a freshly-requested one,
 so a session crossing the hour boundary never surfaces an error.
 
+A board's first save to Drive has no file id yet, so it *creates* a file. Two
+saves running at once would each create one. MindFlow never runs saves side by
+side. A save requested during another waits for it and then updates the file
+the first one created, while the Save button shows a spinner. See
+[06-persistence.md](06-persistence.md#while-a-save-is-running).
+
 Values interpolated into a `q=` query are escaped — Drive's query syntax uses
 single-quoted literals, so a folder name containing an apostrophe would otherwise
 break the query or alter its meaning.

@@ -6,9 +6,9 @@
  * UI and IO modules each know nothing about each other, and are composed here.
  */
 
-import type { MindflowElement, Point } from '../model/types.ts';
+import type { MindflowDocument, MindflowElement, Point } from '../model/types.ts';
 import { FILE_EXTENSION } from '../model/types.ts';
-import { Store, type BoardOrigin } from '../store/store.ts';
+import { Store, type BoardOrigin, type SaveTicket } from '../store/store.ts';
 import { addElements, setCanvasSettings, renameBoard } from '../store/commands.ts';
 import { Renderer } from '../render/renderer.ts';
 import { ImageCache } from '../render/images.ts';
@@ -25,6 +25,7 @@ import { screenToScene } from '../model/geometry.ts';
 import { PALETTE } from '../model/defaults.ts';
 import { loadDocument, serializeDocument, type LoadResult } from '../model/document.ts';
 import { Actions } from './actions.ts';
+import { createSaveQueue } from './saveQueue.ts';
 import { Toolbar, type ToolbarCallbacks } from '../ui/toolbar.ts';
 import { showCommandPalette } from '../ui/commandPalette.ts';
 import { showRecentBoardsMenu } from '../ui/recentBoards.ts';
@@ -73,6 +74,13 @@ import {
 } from '../io/drive/sync.ts';
 import { el } from '../ui/dom.ts';
 
+/** A board as a save writes it, plus the ticket saying which state that was. */
+interface SaveSnapshot {
+  ticket: SaveTicket;
+  document: MindflowDocument;
+  preserved: readonly unknown[];
+}
+
 export class MindflowApp {
   private readonly store = new Store();
   private readonly canvas: HTMLCanvasElement;
@@ -88,6 +96,11 @@ export class MindflowApp {
   private readonly frameNameEditor: FrameNameEditor;
   private readonly autosave: Autosave;
   private readonly disposers: (() => void)[] = [];
+  /**
+   * Runs saves one at a time and drives the Save button's spinner. Every entry
+   * point that writes the board goes through `requestSave`. See `saveQueue.ts`.
+   */
+  private readonly saves = createSaveQueue((busy) => this.toolbar.setSaving(busy));
 
   /** Cached Drive folder for the session, so we resolve it once. */
   private driveFolder: { id: string; name: string } | null = null;
@@ -520,9 +533,30 @@ export class MindflowApp {
   }
 
   /** Saves back to wherever the board came from, or prompts when it is new. */
-  private async save(saveAs = false): Promise<void> {
+  private save(saveAs = false): Promise<void> {
+    return this.requestSave(() => this.writeBoard(saveAs));
+  }
+
+  /**
+   * Hands a save to the queue, bound to the board on screen now.
+   *
+   * A request made during another save waits its turn. If the user has moved
+   * to a different board by the time it runs, it is dropped. Otherwise it
+   * would save a board nobody asked to save, or open a file picker out of
+   * nowhere. "Different" means a different board *instance*, the ticket's
+   * generation, not just a different id. A board reopened from the recent
+   * list keeps its id but deliberately has no file behind it.
+   */
+  private requestSave(write: () => Promise<void>): Promise<void> {
+    const { generation } = this.store.saveTicket();
+    return this.saves.request(async () => {
+      if (this.store.saveTicket().generation !== generation) return;
+      await write();
+    });
+  }
+
+  private async writeBoard(saveAs: boolean): Promise<void> {
     const state = this.store.getState();
-    const document = this.store.documentForSave();
 
     try {
       if (!saveAs && state.origin.kind === 'drive') {
@@ -530,10 +564,12 @@ export class MindflowApp {
         return;
       }
 
+      // Still before the first await, so it is the board the user asked to save.
+      const written = this.snapshotForSave();
       const existingHandle = state.origin.kind === 'local' ? state.origin.handle : undefined;
-      const result = await saveToFile(document, state.preserved, { existingHandle, saveAs });
+      const result = await saveToFile(written.document, written.preserved, { existingHandle, saveAs });
 
-      this.store.markSaved({ kind: 'local', name: result.name, handle: result.handle });
+      this.recordSave(written, { kind: 'local', name: result.name, handle: result.handle });
 
       toast(
         result.viaDownload
@@ -544,6 +580,34 @@ export class MindflowApp {
       if ((error as Error).name === 'AbortError') return; // Picker dismissed.
       toast(errorMessage(error, 'Could not save the board.'), 'error');
     }
+  }
+
+  /**
+   * The board a save will write, and the ticket that identifies it. Taken in
+   * one synchronous step, before the save awaits anything, so the ticket
+   * describes exactly the state that reaches the file.
+   */
+  private snapshotForSave(): SaveSnapshot {
+    return {
+      ticket: this.store.saveTicket(),
+      document: this.store.documentForSave(),
+      preserved: this.store.getState().preserved,
+    };
+  }
+
+  /**
+   * Records a save that has landed. The board on screen may have changed, or
+   * been replaced, while it was in flight. `Store.completeSave` decides what
+   * that means for the store.
+   */
+  private recordSave(written: SaveSnapshot, origin: BoardOrigin): void {
+    if (this.store.completeSave(written.ticket, origin) !== 'left-as-saved') return;
+    // The board was left while this save was in flight, so the copy the
+    // recent-boards menu keeps was written as unsaved then. It was left exactly
+    // as written here, so that copy now matches the file: clear the flag. In
+    // every other case the flag stays. At worst that lists as unsaved a board
+    // that is saved, which loses nothing.
+    void this.autosave.saveNow({ document: written.document, preserved: written.preserved, unsaved: false });
   }
 
   private async exportBoard(): Promise<void> {
@@ -790,7 +854,7 @@ export class MindflowApp {
       const boards = await listBoards(this.driveFolder.id);
       showDriveDialog(this.driveFolder.name, boards, {
         onOpen: (board) => void this.openFromDrive(board),
-        onSaveHere: () => void this.saveToDrive(),
+        onSaveHere: () => void this.requestSave(() => this.saveToDrive()),
         onDelete: (board) => void this.deleteFromDrive(board),
         onDisconnect: () => void this.disconnectDrive(),
         onOpenFolder: () => {
@@ -814,20 +878,25 @@ export class MindflowApp {
   }
 
   private async saveToDrive(fileId?: string, name?: string): Promise<void> {
+    // Before anything is awaited. Resolving the folder can be a round trip, and
+    // whatever is on screen after it may not be the board that was asked for.
+    const written = this.snapshotForSave();
+    const { origin } = this.store.getState();
+    const targetId = fileId ?? (origin.kind === 'drive' ? origin.fileId : undefined);
+
     try {
       if (!this.driveFolder) {
         const folder = await resolveFolder();
         this.driveFolder = { id: folder.id, name: folder.name };
       }
 
-      const state = this.store.getState();
-      const saved = await saveBoard(this.store.documentForSave(), state.preserved, {
+      const saved = await saveBoard(written.document, written.preserved, {
         folderId: this.driveFolder.id,
-        fileId: fileId ?? (state.origin.kind === 'drive' ? state.origin.fileId : undefined),
+        fileId: targetId,
         name,
       });
 
-      this.store.markSaved({ kind: 'drive', fileId: saved.fileId, name: saved.name });
+      this.recordSave(written, { kind: 'drive', fileId: saved.fileId, name: saved.name });
       toast(saved.created ? `Saved ${saved.name} to Drive.` : `Updated ${saved.name} in Drive.`);
     } catch (error) {
       toast(errorMessage(error, 'Could not save to Drive.'), 'error');
