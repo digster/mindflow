@@ -562,3 +562,17 @@ Commit 2: MindFlow ships its fonts (Inter, Noto Serif, JetBrains Mono, Kalam;
 Latin subsets without kerning or hinting, format 1.6.2). Text wraps the same on
 every machine, PDF pages carry real, searchable text in the embedded fonts, and
 SVG exports carry the fonts they use.
+
+---
+
+## 2026-09-29 — What swapping a typeface involves
+
+> can you explain this - "Typefaces. Swapping one is a single line in
+> scripts/build-fonts.py, then npm run fonts. It would be another format patch,
+> since line breaks change."
+
+Answered in chat, with no code change. The claim was an understatement:
+swapping a typeface means two manifest lines (the regular and bold faces), a new
+devDependency for the source files, `npm run fonts` and a rebuild. It is a
+format patch because the spec names the typefaces and measures text with their
+advance widths, so a new typeface changes where lines break.
