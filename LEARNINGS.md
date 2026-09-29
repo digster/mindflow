@@ -1315,22 +1315,33 @@ nothing.
 
 ---
 
-## Only `finishCreate` enrols a new element in its frame
+## Every path that adds an element must enrol it: `enrolInFrames`
 
-`finishCreate` calls `reassignFrames`, but `finishLinearCreate` (lines and
-arrows), `finishFreehand` and `createTextAt` do not. An arrow or text drawn
-inside a frame keeps `frameId: null` until it is next dragged. On the board it
-is not clipped and does not move with the frame. This is the "recompute when X
-moves" trap from *Frame membership has to be assigned on creation* again, on
-the paths that entry did not cover.
+The entry above fixed one creation path, and the rule kept leaking through the
+others. Only `finishCreate` (box shapes) called `reassignFrames`. Lines, arrows
+(`finishLinearCreate`), freehand (`finishFreehand`), text (`createTextAt`) and
+inserted images kept `frameId: null`, so they were not clipped and did not move
+with their frame. Paste and Duplicate copied `frameId` verbatim. A pasted
+frame's contents still belonged to the *original* frame, and were clipped to
+it, and a member pasted far away stayed clipped to a frame it was nowhere near.
 
-PDF export first read membership from `frameId` alone, and silently dropped
-those elements from their pages. `frameContents` now also takes any element in
-no frame whose centre is inside the frame. Anything else that treats a frame as
-a unit should use it too, rather than `membersOf`.
+The fix is one model function, `enrolInFrames(document, added)`, that every
+adding path calls on its elements before `addElements`. It counts the frames
+being added as candidates, above the board's own, so pasted contents go to the
+pasted frame. Grep for `addElements(` when adding a new way to create
+elements; every non-transient call wraps its elements in it.
 
-Test data trap while writing that test: containment is inclusive, so an element
-whose centre is exactly on a frame's edge *is* inside it.
+It also removed a double undo step. `finishCreate` used to enrol in a *second*
+command ("Reframe"), so the first undo after drawing a shape in a frame only
+took it out of the frame.
+
+PDF export first read membership from `frameId` alone, and dropped those
+elements from their pages. `frameContents` still also takes any element in no
+frame whose centre is inside the frame, for boards made before this fix and
+files written by scripts.
+
+Test data trap while writing those tests: containment is inclusive, so an
+element whose centre is exactly on a frame's edge *is* inside it.
 
 ---
 

@@ -258,7 +258,11 @@ frame tool (`F`). Rename it by double-clicking its name, or in the style panel.
 
 - **Membership is decided on drop.** When an element is released, it joins the
   topmost frame whose box contains the element's **centre**, and leaves whatever
-  frame it was in. Centre containment rather than overlap means an element
+  frame it was in. The same rule applies the moment an element arrives already
+  in position: drawn with any tool, typed, pasted, duplicated or inserted as an
+  image. Joining is part of that same step, so one undo removes the element.
+  Pasted or duplicated frames count too, so a copied frame's contents belong to
+  the copy. Centre containment rather than overlap means an element
   straddling a border has exactly one unambiguous answer, and it matches the feel
   of dragging — the pointer's end of the thing is what decides.
 - **Moving a frame moves its contents** by the same delta. Its members are *not*

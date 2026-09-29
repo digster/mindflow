@@ -23,6 +23,7 @@ import { installKeyboardShortcuts, isTypingTarget } from '../input/keyboard.ts';
 import { createPasteGate } from '../input/pasteGate.ts';
 import { blockPageZoom } from '../input/pageZoom.ts';
 import { screenToScene } from '../model/geometry.ts';
+import { enrolInFrames } from '../model/frames.ts';
 import { PALETTE } from '../model/defaults.ts';
 import { loadDocument, serializeDocument, type LoadResult } from '../model/document.ts';
 import { Actions } from './actions.ts';
@@ -790,7 +791,7 @@ export class MindflowApp {
         this.store.addFiles({ [imported.fileId]: imported.file });
       }
 
-      this.store.execute(addElements([imported.element], 'Add image'));
+      this.store.execute(addElements(enrolInFrames(this.store.document, [imported.element]), 'Add image'));
       this.store.setSelection([imported.element.id]);
       this.images.sync(this.store.document);
     } catch (error) {

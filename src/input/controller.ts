@@ -76,7 +76,7 @@ import {
   elementsByIds,
   frameToRename,
 } from './hitTest.ts';
-import { reassignFrames, withFrameMembers } from '../model/frames.ts';
+import { enrolInFrames, reassignFrames, withFrameMembers } from '../model/frames.ts';
 import { computeSnap } from './snapping.ts';
 import { type PinchPair, pinchViewport } from './pinch.ts';
 import {
@@ -662,11 +662,13 @@ export class InteractionController {
     // that does NOT take focus still needs the default behaviour, or clicking
     // the canvas would stop committing the board-name field.
     event.preventDefault();
-    const element = getDefinition('text').create({
-      x: scene.x,
-      y: scene.y,
-      zIndex: topZIndex(store.document),
-    });
+    const [element] = enrolInFrames(store.document, [
+      getDefinition('text').create({
+        x: scene.x,
+        y: scene.y,
+        zIndex: topZIndex(store.document),
+      }),
+    ]) as [MindflowElement];
     store.execute(addElements([element], 'Add text'));
     store.setSelection([element.id]);
     store.setTool('select');
@@ -1080,11 +1082,11 @@ export class InteractionController {
     // Remove the transient preview, then add the element for real so the undo
     // stack holds exactly one "add" entry.
     store.execute(deleteElements(store.document, [element.id]), true);
-    store.execute(addElements([element], `Add ${getDefinition(element.type).title.toLowerCase()}`));
-    // Drawing something inside a frame must join it, exactly as dropping it there
-    // would. Creation is not a move, so it needs its own call — without this, an
-    // element drawn straight into a frame is never clipped by it.
-    this.reassignFrames(new Set([element.id]));
+    // Drawing something inside a frame joins it, exactly as dropping it there
+    // would, and in the same command, so one undo removes the shape.
+    store.execute(
+      addElements(enrolInFrames(store.document, [element]), `Add ${getDefinition(element.type).title.toLowerCase()}`),
+    );
     store.setSelection([element.id]);
     store.setTool('select');
   }
@@ -1112,7 +1114,7 @@ export class InteractionController {
     // Re-route immediately so the arrow snaps to its targets' outlines the
     // moment it is created, rather than on the next move.
     const routed = refreshConnector({ ...store.document, elements: [...store.document.elements, element] }, element);
-    store.execute(addElements([routed], 'Add connector'));
+    store.execute(addElements(enrolInFrames(store.document, [routed]), 'Add connector'));
     store.setSelection([routed.id]);
     store.setTool('select');
   }
@@ -1132,7 +1134,7 @@ export class InteractionController {
     // live feedback stays exact and only the stored result is thinned.
     const simplified = simplifyPoints(points);
     const finished = normalizePathBounds({ ...element, points: simplified });
-    store.execute(addElements([finished], 'Draw'));
+    store.execute(addElements(enrolInFrames(store.document, [finished]), 'Draw'));
   }
 
   private onPointerCancel = (event: PointerEvent): void => {

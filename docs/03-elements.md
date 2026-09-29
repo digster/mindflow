@@ -173,8 +173,9 @@ edge with its baseline 6 scene units above the top edge, in 13px semibold `sans`
 
 **Membership:** an element belongs to the topmost frame whose box contains the
 element's **centre**. Centre containment, not overlap, so an element straddling a
-border has exactly one unambiguous answer. MindFlow recomputes this whenever an
-element is dropped; see [05-interactions.md](05-interactions.md#frames).
+border has exactly one unambiguous answer. MindFlow applies it whenever an
+element is dropped, drawn, pasted, duplicated or inserted; see
+[05-interactions.md](05-interactions.md#frames).
 
 **Moving and deleting:** moving a frame moves its members by the same delta.
 Deleting a frame deletes its members. Resizing a frame does **not** resize its

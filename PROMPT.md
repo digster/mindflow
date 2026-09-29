@@ -539,3 +539,21 @@ are page size (A4, A3, US Letter, US Legal), orientation (auto, portrait,
 landscape) and 150 or 300 dpi. Frame names become PDF bookmarks. The PDF writer
 is hand-written (no runtime dependencies), and pages are lossless pictures
 painted by the same shape modules as the screen.
+
+---
+
+## 2026-09-29 — Bundled fonts, and frame membership of new elements
+
+> * for the first image, can we ship our own fonts so that we dont rely on the
+>   system fonts?
+> * for the second image, work on it.
+> * work on these as separate commits.
+
+(The first image: the note that PDF text cannot be selected or searched,
+because a page cannot read the system fonts the canvas measured with. The
+second: the note that arrows, lines, text and freehand strokes drawn inside a
+frame never become part of it.)
+
+Commit 1: every path that adds an element (drawing, typing, pasting,
+duplicating, inserting an image) now puts it in the frame it lands in, in the
+same undo step. A pasted or duplicated frame's contents belong to the copy.

@@ -148,6 +148,7 @@ npm run check       # typecheck + test + build
 | What a finished save records (dirty flag, origin, recent copy) | `completeSave` in `src/store/store.ts`, `recordSave` in `src/app/app.ts` |
 | PDF export: page order, fit, sizes | `src/render/pdfLayout.ts` + `docs/07-rendering.md#pdf` |
 | PDF export: which elements a page shows | `frameContents` in `src/model/frames.ts` |
+| Which frame a new element joins (every adding path) | `enrolInFrames` in `src/model/frames.ts` |
 | PDF export: the file itself | `src/render/pdfWriter.ts`; glue in `src/render/exportPdf.ts` |
 | The export dialog's options | `showExportDialog` in `src/ui/dialogs.ts`, `exportBoard` in `src/app/app.ts` |
 | Anything visual in the chrome | `src/styles/app.css` |

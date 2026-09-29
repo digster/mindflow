@@ -55,6 +55,39 @@ function frameContaining(
 }
 
 /**
+ * `added` as it should go onto the board: each element in the frame its centre
+ * lands in, by rule 1, and each frame in none.
+ *
+ * Rule 1 is applied when an element is released after a drag, but an element
+ * can also arrive already in position: drawn, typed, pasted, duplicated or
+ * inserted as an image. Every such path runs its elements through this before
+ * adding them, so they join their frame within the same command, and so the
+ * same undo step. Before it existed, only box shapes were enrolled, and in a
+ * second command.
+ *
+ * The frames in `added` are candidates too, above the board's own, since new
+ * elements go on top. That is what gives a pasted frame's contents to the
+ * pasted frame rather than the one they were copied from, and it takes a copy
+ * pasted outside every frame out of the one it came from. An element whose
+ * membership is already right is returned as the same object.
+ */
+export function enrolInFrames(
+  document: MindflowDocument,
+  added: readonly MindflowElement[],
+): MindflowElement[] {
+  // Topmost first, by `zIndex` rather than array position, because `added` is
+  // not part of the document's sorted array yet. The sort is stable, so equal
+  // indices keep the board's frames first, in their own order.
+  const frames = [...framesInDocument(document), ...added.filter(isFrame).reverse()].sort(
+    (a, b) => b.zIndex - a.zIndex,
+  );
+  return added.map((element) => {
+    const frameId = isFrame(element) ? null : (frameContaining(frames, element)?.id ?? null);
+    return frameId === element.frameId ? element : ({ ...element, frameId } as MindflowElement);
+  });
+}
+
+/**
  * What each frame shows as a unit, keyed by frame id: the frame itself, its
  * members, and every element that belongs to no frame but whose centre lies
  * inside it. Each list is in document (paint) order. Used for PDF export,
