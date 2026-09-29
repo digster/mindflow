@@ -14,8 +14,9 @@ import { Renderer } from '../render/renderer.ts';
 import { ImageCache } from '../render/images.ts';
 import { drawOverlay } from '../render/overlay.ts';
 import { exportToPNG, exportToSVG } from '../render/export.ts';
+import { exportToPDF } from '../render/exportPdf.ts';
 import { roughOutlineFor } from '../render/rough.ts';
-import { labelBoxOf } from '../model/registry.ts';
+import { isFrame, labelBoxOf } from '../model/registry.ts';
 import { layoutText } from '../render/shapes/shared.ts';
 import { InteractionController } from '../input/controller.ts';
 import { installKeyboardShortcuts, isTypingTarget } from '../input/keyboard.ts';
@@ -43,6 +44,7 @@ import {
   showDriveDialog,
   showExportDialog,
   isModalDialogOpen,
+  type ExportFormat,
   showLoadWarnings,
   showRecoveryDialog,
   showSettingsDialog,
@@ -458,6 +460,7 @@ export class MindflowApp {
       buildCommands(this.store, this.actions, this.appCallbacks, {
         onFind: () => showFindBar(this.store, this.actions),
         onToggleStylePanel: () => this.stylePanel.toggleCollapsed(),
+        onExportPdf: () => void this.exportBoard('pdf'),
       }),
     );
   }
@@ -610,15 +613,34 @@ export class MindflowApp {
     void this.autosave.saveNow({ document: written.document, preserved: written.preserved, unsaved: false });
   }
 
-  private async exportBoard(): Promise<void> {
-    const hasSelection = this.store.selectedIds().length > 0;
-    const choice = await showExportDialog(hasSelection);
+  /**
+   * Asks how to export, then does it. `format` preselects one, for commands
+   * that name it, such as the palette's "Export frames as PDF".
+   */
+  private async exportBoard(format?: ExportFormat): Promise<void> {
+    const visibleFrames = (elements: readonly MindflowElement[]) =>
+      elements.filter((element) => isFrame(element) && element.visible);
+    const selected = this.store.selectedElements();
+    const choice = await showExportDialog({
+      hasSelection: selected.length > 0,
+      frameCount: visibleFrames(this.store.document.elements).length,
+      selectedFrameCount: visibleFrames(selected).length,
+      format,
+    });
     if (!choice) return;
 
     const document = this.store.documentForSave();
     const elements = choice.selectionOnly ? this.store.selectedElements() : document.elements;
     const baseName = toFileName(document.meta.name).replace(FILE_EXTENSION, '');
+    const pageCount = visibleFrames(elements).length;
 
+    // Only a slow export says it has started: a PDF of many frames at print
+    // resolution takes seconds, while most exports finish before a toast
+    // could be read.
+    const slow = setTimeout(
+      () => toast(choice.format === 'pdf' ? `Exporting ${pageCount === 1 ? 'a page' : `${pageCount} pages`}…` : 'Exporting…'),
+      400,
+    );
     try {
       if (choice.format === 'json') {
         const contents = serializeDocument(document, this.store.getState().preserved);
@@ -626,6 +648,15 @@ export class MindflowApp {
       } else if (choice.format === 'svg') {
         const svg = exportToSVG(document, { elements, background: !choice.transparent });
         downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), `${baseName}.svg`);
+      } else if (choice.format === 'pdf') {
+        const blob = await exportToPDF(document, this.images.images, {
+          frames: elements,
+          pageSize: choice.pageSize,
+          orientation: choice.orientation,
+          dpi: choice.dpi,
+          background: !choice.transparent,
+        });
+        downloadBlob(blob, `${baseName}.pdf`);
       } else {
         const blob = await exportToPNG(document, this.images.images, {
           elements,
@@ -634,9 +665,11 @@ export class MindflowApp {
         });
         downloadBlob(blob, `${baseName}.png`);
       }
-      toast('Exported.');
+      toast(choice.format === 'pdf' ? `Exported ${pageCount === 1 ? '1 page' : `${pageCount} pages`}.` : 'Exported.');
     } catch (error) {
       toast(errorMessage(error, 'Export failed.'), 'error');
+    } finally {
+      clearTimeout(slow);
     }
   }
 

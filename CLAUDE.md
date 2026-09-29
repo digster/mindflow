@@ -146,6 +146,10 @@ npm run check       # typecheck + test + build
 | Drive behaviour | `src/io/drive/` + `docs/08-google-drive.md` |
 | Save ordering, or the Save button's spinner | `src/app/saveQueue.ts`, `requestSave` in `src/app/app.ts`, `setSaving` in `src/ui/toolbar.ts` |
 | What a finished save records (dirty flag, origin, recent copy) | `completeSave` in `src/store/store.ts`, `recordSave` in `src/app/app.ts` |
+| PDF export: page order, fit, sizes | `src/render/pdfLayout.ts` + `docs/07-rendering.md#pdf` |
+| PDF export: which elements a page shows | `frameContents` in `src/model/frames.ts` |
+| PDF export: the file itself | `src/render/pdfWriter.ts`; glue in `src/render/exportPdf.ts` |
+| The export dialog's options | `showExportDialog` in `src/ui/dialogs.ts`, `exportBoard` in `src/app/app.ts` |
 | Anything visual in the chrome | `src/styles/app.css` |
 | An icon | `scripts/build-icons.mjs`, then `npm run icons` |
 | Which colours a type offers | `palette` on its registry definition |

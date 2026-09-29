@@ -796,7 +796,9 @@ Measured on the reference implementation, a 2,000-element board pans and zooms a
 ### PNG
 
 Reuses the shape modules against an offscreen canvas, so output is pixel-identical
-to the screen. Content bounds plus padding, multiplied by a scale factor.
+to the screen. Content bounds plus padding, multiplied by a scale factor. Frame
+members are clipped to their frame exactly as on screen, including when only
+the member is exported.
 
 The scale is capped so the canvas cannot exceed 16,000px on a side — most browsers
 refuse larger and fail *silently*, producing a blank image rather than an error.
@@ -822,3 +824,108 @@ the overflow instead of hiding it. Wrapping means this only ever arises
 vertically — text that is too *wide* has already been broken across lines — and
 the alternative is a `<clipPath>` per note and per cell, which would bloat the
 document for a case the author can see and fix on the board.
+
+### PDF
+
+**One page per frame.** Every visible frame on the board (or every visible frame
+in the selection, with *Selection only*) becomes one page. Elements outside every
+frame are not exported, and a board without frames cannot be exported as a PDF.
+Reference implementation: [`src/render/pdfLayout.ts`](../src/render/pdfLayout.ts)
+(the rules below) and [`src/render/exportPdf.ts`](../src/render/exportPdf.ts).
+
+#### Page order
+
+Frames are read the way a page of text is: rows top to bottom, left to right
+within a row. Hand-placed frames are never exactly level, so rows are formed
+like this:
+
+1. Sort the frames by top edge `y`, then by left edge `x`.
+2. The first frame starts a row and **anchors** it. Its midline is
+   `y + height / 2`.
+3. Each following frame joins the current row if its top edge is **above** the
+   anchor's midline (`frame.y < midline`), and otherwise starts the next row,
+   becoming its anchor.
+4. Within each row, sort by `x`, then by `y`.
+
+Both sorts are stable: frames at the same position keep document order.
+
+#### What a page shows
+
+The frame's **page contents** are, in document (paint) order:
+
+- the frame itself;
+- its members, the elements whose `frameId` names it;
+- every element that belongs to **no** frame (a `frameId` that is `null` or
+  dangling) but whose centre lies inside the frame, by the membership rule in
+  [03-elements.md](03-elements.md#frame).
+
+The last group exists because not every element gets a `frameId`. A script may
+leave it out, and the membership rule says such an element belongs to the frame
+anyway, so the page shows what a reader sees inside the frame. An element that
+belongs to another frame is never on this page, even if it overlaps it.
+
+Each page's picture is the frame's box grown by **half the frame's stroke width**
+on every side, so the border prints at full width. It is painted like this:
+
+1. White, the paper.
+2. `canvas.background`, unless *Transparent background* is chosen. It shows
+   only where the frame is unfilled.
+3. The page contents, members clipped to their frame as on screen. The frame's
+   `name` is not drawn, since it lies outside the box.
+
+The grid is never drawn, as in every export.
+
+#### Fitting a frame to its page
+
+Page sizes, in points (1/72 inch), portrait:
+
+| Size | Width | Height |
+|---|---|---|
+| A4 (default) | 595.28 | 841.89 |
+| A3 | 841.89 | 1190.55 |
+| US Letter | 612 | 792 |
+| US Legal | 612 | 1008 |
+
+The margin `m` is **36 points** (half an inch) on every side. For content of
+size `w × h` (the frame plus its stroke) on a page of size `W × H`:
+
+```
+scale  = min((W - 2m) / w, (H - 2m) / h)     // points per scene unit
+width  = w × scale
+height = h × scale
+x      = (W - width) / 2                     // from the page's left edge
+y      = (H - height) / 2                    // from the page's top edge
+```
+
+The scale is uniform, so shapes keep their proportions. Content is scaled
+**up** as well as down, so a small frame fills its page. The result touches the
+margins on one axis and is centred on the other.
+
+**Orientation.** *Portrait* and *Landscape* fix every page. *Auto* (the default)
+computes both and keeps the one with the larger `scale`. With equal margins all
+round, that is the orientation matching the frame's shape. A square frame is a
+tie, and a tie keeps portrait.
+
+#### Resolution
+
+Each page carries one image, rendered at the chosen resolution (300 dpi by
+default, or 150) over the placed area: `floor(width / 72 × dpi)` by
+`floor(height / 72 × dpi)` pixels. If that would exceed 16,000 pixels on a side
+or 4096² pixels in area (iOS Safari's canvas limit), both sides are reduced by
+the same factor until it fits. The image is stretched over exactly the placed
+area.
+
+#### The file
+
+PDF 1.4. The pixels are stored losslessly: 8-bit `DeviceRGB` compressed with
+`FlateDecode`. Each page has a bookmark, the frame's `name`, or `Page N` for an
+unnamed frame. The document title is the board's name, and viewers are asked to
+show it (`/DisplayDocTitle`).
+
+**Why the pages are pictures, not vectors.** A vector page would be a third
+renderer, and one that could not match the other two. PDF text is positioned
+with the embedded font's glyph widths, and a page cannot read the system fonts
+the canvas measured its line breaks with, so every wrapped line would come out
+a different width. A picture painted by the shape modules matches the screen
+exactly and prints cleanly at 300 dpi. The cost is that text in the PDF cannot
+be selected or searched. Use SVG export when that matters.

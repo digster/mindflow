@@ -271,6 +271,10 @@ frame tool (`F`). Rename it by double-clicking its name, or in the style panel.
 - **The interior is click-through**, exactly like an unfilled rectangle, so
   contents stay selectable. The frame is grabbed by its **border**.
 - **Frames are not rotatable**, and do not nest.
+- **A frame is a page.** Export as *PDF — one page per frame* (also in the
+  command palette as "Export frames as PDF…") puts each frame on its own page,
+  in reading order, scaled to fit. The frame's name becomes the page's
+  bookmark. See [07-rendering.md](07-rendering.md#pdf).
 
 ### Renaming on the canvas
 

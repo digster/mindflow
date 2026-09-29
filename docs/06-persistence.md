@@ -309,10 +309,12 @@ interfaces describe a shape the old file does not have.
 |---|---|
 | **PNG** | Raster, at 1×, 2× or 3×. Optionally transparent. |
 | **SVG** | Vector, self-contained (images inlined as data URIs). |
+| **PDF** | One page per frame, in reading order, each frame scaled to fit its page. A4, A3, US Letter or US Legal, turned per frame or fixed; 150 or 300 dpi. |
 | **`.mindflow.json`** | The board itself — identical to Save. |
 
-Any export can be limited to the current selection. See
-[07-rendering.md](07-rendering.md#export) for how each is produced.
+Any export can be limited to the current selection. For a PDF that means the
+selected frames. See [07-rendering.md](07-rendering.md#export) for how each is
+produced.
 
 ## Reading a board without MindFlow
 

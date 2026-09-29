@@ -1,5 +1,6 @@
 /**
- * PNG and SVG export.
+ * PNG and SVG export, and the paint loop the PDF exporter shares with PNG
+ * (`exportPdf.ts`).
  *
  * ---------------------------------------------------------------------------
  * Why SVG needs its own serialiser
@@ -84,6 +85,45 @@ function exportBounds(elements: readonly MindflowElement[], padding: number): Bo
 // ---------------------------------------------------------------------------
 
 /**
+ * Paints elements onto an export canvas whose transform already maps scene
+ * units to its pixels. Shared by the PNG and PDF exporters.
+ *
+ * Mirrors `Renderer.paintElement`: opacity, then the clip of the element's
+ * frame, then the element transform. The clip comes before the transform so
+ * that it stays in scene space, where the frame's box is defined. It is looked
+ * up in the whole document, not only in `elements`, so a member exported
+ * without its frame is still cut where the screen cuts it. A `frameId` that
+ * names no frame is ignored, as `docs/03-elements.md` specifies.
+ */
+export function paintElements(elements: readonly MindflowElement[], render: RenderContext): void {
+  const { ctx } = render;
+  const frames = new Map(render.document.elements.filter(isFrame).map((frame) => [frame.id, frame]));
+
+  for (const element of elements) {
+    if (!element.visible) continue;
+    ctx.save();
+    ctx.globalAlpha = element.opacity;
+
+    const frame = element.frameId === null ? undefined : frames.get(element.frameId);
+    if (frame) {
+      ctx.beginPath();
+      ctx.rect(frame.x, frame.y, frame.width, frame.height);
+      ctx.clip();
+    }
+
+    ctx.translate(element.x + element.width / 2, element.y + element.height / 2);
+    if (element.angle !== 0) ctx.rotate(degToRad(element.angle));
+    ctx.translate(-element.width / 2, -element.height / 2);
+    try {
+      drawElement(element, render);
+    } catch (error) {
+      console.error(`[mindflow] export skipped element ${element.id}`, error);
+    }
+    ctx.restore();
+  }
+}
+
+/**
  * Renders to a PNG blob.
  *
  * Reuses the shape modules, so PNG output is pixel-identical to what is on
@@ -120,22 +160,7 @@ export async function exportToPNG(
   ctx.scale(scale, scale);
   ctx.translate(-bounds.x, -bounds.y);
 
-  const render: RenderContext = { ctx, zoom: scale, document, images, exporting: true };
-
-  for (const element of elements) {
-    if (!element.visible) continue;
-    ctx.save();
-    ctx.globalAlpha = element.opacity;
-    ctx.translate(element.x + element.width / 2, element.y + element.height / 2);
-    if (element.angle !== 0) ctx.rotate(degToRad(element.angle));
-    ctx.translate(-element.width / 2, -element.height / 2);
-    try {
-      drawElement(element, render);
-    } catch (error) {
-      console.error(`[mindflow] export skipped element ${element.id}`, error);
-    }
-    ctx.restore();
-  }
+  paintElements(elements, { ctx, zoom: scale, document, images, exporting: true });
 
   return new Promise((resolve, reject) => {
     canvas.toBlob(

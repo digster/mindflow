@@ -55,7 +55,7 @@ main.ts
   └── app/            application shell and actions — the only file that knows about everything
        ├── ui/        DOM: toolbar, style panel, text editor, dialogs, menus
        ├── input/     pointer gestures, keyboard, hit-testing, snapping, binding, transforms
-       ├── render/    canvas renderer, overlay, image cache, PNG/SVG export
+       ├── render/    canvas renderer, overlay, image cache, PNG/SVG/PDF export
        │    └── shapes/   one module per element type ← the ONLY place that knows about types
        ├── io/        local files, autosave + recent boards, image import, Google Drive
        ├── store/     state, commands, undo/redo
@@ -145,6 +145,53 @@ Reach for these only when profiling demands it:
 
 Measured: a 2,000-element board pans and zooms at 60fps with culling alone.
 Asserted in the e2e suite so a regression surfaces.
+
+### Export
+
+PNG and PDF reuse the shape modules through one paint loop, `paintElements` in
+[`src/render/export.ts`](src/render/export.ts). It applies opacity, the frame
+clip and the element transform in the same order as `Renderer.paintElement`, so
+neither export can drift from the screen. SVG is a second renderer; see
+LEARNINGS.md.
+
+**PDF export is one page per frame**, and is split three ways so that almost
+none of it needs a browser to test:
+
+| Module | Job | Tested by |
+|---|---|---|
+| [`render/pdfLayout.ts`](src/render/pdfLayout.ts) | Page order, fit-to-page, orientation, raster size. Pure, and published in `docs/07-rendering.md#pdf`. | `pdfLayout.test.ts` |
+| [`render/pdfWriter.ts`](src/render/pdfWriter.ts) | Serialises pages to PDF 1.4. Pure. | `pdfWriter.test.ts`, which reads the output through the xref table like a real reader |
+| [`render/exportPdf.ts`](src/render/exportPdf.ts) | Glue: paints each frame on one reused offscreen canvas and hands the pixels to the writer. | `test/e2e/export.spec.ts`, which parses the downloaded file in Node |
+
+What goes on a frame's page is `frameContents` in
+[`model/frames.ts`](src/model/frames.ts). That is the frame's members, plus any
+element in no frame whose centre is inside it. The fallback is there because
+not every element gets a `frameId`, and a page that dropped visible content
+would be wrong in a way the user cannot diagnose.
+
+Three decisions shape it:
+
+- **The writer is hand-written.** The shipped page has no runtime dependencies,
+  and a PDF library would be tens of kilobytes of third-party code for what is
+  numbered objects, a byte-offset table and one image per page.
+- **Pages are pictures, not vectors.** Vector text needs the font's glyph
+  widths, and a page cannot read the system fonts the canvas wrapped its lines
+  with. A third renderer would disagree with the other two on every line break.
+  A 300 dpi picture from the shape modules matches the screen. The text cannot
+  be selected, which is the accepted cost.
+- **Compression is the browser's.** `CompressionStream('deflate')` produces
+  zlib, which is exactly what PDF's `FlateDecode` reads, so pixels go in
+  losslessly with no encoder in the bundle. Flat colours compress well: a
+  sparse diagram measured 55–70 KB per A4 page at 300 dpi. Embedded photos
+  stay lossless, so they cost far more.
+
+To check a PDF with an independent reader, MuPDF is a `uv` command away. It
+reports any structural repair it had to make, and none is expected:
+
+```bash
+uv run --no-project --python-preference only-managed --with pymupdf python -c \
+  "import pymupdf,sys; d=pymupdf.open(sys.argv[1]); print(d.page_count, d.is_repaired, d.get_toc())" board.pdf
+```
 
 ## State and undo
 

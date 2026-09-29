@@ -522,3 +522,20 @@ snapshot, and `Store.completeSave` records only what was actually written.
 Edits made meanwhile stay unsaved while the new origin is remembered. A board
 opened meanwhile is left alone. A board left exactly as saved gets its
 recent-boards copy's *Unsaved* tag cleared.
+
+---
+
+## 2026-09-29 — PDF export, one page per frame
+
+> * We want to add a new export option where every frame of the board will be
+>   fit in a new page of the export PDF.
+> * The contents of the frame should be auto-adjusted automatically based on the
+>   PDF page.
+
+The export dialog gains *PDF — one page per frame*. Each visible frame (or each
+selected frame) becomes a page, in reading order. It is scaled uniformly to fit
+inside a half-inch margin, centred, and its page is turned to suit it. Choices
+are page size (A4, A3, US Letter, US Legal), orientation (auto, portrait,
+landscape) and 150 or 300 dpi. Frame names become PDF bookmarks. The PDF writer
+is hand-written (no runtime dependencies), and pages are lossless pictures
+painted by the same shape modules as the screen.

@@ -37,13 +37,46 @@ export function frameFor(
   document: MindflowDocument,
   element: MindflowElement,
 ): MindflowElement | null {
+  return frameContaining(framesInDocument(document), element);
+}
+
+/** {@link frameFor} against a precomputed topmost-first frame list. */
+function frameContaining(
+  framesTopmostFirst: readonly MindflowElement[],
+  element: MindflowElement,
+): MindflowElement | null {
   if (isFrame(element)) return null;
   const centre = elementCenter(element);
-  for (const frame of framesInDocument(document)) {
+  for (const frame of framesTopmostFirst) {
     if (!frame.visible) continue;
     if (pointInAABB(elementWorldAABB(frame), centre)) return frame;
   }
   return null;
+}
+
+/**
+ * What each frame shows as a unit, keyed by frame id: the frame itself, its
+ * members, and every element that belongs to no frame but whose centre lies
+ * inside it. Each list is in document (paint) order. Used for PDF export,
+ * where each frame becomes one page.
+ *
+ * The last group is rule 1 above, applied to an element whose `frameId` was
+ * never set: one written by a script that left the field out, for instance.
+ * Such an element sits visibly inside the frame, so leaving it off the page
+ * would drop content the reader can see. An element that does belong to a
+ * frame stays with that frame, wherever its centre is now; a `frameId` naming
+ * no frame counts as none, as `danglingFrameRefs` does.
+ */
+export function frameContents(document: MindflowDocument): Map<ElementId, MindflowElement[]> {
+  const frames = framesInDocument(document);
+  const contents = new Map<ElementId, MindflowElement[]>(frames.map((frame) => [frame.id, []]));
+
+  for (const element of document.elements) {
+    const recorded = element.frameId !== null && contents.has(element.frameId) ? element.frameId : null;
+    const owner = isFrame(element) ? element.id : (recorded ?? frameContaining(frames, element)?.id);
+    if (owner) contents.get(owner)?.push(element);
+  }
+  return contents;
 }
 
 /** The elements belonging to a frame. */

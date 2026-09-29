@@ -1297,3 +1297,75 @@ same board id.
 `drag` in a test is a marquee, not another rectangle. That quietly made an
 "edit during the save" test edit nothing. Pick the tool again before each
 shape.
+
+---
+
+## `display: flex` on a class beats `[hidden]`, so the row never hides
+
+The user-agent rule `[hidden] { display: none }` has the lowest priority there
+is. `.mf-field { display: flex }` overrides it, so setting `hidden` on a field
+did nothing. The export dialog's PNG *Resolution* row had been showing for SVG
+and JSON all along, and nobody noticed because the row was harmless. It
+surfaced only when the PDF options needed rows to really disappear.
+
+Every class that sets `display` needs its own `[hidden]` rule (`app.css` has
+them for `.mf-form`, `.mf-field`, the style panel and the editors). The e2e
+test that catches it is `toBeHidden()`. Asserting the attribute is set proves
+nothing.
+
+---
+
+## Only `finishCreate` enrols a new element in its frame
+
+`finishCreate` calls `reassignFrames`, but `finishLinearCreate` (lines and
+arrows), `finishFreehand` and `createTextAt` do not. An arrow or text drawn
+inside a frame keeps `frameId: null` until it is next dragged. On the board it
+is not clipped and does not move with the frame. This is the "recompute when X
+moves" trap from *Frame membership has to be assigned on creation* again, on
+the paths that entry did not cover.
+
+PDF export first read membership from `frameId` alone, and silently dropped
+those elements from their pages. `frameContents` now also takes any element in
+no frame whose centre is inside the frame. Anything else that treats a frame as
+a unit should use it too, rather than `membersOf`.
+
+Test data trap while writing that test: containment is inclusive, so an element
+whose centre is exactly on a frame's edge *is* inside it.
+
+---
+
+## A PDF is found by byte offsets, so check it the way a reader does
+
+A reader seeks to `startxref`, then to entry `N` of the xref table at
+`start + N × 20`: every entry is exactly 20 bytes, its two-byte end-of-line
+included (`0000001234 00000 n \n`). A wrong offset or a `/Length` one byte off
+does not always fail loudly. Viewers "repair" the file silently, and one that
+opens fine in Chrome can be refused elsewhere. `pdfWriter.test.ts` resolves
+every object through the table rather than by searching for text, and MuPDF's
+`is_repaired` (see ARCHITECTURE.md, *Export*) gives an independent opinion.
+
+`CompressionStream('deflate')` is zlib (RFC 1950), not raw deflate. That is
+exactly what `FlateDecode` expects, so its output goes into the file as is.
+`'deflate-raw'` would not work.
+
+---
+
+## iOS Safari caps a canvas's *area*, not only its sides
+
+Besides the ~16,384px per side every browser has, iOS Safari refuses a canvas
+over 4096² (16,777,216) pixels, and like the side limit it fails with a blank
+canvas rather than an error. A3 at 300 dpi is about 17.4 million pixels, so
+`rasterSize` caps the area as well as the sides. PDF export also reuses one
+canvas for every page and shrinks it to 0×0 afterwards. iOS counts every live
+canvas's backing store against a small total.
+
+---
+
+## `Blob` wants `Uint8Array<ArrayBuffer>`, not a bare `Uint8Array`
+
+Since TypeScript 5.7, `Uint8Array` means `Uint8Array<ArrayBufferLike>`, which
+may be backed by a `SharedArrayBuffer`, and `BlobPart` accepts only views of an
+`ArrayBuffer`. `pdfWriter.ts` types its byte arrays with the `Bytes` alias
+(`Uint8Array<ArrayBuffer>`), which is true of every array it creates. Casting
+at each `new Blob` would hide a real mismatch if one ever appeared.
+

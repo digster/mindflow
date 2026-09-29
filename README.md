@@ -57,7 +57,8 @@ board, never the page: the toolbars stay put.
 shapes move. Straight, curved or elbow routing; five arrowhead styles.
 
 **Files** — save and load `.mindflow.json` locally, drag-and-drop to open,
-export to PNG, SVG or JSON. A slow save, such as one to Google Drive, turns the
+export to PNG, SVG, PDF or JSON. PDF export puts every frame on its own page,
+in reading order, turned and scaled to fit the page. A slow save, such as one to Google Drive, turns the
 Save button into a spinner until it finishes. Pressing Save again meanwhile
 queues one follow-up save and never starts a second one alongside.
 

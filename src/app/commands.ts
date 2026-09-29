@@ -82,7 +82,7 @@ export function buildCommands(
   store: Store,
   actions: Actions,
   callbacks: ToolbarCallbacks,
-  extras: { onFind: () => void; onToggleStylePanel: () => void },
+  extras: { onFind: () => void; onToggleStylePanel: () => void; onExportPdf: () => void },
 ): Command[] {
   const hasSelection = () => store.selectedIds().length > 0;
   const unitCount = () =>
@@ -116,6 +116,14 @@ export function buildCommands(
       shortcut: `${MOD_KEY}⇧E`,
       keywords: 'png svg json image',
       run: callbacks.onExport,
+      enabled: () => true,
+    },
+    {
+      id: 'file.exportPdf',
+      title: 'Export frames as PDF…',
+      group: 'File',
+      keywords: 'pdf print pages slides document',
+      run: extras.onExportPdf,
       enabled: () => true,
     },
     { id: 'file.drive', title: 'Google Drive…', group: 'File', keywords: 'cloud sync', run: callbacks.onDrive, enabled: () => true },
