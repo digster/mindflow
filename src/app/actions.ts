@@ -22,6 +22,7 @@ import {
   newGroupId,
 } from '../model/defaults.ts';
 import { clamp, unionAABB } from '../model/geometry.ts';
+import { enrolInFrames } from '../model/frames.ts';
 import {
   addElements,
   deleteElements,
@@ -246,7 +247,8 @@ export class Actions {
       this.store.addFiles(files as Parameters<Store['addFiles']>[0]);
     }
 
-    this.store.execute(addElements(clones, 'Paste'));
+    // Enrolled only now that the copies are where they will land.
+    this.store.execute(addElements(enrolInFrames(this.store.document, clones), 'Paste'));
     this.store.setSelection(clones.map((element) => element.id));
   }
 
@@ -254,7 +256,7 @@ export class Actions {
     const selected = this.store.selectedElements();
     if (selected.length === 0) return;
     const clones = this.cloneElements(selected, PASTE_OFFSET);
-    this.store.execute(addElements(clones, 'Duplicate'));
+    this.store.execute(addElements(enrolInFrames(this.store.document, clones), 'Duplicate'));
     this.store.setSelection(clones.map((element) => element.id));
   }
 

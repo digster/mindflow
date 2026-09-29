@@ -25,6 +25,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { deflateSync } from 'node:zlib';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const ENTRY = join(ROOT, 'src', 'main.ts');
@@ -113,6 +114,26 @@ async function emit(result) {
   console.log(`[mindflow] built index.html — ${kb} kB (js ${(js.length / 1024).toFixed(1)} kB, css ${(css.length / 1024).toFixed(1)} kB)`);
 }
 
+/**
+ * Inlines each bundled font (`src/fonts/*.ttf`) as a base64 string of the
+ * zlib-compressed file, which `src/render/fonts.ts` decodes at startup.
+ *
+ * Compressed because TTFs shrink by about 45% and the page carries eight of
+ * them, and zlib in particular because it is what `DecompressionStream`
+ * reads and, byte for byte, what a PDF `FlateDecode` stream holds, so the PDF
+ * writer embeds these bytes without recompressing. esbuild tracks the file,
+ * so `--watch` rebuilds when a font is regenerated.
+ */
+const fontPlugin = {
+  name: 'mindflow-fonts',
+  setup(build) {
+    build.onLoad({ filter: /\.ttf$/ }, async (args) => {
+      const deflated = deflateSync(await readFile(args.path), { level: 9 });
+      return { contents: `export default ${JSON.stringify(deflated.toString('base64'))};`, loader: 'js' };
+    });
+  },
+};
+
 /** @type {esbuild.BuildOptions} */
 const options = {
   entryPoints: [ENTRY],
@@ -131,6 +152,7 @@ const options = {
     '.css': 'css',
     '.svg': 'text',
   },
+  plugins: [fontPlugin],
   logLevel: 'info',
 };
 
@@ -138,6 +160,7 @@ if (dev) {
   const ctx = await esbuild.context({
     ...options,
     plugins: [
+      fontPlugin,
       {
         name: 'mindflow-emit',
         setup(build) {

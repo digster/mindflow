@@ -11,7 +11,7 @@
  * inequality, so a missing step would make every older board load with a "no
  * migration is available" warning, which reads as data loss. 1.5.0 is the first
  * to transform anything — it retired four element types. 1.6.0 is additive again,
- * and 1.6.1 changes only a rendering rule.
+ * and 1.6.1 and 1.6.2 change only rendering rules.
  *
  * ---------------------------------------------------------------------------
  * Adding a migration
@@ -146,6 +146,17 @@ const MIGRATIONS: Record<string, Migration> = {
   '1.6.0': {
     to: '1.6.1',
     description: 'Text now also wraps after a hyphen, as it does in the text editor.',
+    migrate: (document) => document,
+  },
+
+  /**
+   * Identity: 1.6.2 names the typefaces text is measured and drawn with,
+   * where 1.6.1 left that to the system. Nothing about text is stored but the
+   * text itself, so a 1.6.1 board draws with the new fonts as it is.
+   */
+  '1.6.1': {
+    to: '1.6.2',
+    description: 'Text is set in the typefaces MindFlow ships, not whatever the system has.',
     migrate: (document) => document,
   },
 };

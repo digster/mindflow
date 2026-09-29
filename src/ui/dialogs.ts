@@ -8,6 +8,7 @@
  */
 
 import { SHORTCUT_REFERENCE } from '../input/keyboard.ts';
+import { PAGE_SIZES, PDF_RESOLUTIONS, type PageOrientation, type PageSizeId } from '../render/pdfLayout.ts';
 import type { DriveBoard } from '../io/drive/sync.ts';
 import { clear, el, icon } from './dom.ts';
 import { ICONS } from './icons.ts';
@@ -195,14 +196,41 @@ export function showShortcutsDialog(): void {
 // Export
 // ---------------------------------------------------------------------------
 
+export type ExportFormat = 'png' | 'svg' | 'pdf' | 'json';
+
 export interface ExportChoice {
-  format: 'png' | 'svg' | 'json';
+  format: ExportFormat;
+  /** PNG only: pixels per scene unit. */
   scale: number;
+  /** For a PDF, the selected frames rather than the selected elements. */
   selectionOnly: boolean;
   transparent: boolean;
+  /** PDF only. */
+  pageSize: PageSizeId;
+  /** PDF only. */
+  orientation: PageOrientation;
+  /** PDF only: pixels per inch of the printed page. */
+  dpi: number;
 }
 
-export function showExportDialog(hasSelection: boolean): Promise<ExportChoice | null> {
+export interface ExportDialogOptions {
+  hasSelection: boolean;
+  /** Visible frames on the board: the pages a PDF of the whole board has. */
+  frameCount: number;
+  /** Visible frames in the selection: the pages a "selection only" PDF has. */
+  selectedFrameCount: number;
+  /** The format selected when the dialog opens. PNG by default. */
+  format?: ExportFormat;
+}
+
+/** "1 frame", "3 frames". */
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+export function showExportDialog(options: ExportDialogOptions): Promise<ExportChoice | null> {
+  const { hasSelection, frameCount, selectedFrameCount } = options;
+
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value: ExportChoice | null) => {
@@ -211,65 +239,133 @@ export function showExportDialog(hasSelection: boolean): Promise<ExportChoice | 
       resolve(value);
     };
 
-    const format = el('select', { class: 'mf-select', 'aria-label': 'Format' }) as HTMLSelectElement;
-    format.append(
-      el('option', { value: 'png', text: 'PNG image' }),
-      el('option', { value: 'svg', text: 'SVG vector' }),
-      el('option', { value: 'json', text: 'MindFlow board (.mindflow.json)' }),
+    const select = (label: string, choices: { value: string; text: string; selected?: boolean }[]) => {
+      const node = el('select', { class: 'mf-select', 'aria-label': label }) as HTMLSelectElement;
+      node.append(...choices.map((choice) => el('option', choice)));
+      return node;
+    };
+    const field = (label: string, control: HTMLElement) =>
+      el('label', { class: 'mf-field' }, el('span', { class: 'mf-field-label', text: label }), control);
+
+    const format = select('Format', [
+      { value: 'png', text: 'PNG image' },
+      { value: 'svg', text: 'SVG vector' },
+      { value: 'pdf', text: 'PDF — one page per frame' },
+      { value: 'json', text: 'MindFlow board (.mindflow.json)' },
+    ]);
+    format.value = options.format ?? 'png';
+
+    const scale = select('Resolution', [
+      { value: '1', text: '1× — screen resolution' },
+      { value: '2', text: '2× — retina', selected: true },
+      { value: '3', text: '3× — print' },
+    ]);
+
+    const pageSize = select(
+      'Page size',
+      PAGE_SIZES.map((size) => ({ value: size.id, text: size.label })),
+    );
+    const orientation = select('Orientation', [
+      { value: 'auto', text: 'Auto — turn to fit each frame' },
+      { value: 'portrait', text: 'Portrait' },
+      { value: 'landscape', text: 'Landscape' },
+    ]);
+    const dpi = select(
+      'PDF resolution',
+      PDF_RESOLUTIONS.map((option, index) => ({
+        value: String(option.dpi),
+        text: option.label,
+        selected: index === PDF_RESOLUTIONS.length - 1,
+      })),
     );
 
-    const scale = el('select', { class: 'mf-select', 'aria-label': 'Resolution' }) as HTMLSelectElement;
-    scale.append(
-      el('option', { value: '1', text: '1× — screen resolution' }),
-      el('option', { value: '2', text: '2× — retina', selected: true }),
-      el('option', { value: '3', text: '3× — print' }),
-    );
+    // Announced when it changes, since it is the only thing that says why
+    // Export may be unavailable.
+    const pagesHint = el('span', { class: 'mf-field-hint', 'aria-live': 'polite' });
 
     const selectionOnly = el('input', { type: 'checkbox', id: 'mf-export-selection' }) as HTMLInputElement;
-    selectionOnly.disabled = !hasSelection;
-    selectionOnly.checked = hasSelection;
+    const selectionLabel = el('span');
+    // What the user last chose, as distinct from what the checkbox shows: a
+    // PDF has no use for a selection without frames, so the box is cleared and
+    // disabled for it, and switching back to another format restores the choice.
+    let selectionWanted = hasSelection;
+    selectionOnly.addEventListener('change', () => {
+      selectionWanted = selectionOnly.checked;
+      sync();
+    });
 
     const transparent = el('input', { type: 'checkbox', id: 'mf-export-transparent' }) as HTMLInputElement;
 
-    const scaleRow = el(
-      'label',
-      { class: 'mf-field' },
-      el('span', { class: 'mf-field-label', text: 'Resolution' }),
-      scale,
+    const scaleRow = field('Resolution', scale);
+    const pdfRows = el(
+      'div',
+      { class: 'mf-form' },
+      el('div', { class: 'mf-field-pair' }, field('Page size', pageSize), field('Orientation', orientation)),
+      field('Resolution', dpi),
     );
-
-    // Resolution is meaningless for vector and JSON output.
-    const syncRows = () => {
-      scaleRow.hidden = format.value !== 'png';
-      transparentRow.hidden = format.value === 'json';
-    };
     const transparentRow = el(
       'label',
       { class: 'mf-field mf-field--inline' },
       transparent,
       el('span', { text: 'Transparent background' }),
     );
-    format.addEventListener('change', syncRows);
+
+    const exportButton = el('button', {
+      class: 'mf-button mf-button--primary',
+      type: 'button',
+      text: 'Export',
+      onclick: () => {
+        finish({
+          format: format.value as ExportFormat,
+          scale: Number(scale.value),
+          selectionOnly: selectionOnly.checked,
+          transparent: transparent.checked,
+          pageSize: pageSize.value as PageSizeId,
+          orientation: orientation.value as PageOrientation,
+          dpi: Number(dpi.value),
+        });
+        dialog.close();
+      },
+    }) as HTMLButtonElement;
+
+    // Shows the rows that apply to the chosen format, and for a PDF, how many
+    // pages it will have. Resolution means nothing to vector or JSON output,
+    // and a background nothing to JSON.
+    const sync = () => {
+      const pdf = format.value === 'pdf';
+      scaleRow.hidden = format.value !== 'png';
+      pdfRows.hidden = !pdf;
+      pagesHint.hidden = !pdf;
+      transparentRow.hidden = format.value === 'json';
+
+      const selectionUsable = pdf ? selectedFrameCount > 0 : hasSelection;
+      selectionOnly.disabled = !selectionUsable;
+      selectionOnly.checked = selectionUsable && selectionWanted;
+      selectionLabel.textContent = !hasSelection
+        ? 'Selection only (nothing selected)'
+        : pdf && !selectionUsable
+          ? 'Selection only (no frames selected)'
+          : 'Selection only';
+
+      const pages = selectionOnly.checked ? selectedFrameCount : frameCount;
+      pagesHint.textContent =
+        pages === 0
+          ? 'This board has no frames. Each frame becomes one page: draw one around each page’s content with the Frame tool (F).'
+          : `${plural(pages, 'frame')} → ${plural(pages, 'page')}, in reading order. Each frame is scaled to fit its page.`;
+      exportButton.disabled = pdf && pages === 0;
+    };
+    format.addEventListener('change', sync);
 
     const body = el(
       'div',
       { class: 'mf-form' },
-      el(
-        'label',
-        { class: 'mf-field' },
-        el('span', { class: 'mf-field-label', text: 'Format' }),
-        format,
-      ),
+      el('div', { class: 'mf-field' }, field('Format', format), pagesHint),
       scaleRow,
-      el(
-        'label',
-        { class: 'mf-field mf-field--inline' },
-        selectionOnly,
-        el('span', { text: hasSelection ? 'Selection only' : 'Selection only (nothing selected)' }),
-      ),
+      pdfRows,
+      el('label', { class: 'mf-field mf-field--inline' }, selectionOnly, selectionLabel),
       transparentRow,
     );
-    syncRows();
+    sync();
 
     const dialog = createDialog(
       'Export',
@@ -283,20 +379,7 @@ export function showExportDialog(hasSelection: boolean): Promise<ExportChoice | 
           text: 'Cancel',
           onclick: () => dialog.close(),
         }),
-        el('button', {
-          class: 'mf-button mf-button--primary',
-          type: 'button',
-          text: 'Export',
-          onclick: () => {
-            finish({
-              format: format.value as ExportChoice['format'],
-              scale: Number(scale.value),
-              selectionOnly: selectionOnly.checked,
-              transparent: transparent.checked,
-            });
-            dialog.close();
-          },
-        }),
+        exportButton,
       ),
     );
 

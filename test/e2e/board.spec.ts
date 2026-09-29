@@ -2570,6 +2570,148 @@ test.describe('frames', () => {
   });
 });
 
+test.describe('frame membership of new elements', () => {
+  // Membership used to be recomputed only when a drag ended, and when a box
+  // shape was drawn. Every other way of putting an element on the board left
+  // it outside the frame it sat in. A line, an arrow, text, a freehand stroke
+  // or an image drawn there was not clipped and did not move with the frame.
+  // A pasted or duplicated frame's contents still belonged to the original.
+
+  /** A 400 × 300 frame whose top-left corner is at canvas (100, 100). */
+  async function drawFrame(page: Page) {
+    await page.locator('[data-tool="frame"]').click();
+    await drag(page, [100, 100], [500, 400]);
+    await page.keyboard.press('Escape');
+  }
+
+  /** Each element's type and the type of the frame it belongs to, if any. */
+  async function membership(page: Page) {
+    const doc = await getDocument(page);
+    const byId = new Map(doc.elements.map((element) => [element.id, element]));
+    return doc.elements.map((element) => [
+      element.type,
+      element.frameId === null ? null : (byId.get(element.frameId as string)?.type ?? 'dangling'),
+    ]);
+  }
+
+  for (const tool of ['line', 'arrow', 'draw'] as const) {
+    test(`${tool === 'draw' ? 'a freehand stroke' : tool === 'arrow' ? 'an arrow' : 'a line'} drawn inside a frame joins it`, async ({ page }) => {
+      await drawFrame(page);
+      await page.locator(`[data-tool="${tool}"]`).click();
+      await drag(page, [200, 200], [350, 260]);
+      await page.keyboard.press('Escape');
+
+      expect(await membership(page)).toEqual([
+        ['frame', null],
+        [tool, 'frame'],
+      ]);
+    });
+  }
+
+  test('text written inside a frame joins it', async ({ page }) => {
+    await drawFrame(page);
+    await page.locator('[data-tool="text"]').click();
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 200, box.y + 200);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('inside');
+    await page.keyboard.press('Escape');
+
+    expect(await membership(page)).toEqual([
+      ['frame', null],
+      ['text', 'frame'],
+    ]);
+  });
+
+  test('an arrow drawn inside a frame moves with it', async ({ page }) => {
+    await drawFrame(page);
+    await page.locator('[data-tool="arrow"]').click();
+    await drag(page, [200, 200], [350, 260]);
+    await page.keyboard.press('Escape');
+    const before = (await getDocument(page)).elements.find((element) => element.type === 'arrow');
+
+    // Grab the frame's bottom border and drag it down.
+    await page.locator('[data-tool="select"]').click();
+    await drag(page, [300, 400], [300, 460]);
+
+    const after = (await getDocument(page)).elements.find((element) => element.type === 'arrow');
+    expect((after?.y as number) - (before?.y as number)).toBeCloseTo(60, 0);
+  });
+
+  test('an image pasted inside a frame joins it', async ({ page }) => {
+    // A pasted image lands at the centre of the view, so the frame covers it.
+    const box = await canvasBox(page);
+    const centre: [number, number] = [box.width / 2, box.height / 2];
+    await page.locator('[data-tool="frame"]').click();
+    await drag(page, [centre[0] - 200, centre[1] - 150], [centre[0] + 200, centre[1] + 150]);
+    await page.keyboard.press('Escape');
+
+    await page.evaluate((base64) => {
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const data = new DataTransfer();
+      data.items.add(new File([bytes], 'dot.png', { type: 'image/png' }));
+      document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    }, 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+
+    await expect.poll(async () => (await membership(page)).length).toBe(2);
+    expect(await membership(page)).toEqual([
+      ['frame', null],
+      ['image', 'frame'],
+    ]);
+  });
+
+  test('drawing a shape inside a frame is one undo step', async ({ page }) => {
+    // Joining the frame was a second command, so the first undo only took the
+    // new shape out of the frame, leaving it on the board.
+    await drawFrame(page);
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [150, 150], [250, 220]);
+    await page.keyboard.press('Escape');
+    expect(await membership(page)).toEqual([
+      ['frame', null],
+      ['rectangle', 'frame'],
+    ]);
+
+    await page.keyboard.press('ControlOrMeta+z');
+    expect(await membership(page)).toEqual([['frame', null]]);
+  });
+
+  test('a duplicated frame’s contents belong to the copy', async ({ page }) => {
+    await drawFrame(page);
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [150, 150], [250, 220]);
+    await page.keyboard.press('Escape');
+
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('ControlOrMeta+d');
+
+    const doc = await getDocument(page);
+    const [original, copy] = doc.elements.filter((element) => element.type === 'frame');
+    const rectangles = doc.elements.filter((element) => element.type === 'rectangle');
+    expect(rectangles.map((element) => element.frameId)).toEqual([original?.id, copy?.id]);
+  });
+
+  test('a pasted frame’s contents belong to the pasted frame', async ({ page }) => {
+    // Where a pasted element lands outside every frame is pinned by the unit
+    // test for `enrolInFrames`: "Paste here" reads the system clipboard, which
+    // a page on file:// cannot be granted in the test browser.
+    await drawFrame(page);
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [150, 150], [250, 220]);
+    await page.keyboard.press('Escape');
+
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('ControlOrMeta+c');
+    await page.keyboard.press('ControlOrMeta+v');
+    await expect.poll(async () => (await getDocument(page)).elements.length).toBe(4);
+
+    const doc = await getDocument(page);
+    const [original, copy] = doc.elements.filter((element) => element.type === 'frame');
+    const rectangles = doc.elements.filter((element) => element.type === 'rectangle');
+    expect(rectangles.map((element) => element.frameId)).toEqual([original?.id, copy?.id]);
+  });
+});
+
 test.describe('renaming a frame on the canvas', () => {
   const NAME_EDITOR = '.mf-frame-name-editor';
 

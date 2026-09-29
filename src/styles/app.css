@@ -393,6 +393,17 @@ textarea {
   filter: brightness(1.08);
 }
 
+/* After the variants, so a disabled primary button does not light up on hover. */
+.mf-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.mf-button--primary:disabled:hover {
+  background: var(--mf-accent);
+  border-color: var(--mf-accent);
+}
+
 .mf-link {
   padding: 0;
   color: var(--mf-accent);
@@ -979,6 +990,20 @@ textarea {
   flex-direction: row;
   gap: 8px;
   align-items: center;
+}
+
+/* `display: flex` above would otherwise beat the user-agent rule for [hidden],
+   and the export dialog hides the rows that do not apply to the chosen format. */
+.mf-form[hidden],
+.mf-field[hidden] {
+  display: none;
+}
+
+/* Two short fields side by side, falling back to one column in a narrow dialog. */
+.mf-field-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
 }
 
 .mf-field-label {

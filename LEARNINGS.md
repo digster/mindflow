@@ -1297,3 +1297,137 @@ same board id.
 `drag` in a test is a marquee, not another rectangle. That quietly made an
 "edit during the save" test edit nothing. Pick the tool again before each
 shape.
+
+---
+
+## `display: flex` on a class beats `[hidden]`, so the row never hides
+
+The user-agent rule `[hidden] { display: none }` has the lowest priority there
+is. `.mf-field { display: flex }` overrides it, so setting `hidden` on a field
+did nothing. The export dialog's PNG *Resolution* row had been showing for SVG
+and JSON all along, and nobody noticed because the row was harmless. It
+surfaced only when the PDF options needed rows to really disappear.
+
+Every class that sets `display` needs its own `[hidden]` rule (`app.css` has
+them for `.mf-form`, `.mf-field`, the style panel and the editors). The e2e
+test that catches it is `toBeHidden()`. Asserting the attribute is set proves
+nothing.
+
+---
+
+## Every path that adds an element must enrol it: `enrolInFrames`
+
+The entry above fixed one creation path, and the rule kept leaking through the
+others. Only `finishCreate` (box shapes) called `reassignFrames`. Lines, arrows
+(`finishLinearCreate`), freehand (`finishFreehand`), text (`createTextAt`) and
+inserted images kept `frameId: null`, so they were not clipped and did not move
+with their frame. Paste and Duplicate copied `frameId` verbatim. A pasted
+frame's contents still belonged to the *original* frame, and were clipped to
+it, and a member pasted far away stayed clipped to a frame it was nowhere near.
+
+The fix is one model function, `enrolInFrames(document, added)`, that every
+adding path calls on its elements before `addElements`. It counts the frames
+being added as candidates, above the board's own, so pasted contents go to the
+pasted frame. Grep for `addElements(` when adding a new way to create
+elements; every non-transient call wraps its elements in it.
+
+It also removed a double undo step. `finishCreate` used to enrol in a *second*
+command ("Reframe"), so the first undo after drawing a shape in a frame only
+took it out of the frame.
+
+PDF export first read membership from `frameId` alone, and dropped those
+elements from their pages. `frameContents` still also takes any element in no
+frame whose centre is inside the frame, for boards made before this fix and
+files written by scripts.
+
+Test data trap while writing those tests: containment is inclusive, so an
+element whose centre is exactly on a frame's edge *is* inside it.
+
+---
+
+## A PDF is found by byte offsets, so check it the way a reader does
+
+A reader seeks to `startxref`, then to entry `N` of the xref table at
+`start + N × 20`: every entry is exactly 20 bytes, its two-byte end-of-line
+included (`0000001234 00000 n \n`). A wrong offset or a `/Length` one byte off
+does not always fail loudly. Viewers "repair" the file silently, and one that
+opens fine in Chrome can be refused elsewhere. `pdfWriter.test.ts` resolves
+every object through the table rather than by searching for text, and MuPDF's
+`is_repaired` (see ARCHITECTURE.md, *Export*) gives an independent opinion.
+
+`CompressionStream('deflate')` is zlib (RFC 1950), not raw deflate. That is
+exactly what `FlateDecode` expects, so its output goes into the file as is.
+`'deflate-raw'` would not work.
+
+---
+
+## iOS Safari caps a canvas's *area*, not only its sides
+
+Besides the ~16,384px per side every browser has, iOS Safari refuses a canvas
+over 4096² (16,777,216) pixels, and like the side limit it fails with a blank
+canvas rather than an error. A3 at 300 dpi is about 17.4 million pixels, so
+`rasterSize` caps the area as well as the sides. PDF export also reuses one
+canvas for every page and shrinks it to 0×0 afterwards. iOS counts every live
+canvas's backing store against a small total.
+
+---
+
+## `Blob` wants `Uint8Array<ArrayBuffer>`, not a bare `Uint8Array`
+
+Since TypeScript 5.7, `Uint8Array` means `Uint8Array<ArrayBufferLike>`, which
+may be backed by a `SharedArrayBuffer`, and `BlobPart` accepts only views of an
+`ArrayBuffer`. `pdfWriter.ts` types its byte arrays with the `Bytes` alias
+(`Uint8Array<ArrayBuffer>`), which is true of every array it creates. Casting
+at each `new Blob` would hide a real mismatch if one ever appeared.
+
+
+---
+
+## With kerning stripped, `measureText` is exactly the sum of the advances
+
+Before bundling fonts, it was not obvious the canvas could be predicted from
+a font file at all: HarfBuzz shapes canvas text, and hinting can round advances
+to whole pixels. Measured in Chromium with fontTools subsets stripped of GSUB,
+GPOS, kern and hinting, `measureText(s).width` equals
+`Σ advance × size ÷ unitsPerEm` to within 0.0025 px, for all four typefaces at
+9–72 px, including pairs that would kern ("AV", "To") or ligate ("fi").
+
+That equality is what everything else rests on: the published line-breaking
+rule, PDF text landing where the canvas drew it, and SVG text matching. So
+`test/e2e/fonts.spec.ts` checks it for every face. The failure it guards
+against is a regenerated font that still carries kerning: nothing else would
+notice, but every line would be a fraction of a pixel off in the PDF.
+
+---
+
+## `FontFace` from bytes makes no request, but it must finish before layout
+
+`new FontFace(name, arrayBuffer)` registers a font without any URL, so a page
+on `file://` with a zero-requests rule can still ship fonts. It loads
+asynchronously, though, and a canvas that measures before `face.load()`
+resolves silently measures with the fallback font. The first layout would then
+wrap differently from every later one. `main.ts` awaits the fonts before the
+app exists, which costs a few milliseconds at startup.
+
+Register faces with weight *ranges* (`1 549`, `550 1000`), not single weights.
+With single weights, a request for 500 is resolved by the browser's
+font-matching rules, and 700 against a 600 face may be synthesised bolder,
+which the PDF could never reproduce. Ranges make the answer one rule
+(`faceRole`) in both places.
+
+---
+
+## An exporter can take text from the canvas at one seam
+
+Every element's text goes through `drawTextBlock`. That is what made a PDF
+text layer possible without touching a shape module. `setTextSink(ctx, sink)`
+registers a callback, in a `WeakMap` keyed by context, that is offered each
+block with the context already set up to draw it, so `getTransform()`,
+`fillStyle` and `globalAlpha` describe the text exactly. Keep it the only way
+body text reaches a canvas. A shape that called `fillText` directly would
+simply be missing from PDF text.
+
+The trap it has to avoid: text drawn on top of a picture shows through
+anything that covered it on the board. The sink only takes a block when
+nothing painted later overlaps it, and it has to know which element is being
+painted, which is what `paintElements`' `beforeEach` hook is for.

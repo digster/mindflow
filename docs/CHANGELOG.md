@@ -579,6 +579,58 @@ Identity. Nothing in a file records where a line broke.
 
 ---
 
+## 1.6.2 — 2026-09-29
+
+Text is set in typefaces MindFlow ships, rather than whatever fonts the system
+has. No field or file structure changes, and every 1.6.1 file is a valid 1.6.2
+file. What changes is the font text is measured and drawn with, and so where
+some lines break.
+
+### Changed
+
+**Each logical `fontFamily` names a specific typeface**, in two faces:
+
+| `fontFamily` | Typeface | `regular` face | `bold` face |
+|---|---|---|---|
+| `sans` | Inter | Regular (400) | SemiBold (600) |
+| `serif` | Noto Serif | Regular (400) | SemiBold (600) |
+| `mono` | JetBrains Mono | Regular (400) | SemiBold (600) |
+| `hand` | Kalam | Regular (400) | Bold (700) |
+
+A `fontWeight` below 550 uses the `regular` face, and 550 or more the `bold`
+face. MindFlow uses Latin subsets of these fonts with kerning, ligatures and
+hinting removed. They are published in the repository as
+[`src/fonts/`](../src/fonts/). With them, a string's width is the sum of its
+glyphs' advance widths, so any renderer can reproduce MindFlow's line breaks
+exactly. Characters the subsets lack are drawn from a system font, as before.
+Specified in [07-rendering.md](07-rendering.md#fonts).
+
+**Why.** The text wrapping algorithm has been specified since 1.0, but it
+measures with a font, and until now the font was the system's: San Francisco
+on a Mac, Segoe UI on Windows, and on Linux whatever was installed. The same
+board broke its lines differently on each, and `hand` could come out as a
+serif where no handwriting font was installed. A published algorithm that
+gives different answers on different machines is not much of a contract.
+Shipping the fonts is also what lets PDF export write real, searchable text:
+a PDF can embed these files, which it could never do with the system's.
+
+**Why these typefaces.** Inter, Noto Serif and JetBrains Mono are the closest
+open equivalents of the system faces the stacks asked for, so boards look much
+as they did. Kalam is a legible handwriting face. All four are under the SIL
+Open Font License with no Reserved Font Name, so subsets may keep their names.
+The eight faces add about 180 kB to the page.
+
+**Why no kerning.** With kerning, ligatures or contextual alternates, a
+string's width depends on the shaping engine, and the canvas, the browser's
+text editor and a PDF viewer all shape differently. Without them, the canvas
+measures every string as the sum of its advances to within 0.01 px, which the
+end-to-end suite checks for every face.
+
+**For readers.** Measure with the published files and the rule in
+[07-rendering.md](07-rendering.md#fonts). A reader without them should still
+substitute in the spirit of the logical name, and will break lines slightly
+differently, as every reader did before this version.
+
 ## Unreleased
 
 Candidates under consideration, in rough priority order:

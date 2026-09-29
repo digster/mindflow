@@ -17,18 +17,48 @@ import { labelBoxOf } from '../../model/registry.ts';
 // ---------------------------------------------------------------------------
 
 /**
+ * The name each logical family's bundled typeface is registered under
+ * (`render/fonts.ts`). Our own names rather than "Inter" and so on, so a copy
+ * of the same typeface installed on the machine, possibly another version
+ * with other metrics, can never be picked instead.
+ */
+export const BUNDLED_FAMILIES: Record<FontFamily, string> = {
+  sans: 'MindFlow Sans',
+  serif: 'MindFlow Serif',
+  mono: 'MindFlow Mono',
+  hand: 'MindFlow Hand',
+};
+
+/**
  * Logical font family → concrete CSS font stack.
  *
- * Documents store the logical name, never the resolved stack. A board authored
- * on a machine with different fonts installed still renders sensibly elsewhere,
- * and the stacks can be improved later without rewriting existing files.
+ * Documents store the logical name, never the resolved stack. Each stack
+ * leads with the typeface MindFlow ships (see `scripts/build-fonts.py`), so
+ * text measures and wraps identically on every machine. The system fonts
+ * after it draw what the bundled face lacks, glyph by glyph (a Cyrillic
+ * letter, an emoji), and everything if the bundled fonts failed to load.
  */
 export const FONT_STACKS: Record<FontFamily, string> = {
-  sans: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-  serif: 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
-  mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-  hand: '"Segoe Print", "Bradley Hand", Chilanka, "Comic Sans MS", cursive',
+  sans: `"${BUNDLED_FAMILIES.sans}", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`,
+  serif: `"${BUNDLED_FAMILIES.serif}", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif`,
+  mono: `"${BUNDLED_FAMILIES.mono}", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace`,
+  hand: `"${BUNDLED_FAMILIES.hand}", "Segoe Print", "Bradley Hand", Chilanka, "Comic Sans MS", cursive`,
 };
+
+/**
+ * Each family ships two faces, and a weight picks one: `regular` below this,
+ * `bold` from it up. Published in `docs/07-rendering.md`, and applied in two
+ * places that must agree: the weight ranges the faces are registered with,
+ * so the browser neither synthesises a bolder face nor chooses by its own
+ * matching rules, and the PDF writer's choice of face.
+ */
+export const BOLD_FACE_WEIGHT = 550;
+
+export type FaceRole = 'regular' | 'bold';
+
+export function faceRole(weight: number): FaceRole {
+  return weight >= BOLD_FACE_WEIGHT ? 'bold' : 'regular';
+}
 
 export function fontString(family: FontFamily, size: number, weight: number): string {
   return `${weight} ${size}px ${FONT_STACKS[family]}`;
@@ -279,6 +309,45 @@ export function layoutText(
 }
 
 /**
+ * One block of text as {@link drawTextBlock} is about to draw it, in the
+ * element's LOCAL frame (the context's current transform maps it to pixels).
+ */
+export interface TextBlockDraw {
+  /** Each line with where it starts (its left edge) and its baseline. */
+  lines: { text: string; x: number; baseline: number; width: number }[];
+  /** The box the text was laid out in. */
+  box: { x: number; y: number; width: number; height: number };
+  /** The line boxes' top and bottom: the block's height, however it is aligned. */
+  top: number;
+  bottom: number;
+  fontFamily: FontFamily;
+  fontSize: number;
+  fontWeight: number;
+}
+
+/**
+ * Something that may take a text block instead of the canvas: the PDF
+ * exporter, which writes it as real text. Returns `true` to take it, and the
+ * canvas then does not draw it. It is called with the context set up to draw,
+ * so `ctx.fillStyle`, `ctx.globalAlpha` and `ctx.getTransform()` describe the
+ * text.
+ */
+export type TextSink = (block: TextBlockDraw, ctx: CanvasRenderingContext2D) => boolean;
+
+/**
+ * Sinks by context, so only a canvas an exporter has claimed is affected and
+ * the shape modules need not know. Every element's text goes through
+ * {@link drawTextBlock}, which is what makes this one seam enough.
+ */
+const textSinks = new WeakMap<CanvasRenderingContext2D, TextSink>();
+
+/** Routes `ctx`'s text blocks through `sink`, or back to the canvas with `null`. */
+export function setTextSink(ctx: CanvasRenderingContext2D, sink: TextSink | null): void {
+  if (sink) textSinks.set(ctx, sink);
+  else textSinks.delete(ctx);
+}
+
+/**
  * Draws laid-out text into a box in local coordinates.
  *
  * Vertical placement uses the `alphabetic` baseline plus a fixed 0.8 em offset
@@ -299,8 +368,9 @@ export function drawTextBlock(
     fontWeight: number;
   },
 ): void {
+  const font = fontString(options.fontFamily, options.fontSize, options.fontWeight);
   ctx.save();
-  ctx.font = fontString(options.fontFamily, options.fontSize, options.fontWeight);
+  ctx.font = font;
   ctx.fillStyle = options.color;
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = options.textAlign === 'center' ? 'center' : options.textAlign === 'right' ? 'right' : 'left';
@@ -328,6 +398,34 @@ export function drawTextBlock(
       break;
     default:
       originX = box.x;
+  }
+
+  const sink = textSinks.get(ctx);
+  if (sink) {
+    // Where each line starts is what `textAlign` would work out from its
+    // width. Measured only here, when a sink is listening: the canvas does it
+    // itself when it draws.
+    const lines = metrics.lines.map((text, index) => {
+      const width = measureTextWidth(text, font, options.fontSize);
+      const x = options.textAlign === 'center' ? originX - width / 2 : options.textAlign === 'right' ? originX - width : originX;
+      return { text, x, baseline: originY + index * metrics.lineHeightPx + options.fontSize * BASELINE_RATIO, width };
+    });
+    const taken = sink(
+      {
+        lines,
+        box,
+        top: originY,
+        bottom: originY + blockHeight,
+        fontFamily: options.fontFamily,
+        fontSize: options.fontSize,
+        fontWeight: options.fontWeight,
+      },
+      ctx,
+    );
+    if (taken) {
+      ctx.restore();
+      return;
+    }
   }
 
   for (const [index, line] of metrics.lines.entries()) {

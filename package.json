@@ -9,6 +9,7 @@
   "scripts": {
     "build": "node build.mjs",
     "icons": "node scripts/build-icons.mjs",
+    "fonts": "uv run --no-project --with fonttools==4.66.1 python scripts/build-fonts.py",
     "dev": "node build.mjs --watch",
     "serve": "node build.mjs --serve",
     "typecheck": "tsc --noEmit",
@@ -19,6 +20,10 @@
     "check": "npm run typecheck && npm run test && npm run build"
   },
   "devDependencies": {
+    "@expo-google-fonts/inter": "^0.4.2",
+    "@expo-google-fonts/jetbrains-mono": "^0.4.1",
+    "@expo-google-fonts/kalam": "^0.4.1",
+    "@expo-google-fonts/noto-serif": "^0.4.2",
     "@playwright/test": "^1.49.1",
     "@types/node": "^22.10.5",
     "ajv": "^8.17.1",

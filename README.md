@@ -39,6 +39,11 @@ style clipboard that copies appearance without content.
 **Tables** — cell-by-cell editing with `Tab` to move on, draggable column and row
 dividers, and insert/delete for rows and columns from the right-click menu.
 
+**Typography** — four styles, each in a typeface MindFlow ships rather than
+whatever the machine has: Inter (sans), Noto Serif, JetBrains Mono and Kalam
+(handwriting). A board wraps its text identically on every computer, and the
+wrapping rule in the format spec can be reproduced exactly.
+
 **Colour** — stroke, fill, text, table header and board background, each with a
 curated palette, a hex field and a memory of the last eight colours you used.
 Types can offer their own palette: a sticky note shows paper tones, not pastels.
@@ -57,7 +62,9 @@ board, never the page: the toolbars stay put.
 shapes move. Straight, curved or elbow routing; five arrowhead styles.
 
 **Files** — save and load `.mindflow.json` locally, drag-and-drop to open,
-export to PNG, SVG or JSON. A slow save, such as one to Google Drive, turns the
+export to PNG, SVG, PDF or JSON. PDF export puts every frame on its own page,
+in reading order, turned and scaled to fit the page, with real text you can
+search and copy. SVG export carries the fonts it uses. A slow save, such as one to Google Drive, turns the
 Save button into a spinner until it finishes. Pressing Save again meanwhile
 queues one follow-up save and never starts a second one alongside.
 
@@ -90,8 +97,8 @@ Then open `index.html`.
 
 ## How it works without a server
 
-`index.html` is a self-contained build artifact with all JavaScript and CSS
-inlined. That is not merely convenient — it is required:
+`index.html` is a self-contained build artifact with all JavaScript, CSS and
+fonts inlined. That is not merely convenient — it is required:
 
 > Browsers fetch `<script type="module">` with CORS semantics, and a page opened
 > from `file://` has an opaque origin, so every module fetch is blocked. An app
@@ -111,7 +118,7 @@ default — so any single element is interpretable in isolation.
 ```json
 {
   "type": "mindflow.board",
-  "schemaVersion": "1.6.1",
+  "schemaVersion": "1.6.2",
   "elements": [
     {
       "id": "el_q2WikW58Aw",
@@ -213,6 +220,7 @@ npm run dev         # watch and rebuild; open index.html directly
 npm run serve       # watch + http://localhost:8000 (needed to test Drive)
 npm run build       # produce the single-file index.html
 
+npm run fonts       # regenerate src/fonts/ (needs uv); only after changing the font manifest
 npm run typecheck   # esbuild does not type-check — this does
 npm test            # unit + contract tests
 npm run test:e2e    # Playwright against the built file
@@ -258,6 +266,14 @@ Considered, in rough order — see
 - Laser pointer and presentation mode
 
 ## Credits
+
+Fonts: [Inter](https://github.com/rsms/inter),
+[Noto Serif](https://github.com/notofonts/latin-greek-cyrillic),
+[JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and
+[Kalam](https://github.com/itfoundry/kalam), under the
+[SIL Open Font License 1.1](src/fonts/LICENSES.md). `scripts/build-fonts.py`
+subsets them to Latin and removes kerning and hinting, and the build inlines them,
+about 180 kB in all. Nothing is fetched at runtime.
 
 Icons are from [Lucide](https://lucide.dev) ([ISC](https://github.com/lucide-icons/lucide/blob/main/LICENSE)),
 extracted at build time by `scripts/build-icons.mjs` and inlined into

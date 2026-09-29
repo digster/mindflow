@@ -522,3 +522,68 @@ snapshot, and `Store.completeSave` records only what was actually written.
 Edits made meanwhile stay unsaved while the new origin is remembered. A board
 opened meanwhile is left alone. A board left exactly as saved gets its
 recent-boards copy's *Unsaved* tag cleared.
+
+---
+
+## 2026-09-29 — PDF export, one page per frame
+
+> * We want to add a new export option where every frame of the board will be
+>   fit in a new page of the export PDF.
+> * The contents of the frame should be auto-adjusted automatically based on the
+>   PDF page.
+
+The export dialog gains *PDF — one page per frame*. Each visible frame (or each
+selected frame) becomes a page, in reading order. It is scaled uniformly to fit
+inside a half-inch margin, centred, and its page is turned to suit it. Choices
+are page size (A4, A3, US Letter, US Legal), orientation (auto, portrait,
+landscape) and 150 or 300 dpi. Frame names become PDF bookmarks. The PDF writer
+is hand-written (no runtime dependencies), and pages are lossless pictures
+painted by the same shape modules as the screen.
+
+---
+
+## 2026-09-29 — Bundled fonts, and frame membership of new elements
+
+> * for the first image, can we ship our own fonts so that we dont rely on the
+>   system fonts?
+> * for the second image, work on it.
+> * work on these as separate commits.
+
+(The first image: the note that PDF text cannot be selected or searched,
+because a page cannot read the system fonts the canvas measured with. The
+second: the note that arrows, lines, text and freehand strokes drawn inside a
+frame never become part of it.)
+
+Commit 1: every path that adds an element (drawing, typing, pasting,
+duplicating, inserting an image) now puts it in the frame it lands in, in the
+same undo step. A pasted or duplicated frame's contents belong to the copy.
+
+Commit 2: MindFlow ships its fonts (Inter, Noto Serif, JetBrains Mono, Kalam;
+Latin subsets without kerning or hinting, format 1.6.2). Text wraps the same on
+every machine, PDF pages carry real, searchable text in the embedded fonts, and
+SVG exports carry the fonts they use.
+
+---
+
+## 2026-09-29 — What swapping a typeface involves
+
+> can you explain this - "Typefaces. Swapping one is a single line in
+> scripts/build-fonts.py, then npm run fonts. It would be another format patch,
+> since line breaks change."
+
+Answered in chat, with no code change. The claim was an understatement:
+swapping a typeface means two manifest lines (the regular and bold faces), a new
+devDependency for the source files, `npm run fonts` and a rebuild. It is a
+format patch because the spec names the typefaces and measures text with their
+advance widths, so a new typeface changes where lines break.
+
+---
+
+## 2026-09-29 — What there is to decide about the typefaces
+
+> I want to understand what I have to decide regarding this?
+
+Answered in chat, with no code change. The decision is whether to keep Inter,
+Noto Serif, JetBrains Mono and Kalam. Changing them before this branch merges
+keeps the change inside format 1.6.2; after it merges, a change needs another
+format patch.

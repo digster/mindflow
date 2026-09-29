@@ -1,5 +1,6 @@
 /**
- * PNG and SVG export.
+ * PNG and SVG export, and the paint loop the PDF exporter shares with PNG
+ * (`exportPdf.ts`).
  *
  * ---------------------------------------------------------------------------
  * Why SVG needs its own serialiser
@@ -34,6 +35,7 @@ import type {
 import type { RenderContext } from '../model/registry.ts';
 import { drawElement, isFrame, labelBoxOf } from '../model/registry.ts';
 import { clamp, degToRad, unionAABB } from '../model/geometry.ts';
+import { bundledFace, fontFaceRule } from './fonts.ts';
 import { roughOutlineFor } from './rough.ts';
 import { FRAME_NAME_COLOR, FRAME_NAME_GAP, FRAME_NAME_SIZE, FRAME_NAME_WEIGHT } from './shapes/frame.ts';
 import { isPolygonType, polygonVertices } from './shapes/polygons.ts';
@@ -42,6 +44,7 @@ import { cellBox, cellFontWeight, columnEdges, rowEdges } from './shapes/table.t
 import {
   BASELINE_RATIO,
   FONT_STACKS,
+  BOLD_FACE_WEIGHT,
   dashPattern,
   hasFill,
   hasStroke,
@@ -84,6 +87,51 @@ function exportBounds(elements: readonly MindflowElement[], padding: number): Bo
 // ---------------------------------------------------------------------------
 
 /**
+ * Paints elements onto an export canvas whose transform already maps scene
+ * units to its pixels. Shared by the PNG and PDF exporters.
+ *
+ * Mirrors `Renderer.paintElement`: opacity, then the clip of the element's
+ * frame, then the element transform. The clip comes before the transform so
+ * that it stays in scene space, where the frame's box is defined. It is looked
+ * up in the whole document, not only in `elements`, so a member exported
+ * without its frame is still cut where the screen cuts it. A `frameId` that
+ * names no frame is ignored, as `docs/03-elements.md` specifies.
+ */
+export function paintElements(
+  elements: readonly MindflowElement[],
+  render: RenderContext,
+  /** Told which element is about to be painted: the PDF exporter's text layer needs to know. */
+  beforeEach?: (element: MindflowElement, index: number) => void,
+): void {
+  const { ctx } = render;
+  const frames = new Map(render.document.elements.filter(isFrame).map((frame) => [frame.id, frame]));
+
+  for (const [index, element] of elements.entries()) {
+    if (!element.visible) continue;
+    beforeEach?.(element, index);
+    ctx.save();
+    ctx.globalAlpha = element.opacity;
+
+    const frame = element.frameId === null ? undefined : frames.get(element.frameId);
+    if (frame) {
+      ctx.beginPath();
+      ctx.rect(frame.x, frame.y, frame.width, frame.height);
+      ctx.clip();
+    }
+
+    ctx.translate(element.x + element.width / 2, element.y + element.height / 2);
+    if (element.angle !== 0) ctx.rotate(degToRad(element.angle));
+    ctx.translate(-element.width / 2, -element.height / 2);
+    try {
+      drawElement(element, render);
+    } catch (error) {
+      console.error(`[mindflow] export skipped element ${element.id}`, error);
+    }
+    ctx.restore();
+  }
+}
+
+/**
  * Renders to a PNG blob.
  *
  * Reuses the shape modules, so PNG output is pixel-identical to what is on
@@ -120,22 +168,7 @@ export async function exportToPNG(
   ctx.scale(scale, scale);
   ctx.translate(-bounds.x, -bounds.y);
 
-  const render: RenderContext = { ctx, zoom: scale, document, images, exporting: true };
-
-  for (const element of elements) {
-    if (!element.visible) continue;
-    ctx.save();
-    ctx.globalAlpha = element.opacity;
-    ctx.translate(element.x + element.width / 2, element.y + element.height / 2);
-    if (element.angle !== 0) ctx.rotate(degToRad(element.angle));
-    ctx.translate(-element.width / 2, -element.height / 2);
-    try {
-      drawElement(element, render);
-    } catch (error) {
-      console.error(`[mindflow] export skipped element ${element.id}`, error);
-    }
-    ctx.restore();
-  }
+  paintElements(elements, { ctx, zoom: scale, document, images, exporting: true });
 
   return new Promise((resolve, reject) => {
     canvas.toBlob(
@@ -196,6 +229,18 @@ function transformAttribute(element: MindflowElement): string {
   );
 }
 
+/**
+ * The bundled faces the SVG being serialised uses, as `family/weight` of a
+ * representative weight. Set for the duration of one synchronous
+ * `exportToSVG` call, so the text helpers can record what they emit without
+ * threading a collector through every one of them.
+ */
+let usedFaces: Set<string> | null = null;
+
+function noteFace(family: keyof typeof FONT_STACKS, weight: number): void {
+  usedFaces?.add(`${family}/${weight >= BOLD_FACE_WEIGHT ? BOLD_FACE_WEIGHT : 400}`);
+}
+
 /** Renders a text block as a `<text>` with one `<tspan>` per wrapped line. */
 function textToSvg(
   text: string,
@@ -211,6 +256,7 @@ function textToSvg(
   },
 ): string {
   if (text === '') return '';
+  noteFace(style.fontFamily, style.fontWeight);
 
   const innerWidth = Math.max(box.width - box.padding * 2, 1);
   const metrics = layoutText(text, {
@@ -409,6 +455,7 @@ function elementToSvg(element: MindflowElement, document: MindflowDocument): str
       const frame = element as FrameElement;
       const box = `<rect width="${round(frame.width)}" height="${round(frame.height)}" ${style}/>`;
       if (frame.name === '') return box;
+      noteFace('sans', FRAME_NAME_WEIGHT);
       // Matches the canvas: left-aligned to the frame's left edge, baseline
       // FRAME_NAME_GAP above the top edge. See docs/03-elements.md.
       const name =
@@ -565,10 +612,20 @@ function elementToSvg(element: MindflowElement, document: MindflowDocument): str
 /**
  * Renders the board as a standalone SVG document.
  *
- * Self-contained: images are inlined as data URIs, so the file can be opened
- * anywhere without accompanying assets.
+ * Self-contained: images are inlined as data URIs, and so are the bundled
+ * faces its text uses, as `@font-face` rules, so the file looks the same
+ * wherever it is opened, fonts installed or not.
  */
 export function exportToSVG(document: MindflowDocument, options: ExportOptions = {}): string {
+  usedFaces = new Set();
+  try {
+    return serialiseSvg(document, options, usedFaces);
+  } finally {
+    usedFaces = null;
+  }
+}
+
+function serialiseSvg(document: MindflowDocument, options: ExportOptions, faces: Set<string>): string {
   const elements = options.elements ?? document.elements;
   const padding = options.padding ?? 24;
   const bounds = exportBounds(elements, padding);
@@ -605,6 +662,18 @@ export function exportToSVG(document: MindflowDocument, options: ExportOptions =
     .filter(Boolean)
     .join('\n    ');
 
+  // After the body, which is what records the faces. Only installed faces:
+  // without them the text was laid out in system fonts, which the stacks
+  // still name.
+  const fontRules = [...faces]
+    .map((key) => {
+      const [family, weight] = key.split('/') as [keyof typeof FONT_STACKS, string];
+      const face = bundledFace(family, Number(weight));
+      return face ? fontFaceRule(face) : '';
+    })
+    .filter(Boolean);
+  const defs = [...(fontRules.length ? [`<style>${fontRules.join('')}</style>`] : []), ...(clipDefs ? [clipDefs] : [])];
+
   const background =
     options.background === false
       ? ''
@@ -616,7 +685,7 @@ export function exportToSVG(document: MindflowDocument, options: ExportOptions =
      viewBox="${round(bounds.x)} ${round(bounds.y)} ${round(bounds.width)} ${round(bounds.height)}">
   <title>${escapeXml(document.meta.name)}</title>
   <desc>Exported from MindFlow. Source format: mindflow.board ${document.schemaVersion}</desc>
-  ${clipDefs === '' ? '' : `<defs>\n    ${clipDefs}\n  </defs>`}
+  ${defs.length === 0 ? '' : `<defs>\n    ${defs.join('\n    ')}\n  </defs>`}
   <g>
     ${background}${body}
   </g>

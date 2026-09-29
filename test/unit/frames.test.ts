@@ -15,6 +15,8 @@ import { createDocument } from '../../src/model/defaults.ts';
 import { loadDocument, serializeDocument } from '../../src/model/document.ts';
 import {
   danglingFrameRefs,
+  enrolInFrames,
+  frameContents,
   frameFor,
   membersOf,
   reassignFrames,
@@ -197,5 +199,116 @@ describe('frame normalisation', () => {
     const raw = JSON.parse(serializeDocument(docWith(named))) as Record<string, unknown>;
     const { document } = loadDocument(raw);
     expect((document.elements[0] as { name: string }).name).toBe('Sprint 12');
+  });
+});
+
+describe('frameContents', () => {
+  // What a frame's PDF page shows. Its members, as recorded in `frameId`, and
+  // also any element that belongs to no frame but whose centre is inside it:
+  // the membership rule applied to an element that was never enrolled, such
+  // as one a script wrote without a `frameId`. Otherwise an element visibly
+  // inside the frame on the board would be missing from its page.
+  const ids = (elements: MindflowElement[] | undefined) => (elements ?? []).map((element) => element.id);
+
+  it('lists the frame and its members, in paint order', () => {
+    const f = frame(0, 0, 400, 300);
+    const below = rect(100, 100, { frameId: f.id, zIndex: 500 });
+    const above = rect(200, 100, { frameId: f.id });
+    const document = docWith(f, below, above);
+    expect(ids(frameContents(document).get(f.id))).toEqual([below.id, f.id, above.id]);
+  });
+
+  it('includes an element in no frame whose centre is inside', () => {
+    const f = frame(0, 0, 400, 300);
+    const loose = rect(100, 100);
+    expect(ids(frameContents(docWith(f, loose)).get(f.id))).toEqual([f.id, loose.id]);
+  });
+
+  it('leaves out an element in no frame whose centre is outside, even if it overlaps', () => {
+    const f = frame(0, 0, 200, 200);
+    const straddling = rect(160, 60); // centre at x = 210
+    expect(ids(frameContents(docWith(f, straddling)).get(f.id))).toEqual([f.id]);
+  });
+
+  it('keeps an element on its own frame’s page, wherever its centre is', () => {
+    // Frames can overlap, and a member stays with the frame it joined.
+    const a = frame(0, 0, 400, 300);
+    const b = frame(1000, 0, 400, 300);
+    const member = rect(100, 100, { frameId: b.id });
+    const contents = frameContents(docWith(a, b, member));
+    expect(ids(contents.get(a.id))).toEqual([a.id]);
+    expect(ids(contents.get(b.id))).toEqual([b.id, member.id]);
+  });
+
+  it('treats a dangling frameId as none', () => {
+    const f = frame(0, 0, 400, 300);
+    const orphan = rect(100, 100, { frameId: 'el_Missing0001' });
+    expect(ids(frameContents(docWith(f, orphan)).get(f.id))).toEqual([f.id, orphan.id]);
+  });
+
+  it('gives a hidden frame its members but claims nothing for it by position', () => {
+    // `frameFor` skips hidden frames, and the fallback is `frameFor`.
+    const hidden = frame(0, 0, 400, 300, { visible: false });
+    const member = rect(100, 100, { frameId: hidden.id });
+    const loose = rect(200, 100);
+    expect(ids(frameContents(docWith(hidden, member, loose)).get(hidden.id))).toEqual([hidden.id, member.id]);
+  });
+
+  it('has an entry for every frame, even an empty one', () => {
+    const f = frame(0, 0, 400, 300);
+    expect(ids(frameContents(docWith(f)).get(f.id))).toEqual([f.id]);
+  });
+});
+
+describe('enrolInFrames', () => {
+  // Every path that puts an element on the board already in position (drawing,
+  // text, freehand, pasting, duplicating, inserting an image) runs its elements
+  // through this before adding them, so they join the frame they land in
+  // within the same command, and so the same undo step.
+  const frameIds = (elements: MindflowElement[]) => elements.map((element) => element.frameId);
+
+  it('puts a new element in the frame its centre lands in', () => {
+    const f = frame(0, 0, 400, 300);
+    expect(frameIds(enrolInFrames(docWith(f), [rect(100, 100)]))).toEqual([f.id]);
+  });
+
+  it('leaves one outside every frame in none, whatever it was copied with', () => {
+    // A copy of a member, pasted away from its frame, must leave it: it would
+    // otherwise stay clipped to a frame it is nowhere near.
+    const f = frame(0, 0, 400, 300);
+    const pasted = rect(1000, 1000, { frameId: f.id });
+    expect(frameIds(enrolInFrames(docWith(f), [pasted]))).toEqual([null]);
+  });
+
+  it('gives pasted contents to the pasted frame, not the one they were copied from', () => {
+    const original = frame(0, 0, 400, 300);
+    const copy = frame(20, 20, 400, 300, { zIndex: 9000 });
+    const member = rect(120, 120, { frameId: original.id, zIndex: 9500 });
+    expect(frameIds(enrolInFrames(docWith(original), [copy, member]))).toEqual([null, copy.id]);
+  });
+
+  it('picks the topmost frame, counting the ones being added', () => {
+    const below = frame(0, 0, 400, 300, { zIndex: 1000 });
+    const above = frame(0, 0, 400, 300, { zIndex: 3000 });
+    const existing = frame(0, 0, 400, 300, { zIndex: 2000 });
+    const added = enrolInFrames(docWith(existing), [below, above, rect(100, 100, { zIndex: 4000 })]);
+    expect(added[2]?.frameId).toBe(above.id);
+  });
+
+  it('never puts a frame in a frame', () => {
+    const outer = frame(0, 0, 1000, 1000);
+    const inner = frame(100, 100, 200, 200, { frameId: outer.id } as Partial<MindflowElement>);
+    expect(frameIds(enrolInFrames(docWith(outer), [inner]))).toEqual([null]);
+  });
+
+  it('ignores hidden frames, as dropping does', () => {
+    const hidden = frame(0, 0, 400, 300, { visible: false });
+    expect(frameIds(enrolInFrames(docWith(hidden), [rect(100, 100)]))).toEqual([null]);
+  });
+
+  it('returns an unchanged element as the same object', () => {
+    const f = frame(0, 0, 400, 300);
+    const member = rect(100, 100, { frameId: f.id });
+    expect(enrolInFrames(docWith(f), [member])[0]).toBe(member);
   });
 });
