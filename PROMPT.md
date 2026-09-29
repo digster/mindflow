@@ -576,3 +576,14 @@ swapping a typeface means two manifest lines (the regular and bold faces), a new
 devDependency for the source files, `npm run fonts` and a rebuild. It is a
 format patch because the spec names the typefaces and measures text with their
 advance widths, so a new typeface changes where lines break.
+
+---
+
+## 2026-09-29 — What there is to decide about the typefaces
+
+> I want to understand what I have to decide regarding this?
+
+Answered in chat, with no code change. The decision is whether to keep Inter,
+Noto Serif, JetBrains Mono and Kalam. Changing them before this branch merges
+keeps the change inside format 1.6.2; after it merges, a change needs another
+format patch.
