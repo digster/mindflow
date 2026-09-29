@@ -68,18 +68,57 @@ Arrowheads are never dashed either, even on a dashed connector.
 
 ### Fonts
 
-`fontFamily` is a **logical name**. The stacks:
+`fontFamily` is a **logical name**, and each names a typeface MindFlow ships,
+in two faces *(since 1.6.2)*:
+
+| `fontFamily` | Typeface | `regular` face | `bold` face | Files |
+|---|---|---|---|---|
+| `sans` | Inter | Regular (400) | SemiBold (600) | `sans-regular.ttf`, `sans-bold.ttf` |
+| `serif` | Noto Serif | Regular (400) | SemiBold (600) | `serif-regular.ttf`, `serif-bold.ttf` |
+| `mono` | JetBrains Mono | Regular (400) | SemiBold (600) | `mono-regular.ttf`, `mono-bold.ttf` |
+| `hand` | Kalam | Regular (400) | Bold (700) | `hand-regular.ttf`, `hand-bold.ttf` |
+
+The files are in [`src/fonts/`](../src/fonts/), with their licences (SIL Open
+Font License 1.1).
+
+**Choosing the face.** A `fontWeight` below **550** uses the `regular` face,
+and 550 or more the `bold` face. No other weight is drawn, and no face is
+emboldened synthetically: a `fontWeight` of 900 draws the `bold` face as it is.
+
+**Measuring text.** The width of a string, in scene units, is
+
+```
+width = Σ advanceWidth(glyph) × fontSize ÷ unitsPerEm
+```
+
+over its characters, with each character's glyph from the face's `cmap`
+table and its advance from `hmtx`. There is no kerning, no ligature and no
+other shaping: the files carry none, so this sum is exactly what a browser's
+canvas measures, which the end-to-end suite checks for every face. A renderer
+using these files therefore reproduces MindFlow's line breaks exactly.
+
+**Coverage.** The files are Latin subsets: Basic Latin, Latin-1 Supplement,
+Latin Extended-A, and common punctuation, arrows and symbols (the full list is
+in `scripts/build-fonts.py`). A character a face lacks is drawn from a system
+font by the stack below, and its width is whatever that font gives. Text in
+other scripts, and emoji, render but do not measure identically everywhere.
+
+Each face is registered under its own name, so a copy of the typeface
+installed on the machine is never used instead. The CSS stacks, which also
+cover characters outside the subsets:
 
 | Logical | CSS font stack |
 |---|---|
-| `sans` | `ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif` |
-| `serif` | `ui-serif, Georgia, Cambria, "Times New Roman", Times, serif` |
-| `mono` | `ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace` |
-| `hand` | `"Segoe Print", "Bradley Hand", Chilanka, "Comic Sans MS", cursive` |
+| `sans` | `"MindFlow Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif` |
+| `serif` | `"MindFlow Serif", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif` |
+| `mono` | `"MindFlow Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace` |
+| `hand` | `"MindFlow Hand", "Segoe Print", "Bradley Hand", Chilanka, "Comic Sans MS", cursive` |
 
-Storing the logical name keeps boards portable and lets the stacks improve later
-without rewriting existing files. A renderer with different fonts available should
-substitute in the same spirit rather than trying to match glyph-for-glyph.
+Storing the logical name keeps boards portable and lets the typefaces change
+later without rewriting existing files. A renderer that cannot use the
+published files should substitute in the same spirit, and will break some lines
+differently. *(Before 1.6.2 the system's fonts were used, so line breaks
+differed between machines.)*
 
 ### Rounded rectangles
 
@@ -98,7 +137,8 @@ so an arbitrarily large value yields a stadium rather than invalid geometry. The
 
 **Specified algorithm.** Reproduce it exactly to match MindFlow's line breaks.
 
-Given `text`, a `maxWidth` in scene units, and a resolved font:
+Given `text`, a `maxWidth` in scene units, and a font, measured as in
+[Fonts](#fonts):
 
 0. Replace every tab (U+0009), form feed (U+000C) and carriage return (U+000D)
    with a single space (U+0020). See [Whitespace](#whitespace).
@@ -814,8 +854,10 @@ both are driven from the algorithms specified on this page, and the shared maths
 (smoothing, routing, text layout) is imported rather than re-derived — only the
 output *syntax* differs.
 
-Exported SVG is self-contained: images are inlined as data URIs, so the file opens
-anywhere without accompanying assets.
+Exported SVG is self-contained: images are inlined as data URIs, and so is each
+bundled face its text uses, as a CSS `@font-face` rule with the face's weight
+range. The file opens anywhere without accompanying assets, and its text is
+set in the same typefaces with or without MindFlow's fonts installed.
 
 **One known difference from the canvas: text is not clipped.** The canvas clips a
 sticky note's text to the note and a table cell's text to its cell; the SVG
@@ -915,17 +957,50 @@ or 4096² pixels in area (iOS Safari's canvas limit), both sides are reduced by
 the same factor until it fits. The image is stretched over exactly the placed
 area.
 
+#### Text
+
+Shapes are painted into the page's picture. Text is written as **real PDF
+text** in the bundled fonts, so it can be selected, copied and searched, and
+stays sharp at any zoom. Each text block is placed exactly where the canvas
+draws it: same lines, same baselines, same widths, because both measure with
+the same font files (see [Fonts](#fonts)).
+
+Real text is drawn over the picture, so a block becomes text only when that
+cannot change how the page looks. A block that fails any of these rules stays
+in the picture instead:
+
+1. **Every character is in the bundled face.** A character the face lacks was
+   drawn from a system font, which the PDF cannot embed. Such a block has **no
+   text in the PDF** at all.
+2. **Nothing painted after it overlaps it.** Tested between the bounding box of
+   the block's ink (each line from its baseline minus the face's ascender to
+   its baseline minus its descender) and the bounding boxes of the page's later
+   elements, in paint order.
+3. **Its lines fit the box it was laid out in**, so no clip of its own element
+   (a sticky note's, a table cell's) cuts it.
+4. **Its ink lies inside the frame.**
+
+A block that fails rule 2, 3 or 4 is also written as **invisible text** (text
+render mode 3) over the picture, so it can still be selected and searched.
+
+If the bundled fonts could not be loaded, text was measured with system fonts,
+which the PDF cannot embed, and every page is a picture only.
+
 #### The file
 
 PDF 1.4. The pixels are stored losslessly: 8-bit `DeviceRGB` compressed with
-`FlateDecode`. Each page has a bookmark, the frame's `name`, or `Page N` for an
-unnamed frame. The document title is the board's name, and viewers are asked to
-show it (`/DisplayDocTitle`).
+`FlateDecode`. Each bundled face the text uses is embedded once, whole, as a
+Type 0 font with `Identity-H` encoding over a `CIDFontType2` with its TrueType
+program (`FontFile2`), glyph widths (`/W`) and a `ToUnicode` map. Text is
+written as glyph ids, and the map is what lets viewers copy and search it.
+Translucent text uses a graphics state with its opacity (`/ca`). Each page has
+a bookmark, the frame's `name`, or `Page N` for an unnamed frame. The document
+title is the board's name, and viewers are asked to show it
+(`/DisplayDocTitle`).
 
-**Why the pages are pictures, not vectors.** A vector page would be a third
-renderer, and one that could not match the other two. PDF text is positioned
-with the embedded font's glyph widths, and a page cannot read the system fonts
-the canvas measured its line breaks with, so every wrapped line would come out
-a different width. A picture painted by the shape modules matches the screen
-exactly and prints cleanly at 300 dpi. The cost is that text in the PDF cannot
-be selected or searched. Use SVG export when that matters.
+**Why shapes are pictures.** A vector page would be a third renderer, after the
+canvas and the SVG exporter, re-expressing every shape again. A picture painted
+by the shape modules matches the screen exactly and prints cleanly at 300 dpi.
+Text is the part where vectors matter most (sharpness, search, copy), and
+since 1.6.2 its geometry is fully specified by the bundled fonts, so it can be
+written as text without drifting from the canvas.

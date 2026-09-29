@@ -557,3 +557,8 @@ frame never become part of it.)
 Commit 1: every path that adds an element (drawing, typing, pasting,
 duplicating, inserting an image) now puts it in the frame it lands in, in the
 same undo step. A pasted or duplicated frame's contents belong to the copy.
+
+Commit 2: MindFlow ships its fonts (Inter, Noto Serif, JetBrains Mono, Kalam;
+Latin subsets without kerning or hinting, format 1.6.2). Text wraps the same on
+every machine, PDF pages carry real, searchable text in the embedded fonts, and
+SVG exports carry the fonts they use.

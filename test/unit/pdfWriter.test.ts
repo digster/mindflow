@@ -8,10 +8,21 @@
  * searching for strings.
  */
 
-import { inflateSync } from 'node:zlib';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { deflateSync, inflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 
-import { buildPdf, deflate, pdfTextString, rgbaToRgb, type PdfPage } from '../../src/render/pdfWriter.ts';
+import {
+  buildPdf,
+  deflate,
+  pdfTextString,
+  rgbaToRgb,
+  type PdfFont,
+  type PdfPage,
+  type PdfTextBlock,
+} from '../../src/render/pdfWriter.ts';
+import { parseTrueType } from '../../src/render/ttf.ts';
 
 /** The whole file as one byte array, as a Blob would hold it. */
 function bytesOf(chunks: Uint8Array[]): Uint8Array {
@@ -240,5 +251,146 @@ describe('deflate', () => {
     expect(compressed[0]).toBe(0x78);
     expect(compressed.length).toBeLessThan(data.length);
     expect(new TextDecoder().decode(inflateSync(compressed))).toBe('mindflow '.repeat(100));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Text
+// ---------------------------------------------------------------------------
+
+/** A shipped face as the exporter hands it to the writer. */
+function shippedFont(file: string): PdfFont & { bytes: Uint8Array; glyphFor(codePoint: number): number } {
+  const bytes = new Uint8Array(readFileSync(join(import.meta.dirname, '..', '..', 'src', 'fonts', file)));
+  const font = parseTrueType(bytes);
+  return {
+    postScriptName: font.postScriptName,
+    deflated: new Uint8Array(deflateSync(bytes)),
+    length: bytes.length,
+    unitsPerEm: font.unitsPerEm,
+    bbox: font.bbox,
+    ascender: font.ascender,
+    descender: font.descender,
+    capHeight: font.capHeight,
+    italicAngle: font.italicAngle,
+    flags: 32,
+    stemV: 80,
+    advance: (glyph) => font.advance(glyph),
+    glyphFor: (codePoint) => font.glyphFor(codePoint),
+    bytes,
+  };
+}
+
+const INTER = shippedFont('sans-regular.ttf');
+
+/** A block of `text` on one line, set in `font`, with the glyphs the font maps it to. */
+function textBlock(text: string, overrides: Partial<PdfTextBlock> = {}, font = INTER): PdfTextBlock {
+  return {
+    font,
+    size: 20,
+    matrix: [1, 0, 0, -1, 50, 700],
+    color: [0.2, 0.4, 0.6],
+    alpha: 1,
+    invisible: false,
+    lines: [{ x: 10, y: 16, text, glyphs: [...text].map((character) => font.glyphFor(character.codePointAt(0)!)) }],
+    ...overrides,
+  };
+}
+
+/** Every object whose text contains `marker`. */
+function objectsWith(parsed: Parsed, marker: string): string[] {
+  return [...parsed.objects.values()].filter((object) => object.includes(marker));
+}
+
+describe('buildPdf text', () => {
+  it('writes each line as glyph ids in the page’s content, in the block’s space', async () => {
+    const block = textBlock('Hi');
+    const parsed = parse(buildPdf([await page({ text: [block] })], { title: 'Board' }));
+    const pageObject = objectsWith(parsed, '/Type /Page ')[0]!;
+    const contents = textOf(streamOf(parsed, ref(pageObject, 'Contents')));
+
+    const [h, i] = block.lines[0]!.glyphs.map((glyph) => glyph.toString(16).toUpperCase().padStart(4, '0'));
+    expect(contents).toContain('0.2 0.4 0.6 rg\n1 0 0 -1 50 700 cm\nBT\n/F0 20 Tf\n');
+    // The text matrix flips y back, so glyphs stand upright in a y-down space.
+    expect(contents).toContain(`1 0 0 -1 10 16 Tm <${h}${i}> Tj\n`);
+    expect(contents).not.toContain(' Tr\n');
+    expect(pageObject).toMatch(/\/Font << \/F0 \d+ 0 R >>/);
+  });
+
+  it('embeds the font as a Type 0 font over its TrueType program', async () => {
+    const parsed = parse(buildPdf([await page({ text: [textBlock('Hi')] })], { title: 'Board' }));
+    const type0 = objectsWith(parsed, '/Subtype /Type0')[0]!;
+    expect(type0).toContain('/BaseFont /Inter-Regular');
+    expect(type0).toContain('/Encoding /Identity-H');
+
+    const cidFont = parsed.objects.get(Number(/\/DescendantFonts \[(\d+) 0 R\]/.exec(type0)![1]))!;
+    expect(cidFont).toContain('/Subtype /CIDFontType2');
+    expect(cidFont).toContain('/CIDToGIDMap /Identity');
+
+    const descriptor = parsed.objects.get(ref(cidFont, 'FontDescriptor'))!;
+    expect(descriptor).toContain('/FontName /Inter-Regular');
+    // Metrics in the 1000-unit glyph space PDF uses: Inter's cap height is
+    // 1490 of 2048 units.
+    expect(descriptor).toContain(`/CapHeight ${Math.round((1490 * 1000) / 2048)}`);
+
+    // The font program is the TTF, byte for byte.
+    const fileId = ref(descriptor, 'FontFile2');
+    expect(parsed.objects.get(fileId)).toContain(`/Length1 ${INTER.length}`);
+    expect([...inflateSync(streamOf(parsed, fileId))]).toEqual([...INTER.bytes]);
+  });
+
+  it('declares the widths of the glyphs it uses, in thousandths of an em', async () => {
+    const parsed = parse(buildPdf([await page({ text: [textBlock('Hi')] })], { title: 'Board' }));
+    const cidFont = objectsWith(parsed, '/Subtype /CIDFontType2')[0]!;
+    for (const character of 'Hi') {
+      const glyph = INTER.glyphFor(character.codePointAt(0)!);
+      const width = Number(((INTER.advance(glyph) * 1000) / 2048).toFixed(3));
+      expect(cidFont).toContain(` ${glyph} [${width}]`);
+    }
+  });
+
+  it('maps every glyph it uses back to its character, so the text can be copied and searched', async () => {
+    const parsed = parse(buildPdf([await page({ text: [textBlock('Hé—')] })], { title: 'Board' }));
+    const type0 = objectsWith(parsed, '/Subtype /Type0')[0]!;
+    const cmap = textOf(streamOf(parsed, ref(type0, 'ToUnicode')));
+    for (const character of 'Hé—') {
+      const glyph = INTER.glyphFor(character.codePointAt(0)!).toString(16).toUpperCase().padStart(4, '0');
+      const unicode = character.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0');
+      expect(cmap).toContain(`<${glyph}> <${unicode}>`);
+    }
+    expect(cmap).toContain('begincodespacerange\n<0000> <FFFF>\nendcodespacerange');
+  });
+
+  it('writes an invisible block with render mode 3, for text the page shows as pixels', async () => {
+    const parsed = parse(buildPdf([await page({ text: [textBlock('Hi', { invisible: true })] })], { title: 'Board' }));
+    const pageObject = objectsWith(parsed, '/Type /Page ')[0]!;
+    expect(textOf(streamOf(parsed, ref(pageObject, 'Contents')))).toContain('/F0 20 Tf\n3 Tr\n');
+  });
+
+  it('gives translucent text a graphics state with its opacity', async () => {
+    const parsed = parse(buildPdf([await page({ text: [textBlock('Hi', { alpha: 0.5 })] })], { title: 'Board' }));
+    const pageObject = objectsWith(parsed, '/Type /Page ')[0]!;
+    expect(pageObject).toMatch(/\/ExtGState << \/GS0 \d+ 0 R >>/);
+    expect(parsed.objects.get(ref(pageObject, 'GS0'))).toContain('/ca 0.5');
+    expect(textOf(streamOf(parsed, ref(pageObject, 'Contents')))).toContain('q\n/GS0 gs\n');
+  });
+
+  it('embeds each font once, however many pages use it, and only fonts in use', async () => {
+    const mono = shippedFont('mono-regular.ttf');
+    const pages = [
+      await page({ text: [textBlock('Hi')] }),
+      await page({ text: [textBlock('there')] }),
+      await page({ text: [textBlock('code', {}, mono)] }),
+      await page(),
+    ];
+    const parsed = parse(buildPdf(pages, { title: 'Board' }));
+    expect(objectsWith(parsed, '/Subtype /Type0')).toHaveLength(2);
+    expect(objectsWith(parsed, '/FontFile2')).toHaveLength(2);
+    // The shared font's widths and character map cover both pages' glyphs.
+    const inter = objectsWith(parsed, '/BaseFont /Inter-Regular').find((object) => object.includes('/Type0'))!;
+    const cmap = textOf(streamOf(parsed, ref(inter, 'ToUnicode')));
+    expect(cmap).toContain('<0048>'); // H
+    expect(cmap).toContain('<0072>'); // r
+    // A page without text has no font resources. Pages are numbered in order.
+    expect(objectsWith(parsed, '/Type /Page ')[3]).not.toContain('/Font');
   });
 });

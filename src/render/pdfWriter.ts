@@ -1,6 +1,7 @@
 /**
- * A minimal PDF writer: one image per page, a bookmark per page and a document
- * title. Just enough PDF for "one page per frame", and nothing more.
+ * A minimal PDF writer: per page one picture plus text, a bookmark per page,
+ * embedded fonts and a document title. Just enough PDF for "one page per
+ * frame", and nothing more.
  *
  * ---------------------------------------------------------------------------
  * Why hand-written
@@ -8,23 +9,26 @@
  * The shipped page contains no third-party code (ARCHITECTURE.md,
  * "Dependencies"), and a general PDF library is tens of kilobytes of it. What
  * the export needs is small: a PDF is numbered objects, a table of their byte
- * offsets, and a trailer, and these pages hold one image each.
+ * offsets, and a trailer.
  *
  * ---------------------------------------------------------------------------
- * Why each page is an image
+ * Pictures for shapes, real text for text
  * ---------------------------------------------------------------------------
- * A vector page would be a third renderer, after the canvas and the SVG
- * exporter, and one that could not match the other two. PDF text needs its
- * font's glyph widths, and a page cannot read the system fonts the canvas
- * measured with, so every wrapped line would come out a different width. A
- * raster painted by the shape modules matches the screen exactly, and at print
- * resolution it prints cleanly. The text is not selectable. That is the
- * accepted cost.
+ * Each page carries one picture of its frame, painted by the shape modules, so
+ * shapes look exactly as they do on screen. Text goes on top as real PDF text
+ * in the fonts MindFlow ships, embedded here, so it can be selected, copied
+ * and searched and stays sharp at any zoom. That only works because the fonts
+ * are bundled and have no kerning: a line is exactly as wide as the sum of its
+ * glyphs' advances, in the canvas and in a PDF viewer alike, so text written
+ * here lands where the canvas would have drawn it. `exportPdf.ts` decides which
+ * blocks become text and which stay in the picture (as invisible text, still
+ * searchable).
  *
  * The pixels are stored losslessly. JPEG would be smaller, but it blurs the
- * hard edges of text and lines that a board is made of. `CompressionStream`'s
+ * hard edges of lines that a board is made of. `CompressionStream`'s
  * `deflate` format is zlib, which is exactly what PDF's FlateDecode filter
- * reads, so the browser compresses natively and nothing is re-encoded.
+ * reads, so the browser compresses natively and nothing is re-encoded. The
+ * fonts arrive already compressed the same way (`build.mjs`).
  *
  * DOM-free, so the unit suite reads the output the way a PDF reader would.
  */
@@ -43,6 +47,58 @@ export interface PdfImage {
   data: Bytes;
 }
 
+/**
+ * A TrueType font to embed. It is written as a Type 0 font with Identity-H
+ * encoding over a CIDFontType2, so text is written as glyph ids (two bytes
+ * each) and any glyph in the font can be used. A ToUnicode map, built from the
+ * characters the text blocks name, lets viewers copy and search it.
+ */
+export interface PdfFont {
+  postScriptName: string;
+  /** The TTF, zlib-compressed. Embedded as it is, with `FlateDecode`. */
+  deflated: Bytes;
+  /** The TTF's length before compression. */
+  length: number;
+  unitsPerEm: number;
+  bbox: [number, number, number, number];
+  ascender: number;
+  descender: number;
+  capHeight: number;
+  italicAngle: number;
+  /** FontDescriptor flags: 32 (non-symbolic), plus 1 fixed pitch, 2 serif, 8 script. */
+  flags: number;
+  /** Dominant vertical stem width, in the 1000-unit glyph space. */
+  stemV: number;
+  /** A glyph's advance width, in font units. */
+  advance(glyph: number): number;
+}
+
+/** One block of text: lines in one font, size and colour, in one coordinate space. */
+export interface PdfTextBlock {
+  font: PdfFont;
+  /** Font size, in the block's units. */
+  size: number;
+  /**
+   * Maps the block's space, where y points DOWN (as on the canvas), to the
+   * page in points with y up: PDF's `a b c d e f`.
+   */
+  matrix: [number, number, number, number, number, number];
+  /** Fill colour, each channel 0 to 1. */
+  color: [number, number, number];
+  /** 0 to 1. */
+  alpha: number;
+  /**
+   * Written with render mode 3: nothing is painted, but the text can be
+   * selected and searched. For text the page already shows as pixels.
+   */
+  invisible: boolean;
+  /**
+   * Each line's left end and baseline, in the block's space, with its glyph ids
+   * and the characters they draw, one code point per glyph.
+   */
+  lines: { x: number; y: number; glyphs: number[]; text: string }[];
+}
+
 export interface PdfPage {
   /** Page size in points (1/72 inch). */
   width: number;
@@ -50,6 +106,8 @@ export interface PdfPage {
   image: PdfImage;
   /** Where the image is drawn, in points from the page's TOP-left corner. */
   placement: { x: number; y: number; width: number; height: number };
+  /** Text over the image, in paint order. */
+  text?: readonly PdfTextBlock[];
   /** The page's entry in the viewer's bookmarks. Empty for none. */
   bookmark: string;
 }
@@ -84,6 +142,33 @@ export function buildPdf(pages: readonly PdfPage[], info: PdfInfo): Bytes[] {
     .filter((entry) => entry.title !== '');
   const outlinesId = bookmarked.length > 0 ? next++ : 0;
   const bookmarkIds = bookmarked.map(() => next++);
+
+  // Fonts and opacities are shared by every page that uses them, so they are
+  // collected across the whole document first. Resource names are the same on
+  // every page: /F0 is always the same font.
+  const fonts = new Map<PdfFont, EmbeddedFont>();
+  const alphas = new Map<string, { name: string; id: number }>();
+  for (const page of pages) {
+    for (const block of page.text ?? []) {
+      let embedded = fonts.get(block.font);
+      if (!embedded) {
+        embedded = {
+          name: `F${fonts.size}`,
+          ids: { type0: next++, cidFont: next++, descriptor: next++, file: next++, toUnicode: next++ },
+          glyphs: new Map(),
+        };
+        fonts.set(block.font, embedded);
+      }
+      for (const line of block.lines) {
+        const characters = [...line.text];
+        line.glyphs.forEach((glyph, index) => {
+          if (!embedded.glyphs.has(glyph)) embedded.glyphs.set(glyph, characters[index] ?? '');
+        });
+      }
+      const alpha = num(block.alpha);
+      if (alpha !== '1' && !alphas.has(alpha)) alphas.set(alpha, { name: `GS${alphas.size}`, id: next++ });
+    }
+  }
 
   const out = new ByteSink();
   const offsets: number[] = [];
@@ -123,19 +208,26 @@ export function buildPdf(pages: readonly PdfPage[], info: PdfInfo): Bytes[] {
   pages.forEach((page, index) => {
     const ids = pageIds[index]!;
     const { x, y, width, height } = page.placement;
+    const blocks = page.text ?? [];
+
+    const usedFonts = new Set(blocks.map((block) => fonts.get(block.font)!));
+    const usedAlphas = new Set(blocks.map((block) => alphas.get(num(block.alpha))).filter((entry) => entry !== undefined));
+    const resources =
+      `/XObject << /Im0 ${ids.image} 0 R >>` +
+      (usedFonts.size ? ` /Font << ${[...usedFonts].map((font) => `/${font.name} ${font.ids.type0} 0 R`).join(' ')} >>` : '') +
+      (usedAlphas.size ? ` /ExtGState << ${[...usedAlphas].map((alpha) => `/${alpha.name} ${alpha.id} 0 R`).join(' ')} >>` : '');
     object(
       ids.page,
       `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${num(page.width)} ${num(page.height)}] ` +
-        `/Resources << /XObject << /Im0 ${ids.image} 0 R >> >> /Contents ${ids.contents} 0 R >>`,
+        `/Resources << ${resources} >> /Contents ${ids.contents} 0 R >>`,
     );
+
     // An image paints the unit square, first row at the top, so scaling by
     // the placed size and translating to its bottom-left corner places it.
     // PDF's y axis points up from the bottom of the page, hence the flip.
-    streamObject(
-      ids.contents,
-      '',
-      encodeAscii(`q\n${num(width)} 0 0 ${num(height)} ${num(x)} ${num(page.height - y - height)} cm\n/Im0 Do\nQ\n`),
-    );
+    let contents = `q\n${num(width)} 0 0 ${num(height)} ${num(x)} ${num(page.height - y - height)} cm\n/Im0 Do\nQ\n`;
+    for (const block of blocks) contents += textOperators(block, fonts.get(block.font)!, alphas.get(num(block.alpha)));
+    streamObject(ids.contents, '', encodeAscii(contents));
     streamObject(
       ids.image,
       `/Type /XObject /Subtype /Image /Width ${page.image.width} /Height ${page.image.height} ` +
@@ -143,6 +235,9 @@ export function buildPdf(pages: readonly PdfPage[], info: PdfInfo): Bytes[] {
       page.image.data,
     );
   });
+
+  for (const [font, embedded] of fonts) writeFont(object, streamObject, font, embedded);
+  for (const [alpha, state] of alphas) object(state.id, `<< /Type /ExtGState /ca ${alpha} >>`);
 
   if (outlinesId) {
     object(
@@ -176,6 +271,116 @@ export function buildPdf(pages: readonly PdfPage[], info: PdfInfo): Bytes[] {
   out.text(`trailer\n<< /Size ${next} /Root ${catalogId} 0 R /Info ${infoId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
 
   return out.chunks;
+}
+
+interface EmbeddedFont {
+  /** Its resource name on every page, e.g. `F0`. */
+  name: string;
+  ids: { type0: number; cidFont: number; descriptor: number; file: number; toUnicode: number };
+  /** Every glyph the document uses, with the character it draws. */
+  glyphs: Map<number, string>;
+}
+
+/**
+ * One block's content-stream operators.
+ *
+ * `cm` puts the block's own coordinates in place, y-down as on the canvas.
+ * The text matrix of each line flips y back (`1 0 0 -1`), which is what stands
+ * the glyphs upright again, and places the line's baseline.
+ */
+function textOperators(
+  block: PdfTextBlock,
+  font: EmbeddedFont,
+  alpha: { name: string } | undefined,
+): string {
+  const [a, b, c, d, e, f] = block.matrix.map((value) => num(value, 5));
+  let out = 'q\n';
+  if (alpha) out += `/${alpha.name} gs\n`;
+  out += `${block.color.map((channel) => num(channel)).join(' ')} rg\n${a} ${b} ${c} ${d} ${e} ${f} cm\nBT\n`;
+  out += `/${font.name} ${num(block.size, 5)} Tf\n`;
+  if (block.invisible) out += '3 Tr\n';
+  for (const line of block.lines) {
+    if (line.glyphs.length === 0) continue;
+    const hex = line.glyphs.map(hex4).join('');
+    out += `1 0 0 -1 ${num(line.x, 5)} ${num(line.y, 5)} Tm <${hex}> Tj\n`;
+  }
+  return `${out}ET\nQ\n`;
+}
+
+/** The five objects that embed one font. */
+function writeFont(
+  object: (id: number, body: string) => void,
+  streamObject: (id: number, dictionary: string, data: Bytes) => void,
+  font: PdfFont,
+  embedded: EmbeddedFont,
+): void {
+  const { ids } = embedded;
+  // PDF font metrics are in a 1000-unit glyph space, whatever the font's own em.
+  const toPdf = (units: number) => (units * 1000) / font.unitsPerEm;
+  const name = `/${font.postScriptName.replace(/[^A-Za-z0-9._-]/g, '') || 'MindFlowFont'}`;
+  const used = [...embedded.glyphs.keys()].sort((x, y) => x - y);
+
+  object(
+    ids.type0,
+    `<< /Type /Font /Subtype /Type0 /BaseFont ${name} /Encoding /Identity-H ` +
+      `/DescendantFonts [${ids.cidFont} 0 R] /ToUnicode ${ids.toUnicode} 0 R >>`,
+  );
+  // CID = glyph id (`/CIDToGIDMap /Identity`), so the widths are listed by
+  // glyph id. Only the glyphs the document uses need one.
+  object(
+    ids.cidFont,
+    `<< /Type /Font /Subtype /CIDFontType2 /BaseFont ${name} ` +
+      '/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> ' +
+      `/FontDescriptor ${ids.descriptor} 0 R /CIDToGIDMap /Identity ` +
+      `/W [ ${used.map((glyph) => `${glyph} [${num(toPdf(font.advance(glyph)))}]`).join(' ')} ] >>`,
+  );
+  object(
+    ids.descriptor,
+    `<< /Type /FontDescriptor /FontName ${name} /Flags ${font.flags} ` +
+      `/FontBBox [${font.bbox.map((value) => Math.round(toPdf(value))).join(' ')}] ` +
+      `/ItalicAngle ${num(font.italicAngle)} /Ascent ${Math.round(toPdf(font.ascender))} ` +
+      `/Descent ${Math.round(toPdf(font.descender))} /CapHeight ${Math.round(toPdf(font.capHeight))} ` +
+      `/StemV ${Math.round(font.stemV)} /FontFile2 ${ids.file} 0 R >>`,
+  );
+  streamObject(ids.file, `/Length1 ${font.length} /Filter /FlateDecode`, font.deflated);
+  streamObject(ids.toUnicode, '', encodeAscii(toUnicodeCMap(embedded.glyphs)));
+}
+
+/**
+ * The CMap that maps each glyph id back to its character, which is what lets
+ * a viewer copy and search text written as glyph ids. At most 100 entries per
+ * `bfchar` section, as the CMap format requires.
+ */
+function toUnicodeCMap(glyphs: Map<number, string>): string {
+  const entries = [...glyphs]
+    .filter(([, character]) => character !== '')
+    .sort(([x], [y]) => x - y)
+    .map(([glyph, character]) => `<${hex4(glyph)}> <${[...character].map((unit) => utf16Hex(unit)).join('')}>`);
+  let sections = '';
+  for (let start = 0; start < entries.length; start += 100) {
+    const chunk = entries.slice(start, start + 100);
+    sections += `${chunk.length} beginbfchar\n${chunk.join('\n')}\nendbfchar\n`;
+  }
+  return (
+    '/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n' +
+    '/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n' +
+    '/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n' +
+    '1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n' +
+    sections +
+    'endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n'
+  );
+}
+
+/** A glyph id as the four hex digits Identity-H text is written in. */
+function hex4(value: number): string {
+  return value.toString(16).toUpperCase().padStart(4, '0');
+}
+
+/** A character as UTF-16BE hex: four digits, or eight for a surrogate pair. */
+function utf16Hex(character: string): string {
+  let out = '';
+  for (let index = 0; index < character.length; index++) out += hex4(character.charCodeAt(index));
+  return out;
 }
 
 /**
@@ -225,10 +430,12 @@ export async function deflate(data: Bytes): Promise<Bytes> {
 
 /**
  * A number as PDF writes it: plain decimal, never exponent notation, to three
- * places. A thousandth of a point is far below anything a printer resolves.
+ * places by default. A thousandth of a point is far below anything a printer
+ * resolves. Matrix entries get five, because a small scale multiplies every
+ * coordinate it applies to.
  */
-function num(value: number): string {
-  const rounded = Number(value.toFixed(3));
+function num(value: number, places = 3): string {
+  const rounded = Number(value.toFixed(places));
   return Object.is(rounded, -0) ? '0' : String(rounded);
 }
 

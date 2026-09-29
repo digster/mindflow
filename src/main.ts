@@ -11,16 +11,22 @@ import './styles/app.css';
 import './render/shapes/index.ts';
 
 import { MindflowApp } from './app/app.ts';
+import { installBundledFonts } from './render/fonts.ts';
 
 declare const __APP_VERSION__: string;
 declare const __BUILD_TIME__: string;
 
-function boot(): void {
+async function boot(): Promise<void> {
   const root = document.getElementById('mf-root');
   if (!root) {
     console.error('[mindflow] #mf-root is missing from the page.');
     return;
   }
+
+  // Before the app exists, so the first layout already measures with the
+  // bundled fonts. It takes a few milliseconds, and never rejects: without the
+  // fonts, the app runs on the system fonts instead.
+  await installBundledFonts();
 
   try {
     const app = new MindflowApp(root);
@@ -54,7 +60,7 @@ function boot(): void {
 // `defer`-like behaviour without relying on script placement: the bundle is
 // inlined at the end of <body>, but this also covers a future move into <head>.
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', boot, { once: true });
+  document.addEventListener('DOMContentLoaded', () => void boot(), { once: true });
 } else {
-  boot();
+  void boot();
 }

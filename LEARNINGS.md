@@ -1380,3 +1380,54 @@ may be backed by a `SharedArrayBuffer`, and `BlobPart` accepts only views of an
 (`Uint8Array<ArrayBuffer>`), which is true of every array it creates. Casting
 at each `new Blob` would hide a real mismatch if one ever appeared.
 
+
+---
+
+## With kerning stripped, `measureText` is exactly the sum of the advances
+
+Before bundling fonts, it was not obvious the canvas could be predicted from
+a font file at all: HarfBuzz shapes canvas text, and hinting can round advances
+to whole pixels. Measured in Chromium with fontTools subsets stripped of GSUB,
+GPOS, kern and hinting, `measureText(s).width` equals
+`Σ advance × size ÷ unitsPerEm` to within 0.0025 px, for all four typefaces at
+9–72 px, including pairs that would kern ("AV", "To") or ligate ("fi").
+
+That equality is what everything else rests on: the published line-breaking
+rule, PDF text landing where the canvas drew it, and SVG text matching. So
+`test/e2e/fonts.spec.ts` checks it for every face. The failure it guards
+against is a regenerated font that still carries kerning: nothing else would
+notice, but every line would be a fraction of a pixel off in the PDF.
+
+---
+
+## `FontFace` from bytes makes no request, but it must finish before layout
+
+`new FontFace(name, arrayBuffer)` registers a font without any URL, so a page
+on `file://` with a zero-requests rule can still ship fonts. It loads
+asynchronously, though, and a canvas that measures before `face.load()`
+resolves silently measures with the fallback font. The first layout would then
+wrap differently from every later one. `main.ts` awaits the fonts before the
+app exists, which costs a few milliseconds at startup.
+
+Register faces with weight *ranges* (`1 549`, `550 1000`), not single weights.
+With single weights, a request for 500 is resolved by the browser's
+font-matching rules, and 700 against a 600 face may be synthesised bolder,
+which the PDF could never reproduce. Ranges make the answer one rule
+(`faceRole`) in both places.
+
+---
+
+## An exporter can take text from the canvas at one seam
+
+Every element's text goes through `drawTextBlock`. That is what made a PDF
+text layer possible without touching a shape module. `setTextSink(ctx, sink)`
+registers a callback, in a `WeakMap` keyed by context, that is offered each
+block with the context already set up to draw it, so `getTransform()`,
+`fillStyle` and `globalAlpha` describe the text exactly. Keep it the only way
+body text reaches a canvas. A shape that called `fillText` directly would
+simply be missing from PDF text.
+
+The trap it has to avoid: text drawn on top of a picture shows through
+anything that covered it on the board. The sink only takes a block when
+nothing painted later overlaps it, and it has to know which element is being
+painted, which is what `paintElements`' `beforeEach` hook is for.

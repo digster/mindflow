@@ -13,10 +13,12 @@
  * once per page.
  */
 
-import type { MindflowDocument, MindflowElement } from '../model/types.ts';
+import type { AABB, FontFamily, MindflowDocument, MindflowElement } from '../model/types.ts';
 import { frameContents } from '../model/frames.ts';
+import { elementWorldAABB } from '../model/geometry.ts';
 import { isFrame } from '../model/registry.ts';
 import { paintElements } from './export.ts';
+import { bundledFace, bundledFontsReady, type BundledFace } from './fonts.ts';
 import {
   fitToPage,
   pageContentBox,
@@ -26,8 +28,9 @@ import {
   type PageOrientation,
   type PageSizeId,
 } from './pdfLayout.ts';
-import { buildPdf, deflate, rgbaToRgb, type PdfPage } from './pdfWriter.ts';
-import { hasStroke } from './shapes/shared.ts';
+import { composeMatrix, parseCanvasColor, planText, type Matrix, type Rect } from './pdfText.ts';
+import { buildPdf, deflate, rgbaToRgb, type PdfFont, type PdfPage, type PdfTextBlock } from './pdfWriter.ts';
+import { hasStroke, setTextSink, type TextSink } from './shapes/shared.ts';
 
 export interface PdfExportOptions {
   /**
@@ -54,6 +57,12 @@ const PAPER = '#ffffff';
  * the frame. Other frames' members that merely overlap it are not on it. The
  * frame's name is not drawn, since it sits outside the box; it becomes the
  * page's bookmark instead.
+ *
+ * Shapes are painted into the page's picture. Text becomes real PDF text in
+ * the bundled fonts wherever `planText` finds that safe, and invisible text
+ * over the picture elsewhere. Without the bundled fonts (they failed to load),
+ * the canvas measured with system fonts the PDF cannot embed, so every page is
+ * a picture only.
  */
 export async function exportToPDF(
   document: MindflowDocument,
@@ -73,6 +82,8 @@ export async function exportToPDF(
 
   const size = pageSizeById(options.pageSize);
   const contents = frameContents(document);
+  const withText = bundledFontsReady();
+  const pdfFonts = new Map<BundledFace, PdfFont>();
   const canvas = window.document.createElement('canvas');
   // Opaque, because PDF has no use for the alpha channel (see `rgbaToRgb`).
   const ctx = canvas.getContext('2d', { alpha: false });
@@ -105,7 +116,58 @@ export async function exportToPDF(
 
       // In paint order, so a member below the frame stays below it here too.
       const onPage = contents.get(frame.id) ?? [frame];
-      paintElements(onPage, { ctx, zoom: Math.min(scaleX, scaleY), document, images, exporting: true });
+
+      // Scene to picture pixels, and picture pixels to the page in points
+      // with y up, which is how PDF places the text.
+      const toPixels = (box: AABB): Rect => ({
+        minX: (box.minX - content.x) * scaleX,
+        minY: (box.minY - content.y) * scaleY,
+        maxX: (box.maxX - content.x) * scaleX,
+        maxY: (box.maxY - content.y) * scaleY,
+      });
+      const pixelToPage: Matrix = [
+        layout.width / pixels.width,
+        0,
+        0,
+        -layout.height / pixels.height,
+        layout.x,
+        layout.pageHeight - layout.y,
+      ];
+
+      const text: PdfTextBlock[] = [];
+      let painting = 0;
+      if (withText) {
+        const frameBox = toPixels(elementWorldAABB(frame));
+        const boxes = onPage.map((element) => (element.visible ? toPixels(elementWorldAABB(element)) : null));
+        const sink: TextSink = (block, context) => {
+          const face = bundledFace(block.fontFamily, block.fontWeight);
+          const color = parseCanvasColor(String(context.fillStyle));
+          if (!face || !color) return false;
+          const alpha = context.globalAlpha * color.alpha;
+          const m = context.getTransform();
+          const plan = planText(block, face.font, [m.a, m.b, m.c, m.d, m.e, m.f], frameBox, boxes.slice(painting + 1));
+          if (!plan || alpha <= 0) return false;
+          text.push({
+            font: pdfFontFor(face, pdfFonts),
+            size: block.fontSize,
+            matrix: composeMatrix(pixelToPage, [m.a, m.b, m.c, m.d, m.e, m.f]),
+            color: color.rgb,
+            alpha,
+            invisible: plan.mode === 'hidden',
+            lines: plan.lines,
+          });
+          // Taken as text only when it is not also painted.
+          return plan.mode === 'text';
+        };
+        setTextSink(ctx, sink);
+      }
+      try {
+        paintElements(onPage, { ctx, zoom: Math.min(scaleX, scaleY), document, images, exporting: true }, (_, at) => {
+          painting = at;
+        });
+      } finally {
+        setTextSink(ctx, null);
+      }
 
       const { data } = ctx.getImageData(0, 0, pixels.width, pixels.height);
       pages.push({
@@ -113,6 +175,7 @@ export async function exportToPDF(
         height: layout.pageHeight,
         image: { width: pixels.width, height: pixels.height, data: await deflate(rgbaToRgb(data)) },
         placement: layout,
+        text,
         bookmark: frame.name.trim() || `Page ${index + 1}`,
       });
     }
@@ -124,4 +187,32 @@ export async function exportToPDF(
   }
 
   return new Blob(buildPdf(pages, { title: document.meta.name }), { type: 'application/pdf' });
+}
+
+/** FontDescriptor flags by family: non-symbolic, plus fixed pitch, serif or script. */
+const FONT_FLAGS: Record<FontFamily, number> = { sans: 32, serif: 32 | 2, mono: 32 | 1, hand: 32 | 8 };
+
+/** A bundled face as the PDF writer embeds it, made once per export. */
+function pdfFontFor(face: BundledFace, cache: Map<BundledFace, PdfFont>): PdfFont {
+  let font = cache.get(face);
+  if (!font) {
+    const { font: ttf } = face;
+    font = {
+      postScriptName: ttf.postScriptName,
+      deflated: face.deflated,
+      length: face.bytes.length,
+      unitsPerEm: ttf.unitsPerEm,
+      bbox: ttf.bbox,
+      ascender: ttf.ascender,
+      descender: ttf.descender,
+      capHeight: ttf.capHeight,
+      italicAngle: ttf.italicAngle,
+      flags: FONT_FLAGS[face.family],
+      // Only a hint for viewers that synthesise glyphs; the real ones are embedded.
+      stemV: face.role === 'bold' ? 120 : 80,
+      advance: (glyph) => ttf.advance(glyph),
+    };
+    cache.set(face, font);
+  }
+  return font;
 }

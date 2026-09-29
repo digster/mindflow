@@ -308,8 +308,8 @@ interfaces describe a shape the old file does not have.
 | Format | Contents |
 |---|---|
 | **PNG** | Raster, at 1×, 2× or 3×. Optionally transparent. |
-| **SVG** | Vector, self-contained (images inlined as data URIs). |
-| **PDF** | One page per frame, in reading order, each frame scaled to fit its page. A4, A3, US Letter or US Legal, turned per frame or fixed; 150 or 300 dpi. |
+| **SVG** | Vector, self-contained (images and the fonts its text uses inlined as data URIs). |
+| **PDF** | One page per frame, in reading order, each frame scaled to fit its page. A4, A3, US Letter or US Legal, turned per frame or fixed; 150 or 300 dpi. Text is real, searchable text in the embedded bundled fonts. |
 | **`.mindflow.json`** | The board itself — identical to Save. |
 
 Any export can be limited to the current selection. For a PDF that means the

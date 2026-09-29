@@ -60,12 +60,19 @@ const FRAME_STROKE = 2;
 
 /**
  * Puts frames and filled, unstroked rectangles on the board through the store,
- * the way the performance test seeds its board. Frames go below everything,
- * as drawing them first would put them.
+ * the way the performance test seeds its board. Everything goes on top of what
+ * is already there, and the frames below the rectangles, as drawing them first
+ * would put them.
  */
 async function seed(page: Page, frames: FrameSpec[], rects: RectSpec[]) {
   await page.evaluate(
     ({ frames, rects, stroke }) => {
+      const mf = (
+        window as unknown as {
+          mindflow: { store: { execute(command: unknown): void; document: { elements: { zIndex: number }[] } } };
+        }
+      ).mindflow;
+      const bottom = Math.max(0, ...mf.store.document.elements.map((element) => element.zIndex));
       const base = {
         angle: 0,
         opacity: 1,
@@ -80,7 +87,7 @@ async function seed(page: Page, frames: FrameSpec[], rects: RectSpec[]) {
           ...base,
           ...frame,
           type: 'frame',
-          zIndex: (index + 1) * 1000,
+          zIndex: bottom + (index + 1) * 1000,
           frameId: null,
           style: { stroke: '#adb5bd', strokeWidth: stroke, strokeStyle: 'solid', fill: '#ffffff', fillStyle: 'solid', roughness: 0 },
         })),
@@ -88,12 +95,11 @@ async function seed(page: Page, frames: FrameSpec[], rects: RectSpec[]) {
           ...base,
           ...rect,
           type: 'rectangle',
-          zIndex: (frames.length + index + 1) * 1000,
+          zIndex: bottom + (frames.length + index + 1) * 1000,
           cornerRadius: 0,
           style: { stroke: 'transparent', strokeWidth: 0, strokeStyle: 'solid', fill: rect.fill, fillStyle: 'solid', roughness: 0 },
         })),
       ];
-      const mf = (window as unknown as { mindflow: { store: { execute(command: unknown): void } } }).mindflow;
       mf.store.execute({
         label: 'seed',
         patches: elements.map((element) => ({ id: element.id, before: null, after: element })),
@@ -127,6 +133,44 @@ const MEMBERS: RectSpec[] = [
   // on Wide's page.
   { id: 'el_below', frameId: null, fill: BLACK, x: 450, y: 410, width: 100, height: 100 },
 ];
+
+interface StickySpec extends Box {
+  id: string;
+  frameId: string | null;
+  text: string;
+}
+
+/** Adds sticky notes on top of whatever is on the board, with their text. */
+async function seedStickies(page: Page, stickies: StickySpec[]) {
+  await page.evaluate((stickies) => {
+    const mf = (
+      window as unknown as { mindflow: { store: { execute(command: unknown): void; document: { elements: { zIndex: number }[] } } } }
+    ).mindflow;
+    let zIndex = Math.max(0, ...mf.store.document.elements.map((element) => element.zIndex));
+    const elements = stickies.map((sticky) => ({
+      ...sticky,
+      type: 'sticky',
+      angle: 0,
+      zIndex: (zIndex += 1000),
+      opacity: 1,
+      locked: false,
+      visible: true,
+      groupId: null,
+      label: null,
+      meta: {},
+      style: { stroke: 'transparent', strokeWidth: 0, strokeStyle: 'solid', fill: '#ffec99', fillStyle: 'solid', roughness: 0 },
+      fontFamily: 'sans',
+      fontSize: 20,
+      fontWeight: 400,
+      lineHeight: 1.25,
+      color: '#1e1e1e',
+      textAlign: 'left',
+      verticalAlign: 'top',
+      padding: 12,
+    }));
+    mf.store.execute({ label: 'seed', patches: elements.map((element) => ({ id: element.id, before: null, after: element })) });
+  }, stickies);
+}
 
 async function seedFramedBoard(page: Page) {
   // In an order that is not reading order, so the page order is the
@@ -164,6 +208,11 @@ interface PdfPageRead {
   /** Where the image is drawn, in points from the page's top-left corner. */
   placement: Box;
   image: { width: number; height: number; pixels: Buffer };
+  /**
+   * Each line of text on the page, decoded through its font's ToUnicode map,
+   * as a viewer's search and copy would read it.
+   */
+  text: { text: string; invisible: boolean; font: string }[];
   bookmark: string | undefined;
 }
 
@@ -220,6 +269,24 @@ function readPdf(buffer: Buffer): { title: string; pages: PdfPageRead[] } {
     const [, w, h, x, bottom] = /([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm/.exec(contents)!.map(Number) as number[];
     const image = objects.get(ref(page, 'Im0'))!;
     expect(image.dict).toContain('/ColorSpace /DeviceRGB');
+
+    // Each resource name's BaseFont and glyph-to-character map.
+    const fonts = new Map<string, { name: string; unicode: Map<string, string> }>();
+    for (const [, name, id] of /\/Font << ([^>]*) >>/.exec(page)?.[1]?.matchAll(/\/(F\d+) (\d+) 0 R/g) ?? []) {
+      const type0 = objects.get(Number(id))!.dict;
+      const cmap = objects.get(ref(type0, 'ToUnicode'))!.stream!.toString('latin1');
+      const unicode = new Map([...cmap.matchAll(/<([0-9A-F]{4})> <([0-9A-F]+)>/g)].map(([, glyph, code]) => [glyph!, code!]));
+      fonts.set(name!, { name: /\/BaseFont \/(\S+)/.exec(type0)![1]!, unicode });
+    }
+    const text: PdfPageRead['text'] = [];
+    for (const block of contents.split('q\n').slice(2)) {
+      const font = fonts.get(/\/(F\d+) [\d.]+ Tf/.exec(block)![1]!)!;
+      for (const [, hex] of block.matchAll(/<([0-9A-F]+)> Tj/g)) {
+        const characters = hex!.match(/.{4}/g)!.map((glyph) => String.fromCodePoint(parseInt(font.unicode.get(glyph)!, 16)));
+        text.push({ text: characters.join(''), invisible: block.includes('\n3 Tr\n'), font: font.name });
+      }
+    }
+
     return {
       width: width!,
       height: height!,
@@ -229,6 +296,7 @@ function readPdf(buffer: Buffer): { title: string; pages: PdfPageRead[] } {
         height: Number(/\/Height (\d+)/.exec(image.dict)![1]),
         pixels: inflateSync(image.stream!),
       },
+      text,
       bookmark: bookmarks.get(id),
     };
   });
@@ -462,6 +530,58 @@ test.describe('PDF export', () => {
     await page.locator(DIALOG).getByRole('button', { name: 'Export' }).click();
 
     await expect(page.locator('.mf-toast--error', { hasText: 'cannot create PDF files' })).toBeVisible();
+  });
+});
+
+test.describe('PDF text', () => {
+  const FRAME: FrameSpec = { id: 'fr_text', name: 'Text', x: 0, y: 0, width: 800, height: 450 };
+
+  test('writes text as real text in the bundled font, so it can be searched and copied', async ({ page }) => {
+    await seed(page, [FRAME], []);
+    await seedStickies(page, [
+      { id: 'el_note', frameId: FRAME.id, text: 'Ship the café plan — today', x: 50, y: 50, width: 300, height: 200 },
+    ]);
+    await openExport(page, 'pdf');
+    const [read] = readPdf((await exportAndDownload(page)).bytes).pages;
+
+    expect(read!.text).toEqual([{ text: 'Ship the café plan — today', invisible: false, font: 'Inter-Regular' }]);
+    // Drawn as text, so not also painted into the picture: the note is bare
+    // paper where its first letters would be.
+    expect(colourAt(read!, FRAME, [66, 72])).toBe('#ffec99');
+  });
+
+  test('keeps text that something covers in the picture, with an invisible copy to find it by', async ({ page }) => {
+    await seed(page, [FRAME], []);
+    await seedStickies(page, [{ id: 'el_note', frameId: FRAME.id, text: 'Under a shape', x: 50, y: 50, width: 300, height: 200 }]);
+    // A rectangle painted after the note, across its text.
+    await seed(page, [], [{ id: 'el_cover', frameId: FRAME.id, fill: BLUE, x: 100, y: 55, width: 60, height: 40 }]);
+
+    await openExport(page, 'pdf');
+    const [read] = readPdf((await exportAndDownload(page)).bytes).pages;
+    expect(read!.text).toEqual([{ text: 'Under a shape', invisible: true, font: 'Inter-Regular' }]);
+    expect(colourAt(read!, FRAME, [130, 75])).toBe(BLUE);
+  });
+
+  test('leaves text the bundled fonts cannot draw in the picture only', async ({ page }) => {
+    await seed(page, [FRAME], []);
+    await seedStickies(page, [{ id: 'el_note', frameId: FRAME.id, text: 'Привет', x: 50, y: 50, width: 300, height: 200 }]);
+    await openExport(page, 'pdf');
+    const [read] = readPdf((await exportAndDownload(page)).bytes).pages;
+    expect(read!.text).toEqual([]);
+  });
+
+  test('is only pictures when the bundled fonts could not be installed', async ({ page }) => {
+    // Text measured in a system font the PDF cannot embed would be misplaced.
+    await page.addInitScript(() => {
+      delete (window as unknown as { DecompressionStream?: unknown }).DecompressionStream;
+    });
+    await page.reload();
+    await page.waitForFunction(() => 'mindflow' in window);
+    await seed(page, [FRAME], []);
+    await seedStickies(page, [{ id: 'el_note', frameId: FRAME.id, text: 'System font', x: 50, y: 50, width: 300, height: 200 }]);
+    await openExport(page, 'pdf');
+    const [read] = readPdf((await exportAndDownload(page)).bytes).pages;
+    expect(read!.text).toEqual([]);
   });
 });
 

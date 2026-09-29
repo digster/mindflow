@@ -99,6 +99,9 @@ export const diamondDefinition: ElementDefinition<DiamondElement> = {
     ctx.lineTo(left.x, left.y);
     ctx.closePath();
     paintPath(ctx, el.style);
+    // Text always goes through `drawLabel` or `drawTextBlock`, never
+    // `ctx.fillText`: that is the one place PDF export picks text up as real,
+    // searchable text (see "Text" in 07-rendering.md).
     drawLabel(ctx, el);
   },
 

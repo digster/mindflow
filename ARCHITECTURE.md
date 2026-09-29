@@ -154,14 +154,15 @@ clip and the element transform in the same order as `Renderer.paintElement`, so
 neither export can drift from the screen. SVG is a second renderer; see
 LEARNINGS.md.
 
-**PDF export is one page per frame**, and is split three ways so that almost
-none of it needs a browser to test:
+**PDF export is one page per frame**, and is split so that almost none of it
+needs a browser to test:
 
 | Module | Job | Tested by |
 |---|---|---|
 | [`render/pdfLayout.ts`](src/render/pdfLayout.ts) | Page order, fit-to-page, orientation, raster size. Pure, and published in `docs/07-rendering.md#pdf`. | `pdfLayout.test.ts` |
-| [`render/pdfWriter.ts`](src/render/pdfWriter.ts) | Serialises pages to PDF 1.4. Pure. | `pdfWriter.test.ts`, which reads the output through the xref table like a real reader |
-| [`render/exportPdf.ts`](src/render/exportPdf.ts) | Glue: paints each frame on one reused offscreen canvas and hands the pixels to the writer. | `test/e2e/export.spec.ts`, which parses the downloaded file in Node |
+| [`render/pdfWriter.ts`](src/render/pdfWriter.ts) | Serialises pages, text and embedded fonts to PDF 1.4. Pure. | `pdfWriter.test.ts`, which reads the output through the xref table like a real reader |
+| [`render/pdfText.ts`](src/render/pdfText.ts) | Decides which text blocks become real text, invisible text, or pixels only. Pure, and published in `docs/07-rendering.md#text`. | `pdfText.test.ts` |
+| [`render/exportPdf.ts`](src/render/exportPdf.ts) | Glue: paints each frame on one reused offscreen canvas, collects its text through the text sink, and hands both to the writer. | `test/e2e/export.spec.ts`, which parses the downloaded file in Node, text included |
 
 What goes on a frame's page is `frameContents` in
 [`model/frames.ts`](src/model/frames.ts). That is the frame's members, plus any
@@ -174,11 +175,17 @@ Three decisions shape it:
 - **The writer is hand-written.** The shipped page has no runtime dependencies,
   and a PDF library would be tens of kilobytes of third-party code for what is
   numbered objects, a byte-offset table and one image per page.
-- **Pages are pictures, not vectors.** Vector text needs the font's glyph
-  widths, and a page cannot read the system fonts the canvas wrapped its lines
-  with. A third renderer would disagree with the other two on every line break.
-  A 300 dpi picture from the shape modules matches the screen. The text cannot
-  be selected, which is the accepted cost.
+- **Shapes are pictures; text is text.** A 300 dpi picture from the shape
+  modules matches the screen, and a vector page would be a third renderer.
+  Text is where vectors matter (search, copy, sharpness), and it can be real
+  text only because the fonts are bundled: the PDF embeds the same files the
+  canvas measured with, so lines land exactly where the canvas put them.
+- **Text is captured at one seam.** Every element's text goes through
+  `drawTextBlock` in `render/shapes/shared.ts`. During export, the PDF's
+  canvas has a *text sink* registered for it (`setTextSink`, a `WeakMap` keyed
+  by context), which is offered each block with the context set up to draw
+  it: transform, colour and alpha. If the sink takes the block, the canvas
+  skips it. No shape module knows, and the on-screen canvas never has a sink.
 - **Compression is the browser's.** `CompressionStream('deflate')` produces
   zlib, which is exactly what PDF's `FlateDecode` reads, so pixels go in
   losslessly with no encoder in the bundle. Flat colours compress well: a
@@ -350,6 +357,47 @@ Cmd/Ctrl chords still reach the app. It also takes Escape on `window` in the
 handler does not read `defaultPrevented`, so `preventDefault` alone isolates
 nothing.
 
+## Fonts
+
+MindFlow ships its typefaces: Inter, Noto Serif, JetBrains Mono and Kalam, a
+regular and a bold face each (`docs/07-rendering.md#fonts`). Before, text was
+set in whatever the system had, so the published wrapping algorithm broke lines
+differently on every OS, and a PDF could not carry real text.
+
+- **Generated, then committed.** [`scripts/build-fonts.py`](scripts/build-fonts.py)
+  subsets the `@expo-google-fonts/*` devDependencies with fontTools
+  (`npm run fonts`, which runs it under uv) and writes `src/fonts/*.ttf` plus
+  their licences. Like `icons.ts`, the output is committed and the build never
+  runs the script. It is deterministic: an unchanged input gives identical
+  bytes.
+- **No kerning, ligatures or hinting.** The generator removes GSUB, GPOS, kern
+  and the hinting tables. A string's width is then exactly the sum of its
+  advances in every engine, which is what makes line breaks reproducible from
+  the spec and PDF text land where the canvas drew it.
+  `test/e2e/fonts.spec.ts` checks the canvas against the files for all eight
+  faces.
+- **Inlined, compressed, never fetched.** `build.mjs`'s font plugin turns each
+  `.ttf` import into a base64 string of the zlib-compressed file (about 180 kB
+  for all eight). [`render/fonts.ts`](src/render/fonts.ts) inflates them with
+  `DecompressionStream` and registers them with `new FontFace(name, bytes)`,
+  which makes no request, so `file://` and the zero-requests rule are
+  unaffected. The zlib bytes are exactly what a PDF `FlateDecode` stream holds,
+  so the PDF writer embeds them without recompressing.
+- **Installed before the app exists.** `main.ts` awaits `installBundledFonts`
+  before constructing `MindflowApp`, so no layout ever measures with a
+  fallback font. It never rejects. Without the fonts the app runs on the
+  system fonts later in each stack, and the PDF writer switches its text layer
+  off (`bundledFontsReady`).
+- **One rule picks the face.** Weights below `BOLD_FACE_WEIGHT` (550) use the
+  regular face and the rest the bold one. The faces are registered with the
+  weight *ranges* `1 549` and `550 1000`, so the browser never synthesises
+  bold or applies its own matching rules, and the PDF writer uses `faceRole`,
+  the same rule.
+- **Our own family names** (`MindFlow Sans` and so on), so an installed copy of
+  Inter, perhaps another version, is never picked instead.
+- [`render/ttf.ts`](src/render/ttf.ts) reads the `cmap`, `hmtx` and metric
+  tables the PDF writer needs. It is pure, and tested against the committed files.
+
 ## Text editing
 
 The highest-risk code in the app: two independent text layout engines — Canvas 2D
@@ -423,6 +471,7 @@ npm run build       # → self-contained index.html at the repo root
 npm run dev         # watch + rebuild; open index.html directly, refresh manually
 npm run serve       # watch + http://localhost:8000 (needed for Drive: no OAuth on file://)
 
+npm run fonts       # regenerate src/fonts/*.ttf (needs uv); only after a manifest edit
 npm run typecheck   # tsc --noEmit; esbuild does not type-check
 npm test            # vitest — pure logic, node environment, no DOM
 npm run test:e2e    # playwright against the BUILT index.html over file://
@@ -495,8 +544,13 @@ It cannot check prose. That part is on the author.
 Runtime: **none.** The shipped page contains no third-party code.
 
 Development: esbuild (bundling), TypeScript (checking), Vitest + Ajv (unit and
-contract tests), Playwright (e2e). Nothing is loaded from a CDN at runtime — a
+contract tests), Playwright (e2e), and fontTools under uv for `npm run fonts`
+only. Nothing is loaded from a CDN at runtime — a
 strict requirement, since the page must work offline and from a local file.
+
+Fonts are Inter, Noto Serif, JetBrains Mono and Kalam, under the SIL Open Font
+License 1.1 ([`src/fonts/LICENSES.md`](src/fonts/LICENSES.md)), subset at
+generation time. See [Fonts](#fonts).
 
 Icons are from [Lucide](https://lucide.dev) ([ISC](https://github.com/lucide-icons/lucide/blob/main/LICENSE)),
 extracted at build time rather than fetched at runtime.

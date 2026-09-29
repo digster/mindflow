@@ -620,6 +620,37 @@ describe('1.6.0 → 1.6.1: hyphen wrapping', () => {
   });
 });
 
+/**
+ * 1.6.2 names the typefaces text is set in. As with 1.6.1, nothing that
+ * depends on them is stored, so a 1.6.1 board comes through unchanged.
+ */
+describe('1.6.1 → 1.6.2: bundled fonts', () => {
+  it('upgrades a 1.6.1 board quietly and leaves its text alone', () => {
+    const board = {
+      type: 'mindflow.board',
+      schemaVersion: '1.6.1',
+      elements: [
+        {
+          id: 'el_note',
+          type: 'text',
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 25,
+          text: 'set in a system font',
+          fontFamily: 'hand',
+          fontWeight: 700,
+        },
+      ],
+    };
+    const { document, warnings } = loadDocument(JSON.stringify(board));
+    expect(warnings.find((warning) => warning.message.includes('1.6.1 → 1.6.2'))?.level).toBe('info');
+    expect(warnings.filter((warning) => warning.level !== 'info')).toEqual([]);
+    expect(document.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(document.elements[0]).toMatchObject({ text: 'set in a system font', fontFamily: 'hand', fontWeight: 700, width: 120 });
+  });
+});
+
 function stripUpdatedAt(json: string): unknown {
   const parsed = JSON.parse(json) as { meta: { updatedAt?: string } };
   delete parsed.meta.updatedAt;
