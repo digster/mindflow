@@ -205,6 +205,7 @@ list.
 | `Cmd` `0` / `Cmd` `1` | Reset zoom / Zoom to fit |
 | `Cmd` `S` / `Cmd` `O` / `Cmd` `Shift` `E` | Save / Open / Export |
 | `Shift` / `Alt` while dragging | Constrain / From centre, or suspend snapping |
+| `Shift` or `Cmd` + click | Add to or remove from the selection (`Ctrl` off macOS) |
 | Right-click | Context menu (and the way to select a locked element) |
 
 A locked element is scenery — clicks pass through it and a marquee ignores it.

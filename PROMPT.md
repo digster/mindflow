@@ -587,3 +587,15 @@ Answered in chat, with no code change. The decision is whether to keep Inter,
 Noto Serif, JetBrains Mono and Kalam. Changing them before this branch merges
 keeps the change inside format 1.6.2; after it merges, a change needs another
 format patch.
+
+---
+
+## 2026-09-30 — Cmd-click multi-select
+
+> I am not able to select multiple objects using command key + left click.
+> Click selecting the next object deselects the previous one.
+
+Only `Shift` counted as "add to the selection". `Cmd`-click on a Mac (and
+`Ctrl`-click elsewhere) now toggles the clicked element in or out, and the same
+modifier on a marquee adds what it contains. `Ctrl`-click on a Mac stays out of
+it, because there it is the secondary click that opens the context menu.

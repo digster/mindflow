@@ -149,6 +149,7 @@ npm run check       # typecheck + test + build
 | Page zoom on touch (must stay blocked) | `src/input/pageZoom.ts` + `touch-action` in `src/styles/app.css` |
 | Connector routing | `src/input/binding.ts` + `docs/07-rendering.md` |
 | A keyboard shortcut | `src/input/keyboard.ts` (and its `SHORTCUT_REFERENCE`) |
+| Which modifier adds to the selection (Shift, Cmd on a Mac, Ctrl elsewhere) | `isAdditiveSelect` in `src/input/modifiers.ts` |
 | Drive behaviour | `src/io/drive/` + `docs/08-google-drive.md` |
 | Save ordering, or the Save button's spinner | `src/app/saveQueue.ts`, `requestSave` in `src/app/app.ts`, `setSaving` in `src/ui/toolbar.ts` |
 | What a finished save records (dirty flag, origin, recent copy) | `completeSave` in `src/store/store.ts`, `recordSave` in `src/app/app.ts` |
