@@ -92,13 +92,17 @@ On `pointerdown`, in this order:
 2. **An element** — select it and prepare to move.
 3. **Empty canvas** — start a marquee.
 
-Holding `Shift` toggles the clicked element in or out of the selection instead of
-replacing it.
+Holding `Shift`, or `Cmd` on macOS and `Ctrl` elsewhere, toggles the clicked
+element in or out of the selection instead of replacing it.
 
 ## Selection
 
 - Clicking an element selects it, replacing the current selection.
-- `Shift`-click adds or removes.
+- `Shift`-click or `Cmd`-click (`Ctrl`-click off macOS) adds or removes. The
+  same modifiers on a marquee add what it contains to the selection.
+- `Ctrl`-click on macOS is **not** a multi-select chord. It is the platform's
+  secondary click, which opens the context menu, and toggling the element out of
+  the selection first would leave the menu acting on the wrong thing.
 - Dragging on empty canvas draws a marquee. Default mode is **contain**: an
   element must lie entirely inside the box. That is what makes dragging across a
   dense board feel precise.

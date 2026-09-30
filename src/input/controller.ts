@@ -78,6 +78,7 @@ import {
 } from './hitTest.ts';
 import { enrolInFrames, reassignFrames, withFrameMembers } from '../model/frames.ts';
 import { computeSnap } from './snapping.ts';
+import { isAdditiveSelect } from './modifiers.ts';
 import { type PinchPair, pinchViewport } from './pinch.ts';
 import {
   BIND_DISTANCE,
@@ -183,6 +184,11 @@ export interface ControllerOptions {
    * here". `hit` is whatever was under the pointer, locked elements included.
    */
   onContextMenu?: (context: { scene: Point; screen: Point; hit: MindflowElement | null }) => void;
+  /**
+   * Whether this is a Mac, which decides the multi-select modifier: `Cmd` there,
+   * `Ctrl` elsewhere. See {@link isAdditiveSelect}.
+   */
+  isMac: boolean;
 }
 
 export class InteractionController {
@@ -401,6 +407,9 @@ export class InteractionController {
    *   2. an element        — select and prepare to move
    *   3. empty canvas      — marquee
    *
+   * `Shift`, or `Cmd` on a Mac and `Ctrl` elsewhere, makes 2 toggle the element
+   * and 3 add to the selection instead of replacing it ({@link isAdditiveSelect}).
+   *
    * A locked element can be selected (see {@link onContextMenu}) but never
    * transformed, so a selection containing one offers no handles and starts no
    * move — the only thing it accepts is being unlocked.
@@ -444,7 +453,7 @@ export class InteractionController {
     }
 
     const hit = elementAt(store.document, scene, zoom, { tolerancePx: this.tolerancePx() });
-    const additive = event.shiftKey;
+    const additive = isAdditiveSelect(event, this.options.isMac);
 
     if (!hit) {
       if (!additive) store.clearSelection();

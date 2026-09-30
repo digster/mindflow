@@ -314,6 +314,93 @@ test.describe('selection and editing', () => {
     expect(selected).toBe(2);
   });
 
+  test.describe('adding to the selection', () => {
+    /**
+     * Draws two stickies side by side and leaves nothing selected, returning
+     * their ids left to right.
+     *
+     * Stickies because they are filled: an unfilled shape is hollow to a click
+     * on its interior, so a click that missed would pass for a deselect.
+     */
+    async function twoStickies(page: Page): Promise<[string, string]> {
+      for (const x of [100, 300]) {
+        await page.locator('[data-tool="sticky"]').click();
+        await drag(page, [x, 100], [x + 100, 200]);
+      }
+      await page.keyboard.press('Escape');
+      const [left, right] = (await getDocument(page)).elements.map((element) => element.id as string);
+      return [left!, right!];
+    }
+
+    /** The selected ids, sorted so an assertion does not depend on click order. */
+    async function selectedIds(page: Page) {
+      const ids = await page.evaluate(() =>
+        (window as unknown as { mindflow: { store: { selectedIds(): string[] } } }).mindflow.store.selectedIds(),
+      );
+      return [...ids].sort();
+    }
+
+    /** Clicks at canvas-relative coordinates, holding `modifier` if one is given. */
+    async function clickWith(page: Page, modifier: string | null, at: [number, number]) {
+      const box = await canvasBox(page);
+      if (modifier) await page.keyboard.down(modifier);
+      await page.mouse.click(box.x + at[0], box.y + at[1]);
+      if (modifier) await page.keyboard.up(modifier);
+    }
+
+    // `ControlOrMeta` is Ctrl here, which is the primary modifier off a Mac;
+    // the Mac mapping has its own test below.
+    for (const modifier of ['Shift', 'ControlOrMeta']) {
+      test(`${modifier}-click adds an element, and removes it again`, async ({ page }) => {
+        const [left, right] = await twoStickies(page);
+
+        await clickWith(page, null, [150, 150]);
+        await clickWith(page, modifier, [350, 150]);
+        expect(await selectedIds(page)).toEqual([left, right].sort());
+
+        await clickWith(page, modifier, [150, 150]);
+        expect(await selectedIds(page)).toEqual([right]);
+      });
+
+      test(`${modifier}-drag on empty canvas adds a marquee to the selection`, async ({ page }) => {
+        const [left, right] = await twoStickies(page);
+
+        await clickWith(page, null, [150, 150]);
+        await page.keyboard.down(modifier);
+        await drag(page, [280, 60], [440, 240]);
+        await page.keyboard.up(modifier);
+        expect(await selectedIds(page)).toEqual([left, right].sort());
+      });
+    }
+
+    test('a plain click still replaces the selection', async ({ page }) => {
+      const [, right] = await twoStickies(page);
+
+      await clickWith(page, null, [150, 150]);
+      await clickWith(page, null, [350, 150]);
+      expect(await selectedIds(page)).toEqual([right]);
+    });
+
+    test('on a Mac, Cmd-click adds and Ctrl-click does not', async ({ page }) => {
+      // `IS_MAC` is read from `navigator.platform` once, at load.
+      await page.addInitScript(() => {
+        Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'MacIntel' });
+      });
+      await page.reload();
+      await page.waitForFunction(() => 'mindflow' in window);
+      const [left, right] = await twoStickies(page);
+
+      await clickWith(page, null, [150, 150]);
+      await clickWith(page, 'Meta', [350, 150]);
+      expect(await selectedIds(page)).toEqual([left, right].sort());
+
+      // Ctrl-click is the secondary click on a Mac. It must not quietly toggle
+      // an element out of the selection the context menu is about to act on.
+      await clickWith(page, 'Control', [150, 150]);
+      expect(await selectedIds(page)).toEqual([left, right].sort());
+    });
+  });
+
   test('deletes the selection', async ({ page }) => {
     await page.locator('[data-tool="rectangle"]').click();
     await drag(page, [100, 100], [200, 200]);

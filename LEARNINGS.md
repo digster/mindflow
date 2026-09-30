@@ -1431,3 +1431,21 @@ The trap it has to avoid: text drawn on top of a picture shows through
 anything that covered it on the board. The sink only takes a block when
 nothing painted later overlaps it, and it has to know which element is being
 painted, which is what `paintElements`' `beforeEach` hook is for.
+
+---
+
+## On a Mac, `Ctrl`-click is a right-click that arrives as a left one
+
+The multi-select chord is `Cmd` on a Mac and `Ctrl` elsewhere, so the tempting
+rule is `metaKey || ctrlKey`, the one `keyboard.ts` uses for shortcuts. For a
+click it is wrong. macOS turns `Ctrl`-click into the secondary click, and
+browsers (Chrome and Firefox at least) report a `pointerdown` with
+`button === 0` and `ctrlKey` set, *then* fire `contextmenu`. A rule that counted `ctrlKey` would toggle the clicked
+element out of the selection just before the menu opens on it.
+`isAdditiveSelect` in `src/input/modifiers.ts` therefore takes the platform as
+an argument and reads `metaKey` on a Mac and `ctrlKey` elsewhere.
+
+The e2e suite runs Chromium on Linux, where `ControlOrMeta` is `Control`. To
+reach the Mac branch a test overrides `Navigator.prototype.platform` in
+`addInitScript` and reloads. `IS_MAC` is read once at load, so setting it
+after the page has booted does nothing.

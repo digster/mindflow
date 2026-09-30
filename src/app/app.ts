@@ -75,7 +75,7 @@ import {
   deleteBoard,
   type DriveBoard,
 } from '../io/drive/sync.ts';
-import { el } from '../ui/dom.ts';
+import { el, IS_MAC } from '../ui/dom.ts';
 
 /** A board as a save writes it, plus the ticket saying which state that was. */
 interface SaveSnapshot {
@@ -148,6 +148,7 @@ export class MindflowApp {
       onRequestImage: (point) => void this.insertImageAtPoint(point),
       onContextMenu: ({ scene, screen, hit }) =>
         showContextMenu({ store: this.store, actions: this.actions, scene, screen, hit }),
+      isMac: IS_MAC,
     });
 
     // Held as a field rather than passed inline: the command palette renders the
