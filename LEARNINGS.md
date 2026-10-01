@@ -1474,3 +1474,37 @@ editing can leak into a PNG or PDF.
 The e2e test reads the canvas's own backing store under the open editor with a
 light-grey threshold. `inkIn`'s default of 110 is tuned for typed text and
 would not see a 40% placeholder at all, so the test would pass with the bug.
+
+---
+
+## "Delete it if it is left empty" needs the creation to stay off the undo stack
+
+**Symptom it avoids:** a text box clicked into existence and abandoned either
+leaves an undo step that resurrects an invisible box, or leaves the board
+asking to save changes nobody made.
+
+**Why the obvious fix fails.** The text tool used to record "Add text" the
+moment it was clicked, then open the editor. Deleting a blank box on close
+from there means a second step, "Delete". Undo then reverses the delete and
+restores the empty, invisible box. The order was also wrong for the typed
+case: "Add text" then "Edit text" meant one undo removed the typing and left
+an empty box behind.
+
+**What works:** the new element is *provisional*. `TextEditor.create` adds it
+with a **transient** command, and `commit` resolves it. With text, the
+transient add is taken back and the element is recorded as one "Add text".
+Blank, it is taken back and nothing is recorded. This only holds because
+nothing else can be recorded while the editor is open, since every press
+outside it commits first. If that ever changes, a command recorded mid-session
+would refer to an element that was never on the undo stack.
+
+**The second trap: transient commands still mark the board dirty.** That is
+right for a gesture in progress, and wrong for one rewound completely.
+`Store.restoreDirty(checkpoint)` puts the flag back, but only when nothing the
+flag answers for happened since: a recorded command, an undo or redo, a save,
+or another board (the store's `settled` counter, plus the board generation).
+A save mid-session is the case that matters, because the file then holds the
+provisional element and the board no longer does. Restoring "clean" there would
+hide a real difference. Comparing documents instead would not work either:
+`applyCommand` stamps `meta.updatedAt`, so a rewound document never compares
+equal.

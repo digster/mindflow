@@ -122,6 +122,16 @@ export interface SaveTicket {
 }
 
 /**
+ * The unsaved-changes flag at one moment, for {@link Store.restoreDirty}.
+ * Only the store reads the fields.
+ */
+export interface DirtyCheckpoint {
+  readonly dirty: boolean;
+  readonly generation: number;
+  readonly settled: number;
+}
+
+/**
  * What a landed save recorded. See {@link Store.completeSave}.
  *
  * - `clean`: the board on screen is exactly what was written, and is now saved.
@@ -166,6 +176,12 @@ export class Store {
   private revision = 0;
   /** The board most recently replaced by a load or a new board, as it was then. */
   private departed: SaveTicket | null = null;
+  /**
+   * Counts everything the dirty flag answers for *except* transient edits:
+   * recorded commands, undo, redo, saves and an explicit `markDirty`. A
+   * {@link DirtyCheckpoint} holds only while this is unchanged.
+   */
+  private settled = 0;
 
   constructor(document: MindflowDocument = createDocument()) {
     this.state = {
@@ -221,7 +237,10 @@ export class Store {
     if (next === this.state.document) return false;
 
     this.state.document = next;
-    if (!transient) this.history.push(command);
+    if (!transient) {
+      this.history.push(command);
+      this.settled++;
+    }
     this.markEdited();
 
     // Fractional z-indices can converge after enough insertions in one spot.
@@ -242,6 +261,7 @@ export class Store {
     const next = this.history.undo(this.state.document);
     if (!next) return false;
     this.state.document = next;
+    this.settled++;
     this.markEdited();
     this.pruneSelection();
     this.emit('document');
@@ -252,6 +272,7 @@ export class Store {
     const next = this.history.redo(this.state.document);
     if (!next) return false;
     this.state.document = next;
+    this.settled++;
     this.markEdited();
     this.pruneSelection();
     this.emit('document');
@@ -265,6 +286,37 @@ export class Store {
   private markEdited(): void {
     this.state.dirty = true;
     this.revision++;
+  }
+
+  /** Captures the unsaved-changes flag, for {@link restoreDirty}. */
+  dirtyCheckpoint(): DirtyCheckpoint {
+    return { dirty: this.state.dirty, generation: this.generation, settled: this.settled };
+  }
+
+  /**
+   * Puts the unsaved-changes flag back as it was at `checkpoint`, after an edit
+   * that was only ever applied transiently has been rewound completely.
+   *
+   * A transient command marks the board dirty like any other, which is right
+   * for a gesture still in progress. An edit rewound without ever reaching the
+   * undo stack leaves the board as it was, though, and a dirty flag left behind
+   * would ask "Discard unsaved changes?" about nothing. The text editor uses
+   * this for a new text box closed without typing.
+   *
+   * Refused, returning false, when anything the flag answers for happened since
+   * the checkpoint: a recorded command, an undo or redo, a save, or another
+   * board. The flag then describes a real change and stays. Rewinding the
+   * transient edits is the caller's job, and must come first.
+   */
+  restoreDirty(checkpoint: DirtyCheckpoint): boolean {
+    if (checkpoint.generation !== this.generation || checkpoint.settled !== this.settled) return false;
+    if (this.state.dirty !== checkpoint.dirty) {
+      this.state.dirty = checkpoint.dirty;
+      // `document`, as `markDirty` uses, so the Save button and the
+      // recent-boards copy both pick up the flag.
+      this.emit('document');
+    }
+    return true;
   }
 
   /**
@@ -390,6 +442,7 @@ export class Store {
 
   setOrigin(origin: BoardOrigin): void {
     this.state.origin = origin;
+    this.settled++;
     this.emit('origin');
   }
 
@@ -407,6 +460,7 @@ export class Store {
     // Counted even when already dirty: whatever prompted the call may differ
     // from what a save in flight is writing.
     this.revision++;
+    this.settled++;
     if (this.state.dirty) return;
     this.state.dirty = true;
     this.emit('document');
@@ -443,6 +497,7 @@ export class Store {
   markSaved(origin?: BoardOrigin): void {
     this.state.document = { ...this.state.document, viewport: { ...this.state.viewport } };
     this.state.dirty = false;
+    this.settled++;
     if (origin) this.state.origin = origin;
     this.emit('saved');
   }

@@ -263,6 +263,22 @@ export interface ElementDefinition<T extends MindflowElement = MindflowElement> 
   wrapsText?(el: T): boolean;
 
   /**
+   * Whether `el` has nothing to show and nothing worth keeping. Optional;
+   * omitting it means never.
+   *
+   * A text edit that ends with the element blank deletes it, the way a text box
+   * closed without typing disappears in other drawing tools rather than staying
+   * on the board, invisible. Only a type that is nothing but its text can be
+   * blank: a sticky note with no text is still a note, and a shape with an
+   * empty label is still a shape.
+   *
+   * A hook rather than a capability flag because the answer depends on a
+   * field. Read through {@link isBlankElement}, which the text editor asks
+   * instead of branching on `type`.
+   */
+  isBlank?(el: T): boolean;
+
+  /**
    * Draggable dividers *inside* the element, for types whose box is subdivided.
    *
    * Deliberately not modelled as extra selection handles: those describe the
@@ -463,6 +479,11 @@ export function drawElement(el: MindflowElement, render: RenderContext): void {
 
 export function hitTestElement(el: MindflowElement, local: Point, tolerance: number): boolean {
   return getDefinition(el.type).hitTest(el as never, local, tolerance);
+}
+
+/** Whether `el` is blank by its type's {@link ElementDefinition.isBlank}; false when the type has none. */
+export function isBlankElement(el: MindflowElement): boolean {
+  return findDefinition(el.type)?.isBlank?.(el) ?? false;
 }
 
 /**

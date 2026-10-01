@@ -143,6 +143,7 @@ export class MindflowApp {
       canvas: this.canvas,
       store: this.store,
       onEditText: (element, regionKey) => this.textEditor.open(element, regionKey),
+      onCreateText: (element) => this.textEditor.create(element),
       onRenameFrame: (frame) => this.frameNameEditor.open(frame),
       onCommitText: () => this.commitEditing(),
       onOverlayChange: () => this.renderer.invalidate(),

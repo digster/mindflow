@@ -1,19 +1,21 @@
 /**
- * The on-screen marker for a text element with nothing visible to draw.
+ * Blank text: which elements count as blank, and the on-screen marker for one.
  *
- * A text box nobody typed into paints nothing, so before the marker existed it
- * was on the board, selectable and saved, and invisible. What is pinned here is
- * when the marker appears, and that it never reaches an export or sits under
- * the open editor. How it looks is checked in a browser by the e2e suite.
+ * A text element with no visible text paints nothing. The text editor deletes
+ * one that an edit leaves blank, through the registry's `isBlank`. One can still
+ * arrive in a file, a paste or an undo, and the marker is what makes it
+ * findable then. What is pinned here is when each applies, and that the marker
+ * never reaches an export or sits under the open editor. How it looks, and the
+ * deletion itself, are checked in a browser by the e2e suite.
  */
 
 import { describe, expect, it } from 'vitest';
 
 import '../../src/render/shapes/index.ts';
 import { createDocument } from '../../src/model/defaults.ts';
-import { getDefinition, type RenderContext } from '../../src/model/registry.ts';
-import type { TextElement } from '../../src/model/types.ts';
-import { TEXT_PLACEHOLDER, blankTextMarker } from '../../src/render/shapes/text.ts';
+import { getDefinition, isBlankElement, type RenderContext } from '../../src/model/registry.ts';
+import type { MindflowElement, TextElement } from '../../src/model/types.ts';
+import { TEXT_PLACEHOLDER, blankTextMarker, isBlankText } from '../../src/render/shapes/text.ts';
 
 const text = getDefinition('text');
 
@@ -58,6 +60,34 @@ function draw(el: TextElement, options: Pick<RenderContext, 'exporting' | 'editi
   });
   return calls;
 }
+
+describe('which elements are blank', () => {
+  it('counts empty text, and text of nothing but spaces and line breaks', () => {
+    for (const content of ['', '   ', '\n\n', '\t', ' \n ', '\u00a0', '\u3000']) {
+      expect(isBlankText(content), JSON.stringify(content)).toBe(true);
+      expect(isBlankElement(textElement(content)), JSON.stringify(content)).toBe(true);
+    }
+  });
+
+  it('does not count text a viewer can see', () => {
+    for (const content of ['a', ' a ', '\n.\n', '-']) {
+      expect(isBlankText(content), JSON.stringify(content)).toBe(false);
+      expect(isBlankElement(textElement(content)), JSON.stringify(content)).toBe(false);
+    }
+  });
+
+  it('never counts a type that is more than its text', () => {
+    // An empty note is still a note, and an unlabelled shape still a shape.
+    for (const type of ['sticky', 'rectangle', 'table', 'frame']) {
+      const element = getDefinition(type).create({ x: 0, y: 0, zIndex: 1 }) as MindflowElement;
+      expect(isBlankElement({ ...element, text: '' } as MindflowElement), type).toBe(false);
+    }
+  });
+
+  it('answers false for a type nothing registered, rather than throwing', () => {
+    expect(isBlankElement({ ...textElement(''), type: 'hologram' } as unknown as MindflowElement)).toBe(false);
+  });
+});
 
 describe('which text elements are marked', () => {
   it('marks an empty one', () => {

@@ -310,6 +310,16 @@ checking the type, and it has to agree with the canvas exactly, or the text
 visibly reflows as editing starts. So `wrapsText` must give the same answer
 `draw` uses for its `maxWidth`.
 
+A type that is nothing but its text implements one more:
+
+```ts
+isBlank(el)          // true when there is nothing to show or keep; omitted means never
+```
+
+A text edit that ends with the element blank deletes it rather than leaving an
+invisible element on the board. `text` answers true for text that is empty or
+only whitespace. A sticky note leaves it out: with no text it is still a note.
+
 ### Label placement
 
 A type whose text does not belong in the centre of its box implements one

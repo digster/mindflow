@@ -33,9 +33,9 @@ cylinder, cone and pyramid. Flat shapes can render clean or hand-drawn.
 **Editing** — move, resize and rotate (including correct rotated resizing),
 multi-select, marquee, grouping, frames that clip and move their contents (and
 rename in place with a double-click on the name), align and distribute, z-order,
-in-place text editing (a text box left empty stays visible as a dashed
-placeholder, on screen only), full undo/redo, clipboard with cross-tab support,
-and a style clipboard that copies appearance without content.
+in-place text editing (a text box closed empty is deleted, as in other drawing
+tools), full undo/redo, clipboard with cross-tab support, and a style clipboard
+that copies appearance without content.
 
 **Tables** — cell-by-cell editing with `Tab` to move on, draggable column and row
 dividers, and insert/delete for rows and columns from the right-click menu.

@@ -19,7 +19,7 @@ Reference implementation: [`src/input/controller.ts`](../src/input/controller.ts
 | Line | `L` | Drag from start to end. |
 | Arrow | `A` | Drag from start to end; binds to shapes at either end. |
 | Draw | `P` | Drag to draw freehand. |
-| Text | `T` | Click to place and start typing. Left empty, it stays, marked on screen; see [An empty text box](#an-empty-text-box). |
+| Text | `T` | Click to place and start typing. Closed empty, it is deleted; see [An empty text box](#an-empty-text-box). |
 | Sticky note | `N` | Drag to size, or click for a default 160 × 160. |
 | Table | `B` | Drag to size, or click for a default 3 × 3 at 360 × 120. |
 | Frame | `F` | Drag to size, or click for a default 400 × 300. |
@@ -552,9 +552,27 @@ not switch tools.
 
 ### An empty text box
 
-Finishing a `text` element without typing anything leaves it on the board. It is
-not deleted. A text box with nothing to draw (empty, or only spaces and line
-breaks) would be invisible, so the canvas marks it instead:
+**A text box closed empty is deleted.** "Empty" means no text, or only spaces
+and line breaks. This is what other drawing tools do: a text element with no
+visible text has nothing to show, and keeping it would leave an invisible object
+on the board that still selects, saves and exports.
+
+- **A new box** (the text tool) leaves no trace if it is closed empty: no
+  element, no undo step, and the board's unsaved-changes state as it was before
+  the click. Typed into, it becomes **one** undo step, "Add text", so a single
+  undo removes the box with its text.
+- **An existing box** whose text is deleted is removed as one undo step,
+  "Delete text". Undo brings it back with the text it held.
+- **Only `text` elements.** A sticky note, a shape's label and a table cell
+  can all be emptied and stay, since the note, the shape and the table are
+  still there.
+
+How the editor is closed makes no difference: `Escape`, `Cmd`/`Ctrl` +
+`Enter`, or a click or tap elsewhere.
+
+**A blank text element can still arrive** in an opened file (hand-written or
+generated), a paste, or by undoing a deletion. The canvas marks one so it can be
+found:
 
 - a **dashed hairline outline** of its box, and
 - the word **"Text"** as a placeholder, laid out as typed text would be, in
@@ -562,15 +580,11 @@ breaks) would be invisible, so the canvas marks it instead:
 
 Both are drawn in the element's text colour at 40% of its opacity. The outline
 stays one screen pixel wide, with 4-pixel dashes, at any zoom. A box too small
-for the word gets the outline alone. That is usually an auto-width box whose
-text was typed and then deleted, which shrinks to one em wide.
-
-The box can be clicked, dragged and double-clicked like any other text element,
-and double-clicking it opens the editor. The marker is not drawn while that
-editor is open, since the editor's own outline and caret show the box then. It
-is never exported (PNG, SVG and PDF all leave it out), and it is not part of
-the file format: an empty `text` element renders as nothing. See
-[03-elements.md](03-elements.md#text).
+for the word gets the outline alone. Double-clicking it opens the editor, and
+closing that without typing deletes it like any other empty text box. The marker
+is not drawn while the editor is open, is never exported (PNG, SVG and PDF all
+leave it out), and is not part of the file format: a blank `text` element
+renders as nothing. See [03-elements.md](03-elements.md#text).
 
 ## Tables
 

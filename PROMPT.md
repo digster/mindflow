@@ -614,3 +614,17 @@ with nothing on screen to show it. The canvas now marks one with a dashed
 hairline outline and a faint "Text" placeholder, in the element's own colour
 and typography. It is screen-only: hidden while the editor is open on it, and
 never exported.
+
+---
+
+## 2026-10-01 — Delete a text box closed empty
+
+> Okay, let's follow what the other apps do and delete the text box that's
+> closed empty.
+
+Closing the editor on a `text` element with no visible text now deletes it. A
+new box is provisional until something is typed, so abandoning it leaves no
+element, no undo step and no unsaved-changes flag, and typing into it is one
+"Add text" step. Emptying an existing box is one "Delete text" step that undo
+reverses. Sticky notes, labels and table cells are unaffected. The on-screen
+marker stays, for blank text that arrives in a file, a paste or an undo.

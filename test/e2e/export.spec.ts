@@ -618,15 +618,31 @@ test.describe('PNG export', () => {
     expect(outside).toEqual([255, 255, 255]);
   });
 
-  test('leaves out the marker an empty text box shows on screen', async ({ page }) => {
-    // On the canvas, a text box nobody typed into is drawn as a dashed outline
+  test('leaves out the marker a blank text element shows on screen', async ({ page }) => {
+    // On the canvas, a text element with no text is drawn as a dashed outline
     // with a faint placeholder, so it can be found. That is editor chrome: the
     // exported picture shows what the board holds, which here is nothing.
+    //
+    // Editing deletes a text box left blank, so the blank one arrives the way
+    // it would in practice: in a board that is opened.
     await page.locator('[data-tool="text"]').click();
     const canvas = (await page.locator('.mf-canvas').boundingBox())!;
     await page.mouse.click(canvas.x + 200, canvas.y + 200);
     await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.type('Hello');
     await page.keyboard.press('Escape');
+    await page.evaluate(() => {
+      const mf = (
+        window as unknown as {
+          mindflow: {
+            store: { document: { elements: Record<string, unknown>[] }; load(result: unknown, origin: unknown): void };
+          };
+        }
+      ).mindflow;
+      const document = structuredClone(mf.store.document);
+      document.elements[0]!.text = '';
+      mf.store.load({ document, warnings: [], preserved: [] }, { kind: 'local', name: 'board.mindflow.json' });
+    });
 
     await openExport(page, 'png');
     await page.locator(`${DIALOG} select[aria-label="Resolution"]`).selectOption('1');

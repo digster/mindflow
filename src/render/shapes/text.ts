@@ -5,11 +5,12 @@
  * shape. A `text` element stands on its own and owns its geometry.
  *
  * It has no fill or stroke of its own, so when its text is empty or only
- * whitespace it paints nothing at all, which is what a text box closed without
- * typing looks like. On screen such an element is drawn as a marker instead
- * (see {@link blankTextMarker}), so it can be found, clicked and filled in
- * later. The marker is not part of the format. It is never exported, and an
- * external renderer draws nothing for it.
+ * whitespace it paints nothing at all. The text editor deletes one that an edit
+ * leaves blank (see `isBlank`), but a blank one can still arrive in an opened
+ * file, a paste or an undo. On screen it is drawn as a marker instead (see
+ * {@link blankTextMarker}), so it can be found, clicked and filled in. The
+ * marker is not part of the format. It is never exported, and an external
+ * renderer draws nothing for it.
  */
 
 import type { ElementDefinition, ElementInit, RenderContext } from '../../model/registry.ts';
@@ -50,13 +51,27 @@ const MARKER_DASH = 4;
 const MARKER_FIT_SLACK = 0.5;
 
 /**
+ * Whether `text` paints nothing: it is empty, or only spaces and line breaks.
+ *
+ * A regex rather than `trim() === ''`, which would copy every text element's
+ * string on every frame. `\S` stops at the first visible character, and it
+ * matches exactly the characters `trim` keeps.
+ */
+export function isBlankText(text: string): boolean {
+  return !/\S/.test(text);
+}
+
+/**
  * How a text element is marked on screen when it has nothing visible to draw,
  * or `null` when it is not marked.
  *
- * Without this, a text box the user never typed into is invisible, but still
- * there. It still selects, saves and exports, and nothing on screen shows it.
- * The marker is a dashed outline of the box, plus {@link TEXT_PLACEHOLDER} in
- * the element's own typography where the word fits the box.
+ * Without this, a blank text element is invisible, but still there. It still
+ * selects, saves and exports, and nothing on screen shows it. Editing never
+ * leaves one behind, since closing the editor on a blank text element deletes
+ * it. One can still come from a file (hand-written or generated), a paste, or
+ * undoing that deletion. The marker is a dashed outline of the box, plus
+ * {@link TEXT_PLACEHOLDER} in the element's own typography where the word fits
+ * the box.
  *
  * Not marked:
  *
@@ -68,18 +83,14 @@ const MARKER_FIT_SLACK = 0.5;
  *   being typed.
  *
  * The word is left out rather than squeezed or clipped when the box is too
- * small for it. That happens to an auto-width box whose text was typed and then
- * deleted, which shrinks to one em wide. The outline alone still marks it.
+ * small for it, such as an auto-width box with no text, which measures one em
+ * wide. The outline alone still marks it.
  */
 export function blankTextMarker(
   el: TextElement,
   render: Pick<RenderContext, 'exporting' | 'editingId'>,
 ): { word: TextBlockMetrics | null } | null {
-  // `\S` is anything but a Unicode space or line break. Text made only of those
-  // paints nothing, so it is as invisible as the empty string. A regex rather
-  // than `trim() === ''`, which would copy every text element's string on every
-  // frame. This stops at the first visible character.
-  if (/\S/.test(el.text) || render.exporting || render.editingId === el.id) return null;
+  if (!isBlankText(el.text) || render.exporting || render.editingId === el.id) return null;
 
   const word = layoutText(TEXT_PLACEHOLDER, {
     maxWidth: 0, // One line, never wrapped. A wrapped "Te/xt" would not read as a placeholder.
@@ -270,6 +281,11 @@ export const textDefinition: ElementDefinition<TextElement> = {
   /** The same rule `draw` and `measureTextElement` apply: `maxWidth: 0` with `autoWidth`. */
   wrapsText(el: TextElement): boolean {
     return !el.autoWidth;
+  },
+
+  /** A text element is its text. With none visible, there is nothing left to keep. */
+  isBlank(el: TextElement): boolean {
+    return isBlankText(el.text);
   },
 };
 
