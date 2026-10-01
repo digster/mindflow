@@ -127,6 +127,7 @@ export class MindflowApp {
       // The element under an open editor is painted without the text the editor
       // is showing, so there is only ever one copy of it on screen.
       displayed: (element) => this.frameNameEditor.displayed(this.textEditor.displayed(element)),
+      editingId: () => this.store.getState().editingId,
     });
 
     this.actions = new Actions({
@@ -142,6 +143,7 @@ export class MindflowApp {
       canvas: this.canvas,
       store: this.store,
       onEditText: (element, regionKey) => this.textEditor.open(element, regionKey),
+      onCreateText: (element) => this.textEditor.create(element),
       onRenameFrame: (frame) => this.frameNameEditor.open(frame),
       onCommitText: () => this.commitEditing(),
       onOverlayChange: () => this.renderer.invalidate(),

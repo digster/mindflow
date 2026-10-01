@@ -742,6 +742,260 @@ test.describe('text editing', () => {
     expect(text.height).toBeGreaterThan(0);
   });
 
+  test.describe('a text box closed empty', () => {
+    /**
+     * The only element's box, in canvas-relative CSS pixels, shrunk by `inset`
+     * on every side. The inset keeps a read inside the box clear of the
+     * marker's own outline, which sits on the box edge, and of the hover
+     * outline just outside it.
+     */
+    async function onlyElementOnScreen(page: Page, inset = 0) {
+      return page.evaluate((inset) => {
+        type Store = {
+          viewport: { x: number; y: number; zoom: number };
+          document: { elements: { x: number; y: number; width: number; height: number }[] };
+        };
+        const store = (window as unknown as { mindflow: { store: Store } }).mindflow.store;
+        const { x, y, zoom } = store.viewport;
+        const element = store.document.elements[0]!;
+        return {
+          x: (element.x - x) * zoom + inset,
+          y: (element.y - y) * zoom + inset,
+          width: element.width * zoom - inset * 2,
+          height: element.height * zoom - inset * 2,
+        };
+      }, inset);
+    }
+
+    /**
+     * `inkIn` with a threshold that also counts light grey. The marker for
+     * blank text is drawn at 40% of the text colour, so the default only sees
+     * typed text.
+     */
+    const ANY_INK = 230;
+
+    /** Undo and redo through the store, as the shortcuts do. */
+    async function history(page: Page, step: 'undo' | 'redo') {
+      await page.evaluate((step) => {
+        (window as unknown as { mindflow: { store: Record<'undo' | 'redo', () => boolean> } }).mindflow.store[step]();
+      }, step);
+    }
+
+    async function canUndo(page: Page) {
+      return page.evaluate(() =>
+        (window as unknown as { mindflow: { store: { history: { canUndo(): boolean } } } }).mindflow.store.history.canUndo(),
+      );
+    }
+
+    /** Opens a new text box at canvas (200, 200) with the text tool. */
+    async function newTextBox(page: Page) {
+      await page.locator('[data-tool="text"]').click();
+      const box = await canvasBox(page);
+      await page.mouse.click(box.x + 200, box.y + 200);
+      await expect(page.locator('.mf-text-editor')).toBeFocused();
+    }
+
+    /** A press on empty canvas, which closes an open editor. */
+    async function clickAway(page: Page) {
+      const box = await canvasBox(page);
+      await page.mouse.click(box.x + 600, box.y + 500);
+      await expect(page.locator('.mf-text-editor')).toBeHidden();
+    }
+
+    /** Asserts the board is exactly as clean and undo-free as `markClean` left it. */
+    async function expectNoTrace(page: Page) {
+      expect((await getDocument(page)).elements).toEqual([]);
+      expect(await selectedCount(page)).toBe(0);
+      expect(await isDirty(page)).toBe(false);
+      expect(await canUndo(page)).toBe(false);
+    }
+
+    test('is deleted when closed without typing, leaving nothing to undo or save', async ({ page }) => {
+      // It used to stay on the board: selectable, saved and exported, with
+      // nothing on screen to show it was there.
+      await markClean(page);
+      await newTextBox(page);
+      expect((await getDocument(page)).elements).toHaveLength(1);
+
+      await clickAway(page);
+      await expectNoTrace(page);
+    });
+
+    test('is deleted when closed with Escape', async ({ page }) => {
+      await markClean(page);
+      await newTextBox(page);
+      await page.keyboard.press('Escape');
+      await expectNoTrace(page);
+    });
+
+    test('is deleted when everything typed into it is deleted again', async ({ page }) => {
+      await markClean(page);
+      await newTextBox(page);
+      await page.keyboard.type('abc');
+      for (let i = 0; i < 3; i++) await page.keyboard.press('Backspace');
+      await clickAway(page);
+      await expectNoTrace(page);
+    });
+
+    test('counts only spaces and line breaks as empty', async ({ page }) => {
+      await markClean(page);
+      await newTextBox(page);
+      await page.keyboard.type('   ');
+      await page.keyboard.press('Enter');
+      await page.keyboard.type(' ');
+      await page.keyboard.press('Escape');
+      await expectNoTrace(page);
+    });
+
+    test('leaves an already unsaved board unsaved', async ({ page }) => {
+      // Putting the flag back means putting back what it was, not clearing it.
+      await page.locator('[data-tool="sticky"]').click();
+      await drag(page, [400, 100], [550, 250]);
+      expect(await isDirty(page)).toBe(true);
+
+      await newTextBox(page);
+      await clickAway(page);
+      const doc = await getDocument(page);
+      expect(doc.elements.map((element) => element.type)).toEqual(['sticky']);
+      expect(await isDirty(page)).toBe(true);
+    });
+
+    test('is not marked under the open editor, before or after typing', async ({ page }) => {
+      // While the editor is open the canvas paints the element without its
+      // text, so it looks blank whatever has been typed. Marking it then would
+      // draw the placeholder underneath the words.
+      await newTextBox(page);
+      expect(await inkIn(page, await onlyElementOnScreen(page, 2), ANY_INK)).toBe(0);
+
+      await page.keyboard.type('Typed');
+      expect(await inkIn(page, await onlyElementOnScreen(page, 2), ANY_INK)).toBe(0);
+    });
+
+    test('a new box typed into is one undo step', async ({ page }) => {
+      // The add and the typing used to be two steps, and undoing the typing
+      // alone left an empty, invisible box behind.
+      await markClean(page);
+      await newTextBox(page);
+      await page.keyboard.type('Hello');
+      await page.keyboard.press('Escape');
+      expect((await getDocument(page)).elements.map((element) => element.text)).toEqual(['Hello']);
+
+      await history(page, 'undo');
+      expect((await getDocument(page)).elements).toEqual([]);
+      expect(await canUndo(page)).toBe(false);
+
+      await history(page, 'redo');
+      expect((await getDocument(page)).elements.map((element) => element.text)).toEqual(['Hello']);
+    });
+
+    test('clearing an existing text box deletes it, and undo brings its text back', async ({ page }) => {
+      await newTextBox(page);
+      await page.keyboard.type('Hello');
+      await clickAway(page);
+      await clickAway(page);
+
+      const box = await canvasBox(page);
+      const target = await onlyElementOnScreen(page);
+      await page.mouse.dblclick(box.x + target.x + target.width / 2, box.y + target.y + target.height / 2);
+      // The editor opens with everything selected, so one Backspace clears it.
+      await expect(page.locator('.mf-text-editor')).toBeFocused();
+      await page.keyboard.press('Backspace');
+      await page.keyboard.press('Escape');
+
+      expect((await getDocument(page)).elements).toEqual([]);
+      expect(await selectedCount(page)).toBe(0);
+
+      // One step, straight back to the text it held.
+      await history(page, 'undo');
+      expect((await getDocument(page)).elements.map((element) => element.text)).toEqual(['Hello']);
+      await history(page, 'redo');
+      expect((await getDocument(page)).elements).toEqual([]);
+    });
+
+    test('a sticky note emptied of its text stays', async ({ page }) => {
+      // Only a type that is nothing but its text is deleted. A note is paper.
+      await page.locator('[data-tool="sticky"]').click();
+      await drag(page, [100, 100], [400, 300]);
+      await page.keyboard.press('Escape');
+
+      const box = await canvasBox(page);
+      await page.mouse.dblclick(box.x + 250, box.y + 200);
+      await typeIntoEditor(page, 'Note');
+      await page.keyboard.press('Escape');
+      await page.mouse.dblclick(box.x + 250, box.y + 200);
+      await expect(page.locator('.mf-text-editor')).toBeFocused();
+      await page.keyboard.press('Backspace');
+      await page.keyboard.press('Escape');
+
+      const doc = await getDocument(page);
+      expect(doc.elements.map((element) => [element.type, element.text])).toEqual([['sticky', '']]);
+    });
+
+    test.describe('arriving blank from a file', () => {
+      /** Opens a board holding one blank text element, through the real load path. */
+      async function loadBlankText(page: Page) {
+        await newTextBox(page);
+        await page.keyboard.type('Hello');
+        await page.keyboard.press('Escape');
+        await page.evaluate(() => {
+          const mf = (
+            window as unknown as {
+              mindflow: {
+                store: {
+                  document: { elements: Record<string, unknown>[] };
+                  load(result: unknown, origin: unknown): void;
+                };
+              };
+            }
+          ).mindflow;
+          const document = structuredClone(mf.store.document);
+          document.elements[0]!.text = '';
+          mf.store.load({ document, warnings: [], preserved: [] }, { kind: 'local', name: 'board.mindflow.json' });
+        });
+      }
+
+      test('is marked on screen, faintly, so it can be found', async ({ page }) => {
+        // Editing never leaves one behind, but a hand-written or generated file
+        // can hold one. Without the marker it would be invisible.
+        await loadBlankText(page);
+        expect((await getDocument(page)).elements.map((element) => element.text)).toEqual(['']);
+
+        // The outline on the edge, and the placeholder word inside.
+        expect(await inkIn(page, await onlyElementOnScreen(page, -2), ANY_INK)).toBeGreaterThan(0);
+        expect(await inkIn(page, await onlyElementOnScreen(page, 2), ANY_INK)).toBeGreaterThan(0);
+        // Faint, as a placeholder: none of it is as dark as typed text.
+        expect(await inkIn(page, await onlyElementOnScreen(page, -2))).toBe(0);
+      });
+
+      test('is deleted once the editor closes on it, and undo brings it back', async ({ page }) => {
+        await loadBlankText(page);
+        const box = await canvasBox(page);
+        const target = await onlyElementOnScreen(page);
+        await page.mouse.dblclick(box.x + target.x + target.width / 2, box.y + target.y + target.height / 2);
+        await expect(page.locator('.mf-text-editor')).toBeFocused();
+        await page.keyboard.press('Escape');
+
+        // A real change to what was opened, so the board has something to save.
+        expect((await getDocument(page)).elements).toEqual([]);
+        expect(await isDirty(page)).toBe(true);
+
+        await history(page, 'undo');
+        expect((await getDocument(page)).elements.map((element) => element.text)).toEqual(['']);
+      });
+
+      test('is kept once something is typed into it', async ({ page }) => {
+        await loadBlankText(page);
+        const box = await canvasBox(page);
+        const target = await onlyElementOnScreen(page);
+        await page.mouse.dblclick(box.x + target.x + target.width / 2, box.y + target.y + target.height / 2);
+        await typeIntoEditor(page, 'Found');
+        await page.keyboard.press('Escape');
+
+        expect((await getDocument(page)).elements.map((element) => element.text)).toEqual(['Found']);
+      });
+    });
+  });
+
   /** A 300 x 200 sticky at (100, 100), deselected, so a double-click opens it. */
   async function drawSticky(page: Page) {
     await page.locator('[data-tool="sticky"]').click();

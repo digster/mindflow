@@ -68,7 +68,7 @@ main.ts
 type: `create`, `normalize`, `draw`, `hitTest`, and a capability descriptor. A
 handful of optional members carry the cases the capability flags cannot express —
 `outlineIntersect`, `roughOutline`, `labelBox`, `textRegions`, `withText`,
-`wrapsText`, `interiorHandles`, `validate` and `palette`. Each exists because the
+`wrapsText`, `isBlank`, `interiorHandles`, `validate` and `palette`. Each exists because the
 alternative was a `type === '…'` branch in code that is not allowed to have one,
 and each costs existing types nothing. The dividing line: a fact that is the
 same for every element of a type is a flag, and one that depends on the
@@ -431,6 +431,40 @@ other cells stay on the canvas. It goes through the renderer's `displayed`
 option rather than the document, so undo, autosave and the dirty flag never see
 it. Agreement between the engines is best effort. This is what stops a small
 disagreement from showing up as two overlapping copies of the text.
+
+One consequence: while the editor is open, the shape is handed blank text
+whatever has been typed, so it cannot tell "empty" from "being edited". A shape
+that draws something *because* its text is blank has to ask
+`RenderContext.editingId`, which the renderer fills from the store each frame
+and the exporters set to `null`. The text shape's blank-text marker
+(`blankTextMarker` in `render/shapes/text.ts`) is the one user. It is also the
+first user of `RenderContext.exporting`, which keeps on-screen chrome out of
+PNG and PDF. SVG needs nothing, because the SVG exporter writes the text itself
+and empty text produces no markup.
+
+### What closing the editor leaves behind
+
+An edit that ends with a `text` element blank deletes it, as other drawing tools
+do. The editor asks the registry's `isBlank` rather than the type, so a sticky
+note emptied of its text stays. Undo of that deletion brings back what the
+element held before the edit.
+
+A new text box is **provisional**. The text tool hands the element to
+`TextEditor.create`, which adds it as a *transient* command: on the board and
+drawn, but not on the undo stack. `commit` then decides. With text, the
+transient add is taken back and the element is added for real as one
+"Add text" step holding the typed text. Blank, it is taken back and nothing is
+recorded. Recording the add up front, as the tool used to, left two bad
+outcomes: undoing the typing left an invisible empty box, and deleting a blank
+box on close would have been a second step that undo reversed into the same
+invisible box.
+
+Transient commands still mark the board dirty, so an abandoned box would leave
+"unsaved changes" behind. `Store.dirtyCheckpoint` / `restoreDirty` put the flag
+back. The store refuses when anything the flag answers for (a recorded
+command, an undo or redo, a save, another board) happened in between. The
+editor can rely on nothing else being recorded meanwhile, because a press
+anywhere outside it commits first.
 
 See [LEARNINGS.md](LEARNINGS.md) for the failure modes this replaced.
 

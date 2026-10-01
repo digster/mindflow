@@ -48,16 +48,29 @@
  *      text through `whitespaceAsDrawn`, on open and on every paste.
  *
  * See `LEARNINGS.md` for the failure modes this replaced.
+ *
+ * ---------------------------------------------------------------------------
+ * What closing the editor leaves behind
+ * ---------------------------------------------------------------------------
+ * One undo step at most, and never an invisible element:
+ *
+ *   - An element ended blank (by its type's `isBlank`, so only a `text`
+ *     element) is deleted. Undo brings back what it held before the edit.
+ *   - A new text box ({@link TextEditor.create}) is provisional until then: on
+ *     the board but not on the undo stack. With text it becomes one "Add text"
+ *     step; blank, it is removed and leaves no trace, the unsaved-changes flag
+ *     included.
+ *   - Opening and closing an element without typing is not an edit.
  */
 
 import type { MindflowElement, StickyElement, TextElement } from '../model/types.ts';
-import type { Store } from '../store/store.ts';
+import type { DirtyCheckpoint, Store } from '../store/store.ts';
 import type { TextRegion } from '../model/registry.ts';
-import { getDefinition, labelBoxOf } from '../model/registry.ts';
+import { getDefinition, isBlankElement, labelBoxOf } from '../model/registry.ts';
 import { BASELINE_RATIO, FONT_STACKS, layoutText, whitespaceAsDrawn } from '../render/shapes/shared.ts';
 import { defaultLabel } from '../model/defaults.ts';
 import { localToWorld, sceneToScreen } from '../model/geometry.ts';
-import { replaceElements } from '../store/commands.ts';
+import { addElements, deleteElements, replaceElements } from '../store/commands.ts';
 import { IS_COARSE_POINTER, el, listenForOutsidePress } from './dom.ts';
 
 /** Typography for the element being edited, whether it lives in `text` or `label`. */
@@ -233,6 +246,13 @@ export class TextEditor {
    * element always matches what is in the textarea.
    */
   private touched = false;
+  /**
+   * Set while the element being edited is provisional: added by
+   * {@link create} as a transient command, so not on the undo stack yet. Holds
+   * the unsaved-changes flag from before the add, to put back if the box is
+   * closed blank.
+   */
+  private provisional: DirtyCheckpoint | null = null;
 
   constructor(private readonly store: Store) {
     this.element = el('textarea', {
@@ -280,6 +300,7 @@ export class TextEditor {
     this.original = element;
     this.committed = false;
     this.touched = false;
+    this.provisional = null;
     this.store.setEditing(element.id);
 
     this.element.hidden = false;
@@ -307,6 +328,39 @@ export class TextEditor {
         this.focusEditor();
       }
     });
+  }
+
+  /**
+   * Puts a new element on the board provisionally and opens the editor on it.
+   *
+   * Provisional means applied but not recorded. The element is on the board
+   * and the canvas draws it, but it has no undo step until {@link commit}
+   * decides what it becomes. With text, it is added as one step holding what
+   * was typed, so one undo removes it. Blank, it is removed again and the
+   * unsaved-changes flag put back, so a text box clicked into existence and
+   * abandoned leaves nothing behind, not even a prompt to save.
+   *
+   * Recording the add up front, as this used to, could not get either right.
+   * Undoing the typing left an empty, invisible box behind. And deleting a
+   * blank box on close would have been a second undo step that undo then
+   * reversed into the same invisible box.
+   *
+   * Nothing else can be recorded while the editor is open: a press anywhere
+   * outside it commits first, and it keeps every keystroke to itself. So
+   * nothing can land on the undo stack between the add and the commit.
+   */
+  create(element: MindflowElement): void {
+    const checkpoint = this.store.dirtyCheckpoint();
+    this.store.execute(addElements([element]), true);
+    this.open(element);
+    if (this.editingId === element.id) {
+      this.provisional = checkpoint;
+      return;
+    }
+    // The type has no text to edit, so there is no session to resolve it.
+    // Callers only create text, so this is defensive. Take it back off.
+    this.store.execute(deleteElements(this.store.document, [element.id]), true);
+    this.store.restoreDirty(checkpoint);
   }
 
   private focusEditor(): void {
@@ -629,9 +683,11 @@ export class TextEditor {
     const text = this.element.value;
     const regionKey = this.regionKey;
     const original = this.original;
+    const provisional = this.provisional;
     this.editingId = null;
     this.regionKey = null;
     this.original = null;
+    this.provisional = null;
     this.stopDismissal?.();
     this.stopDismissal = null;
     // Blur before hiding. Hiding a textarea that is still `document.activeElement`
@@ -646,14 +702,44 @@ export class TextEditor {
     this.store.setEditing(null);
     if (!element) return;
 
+    // What the session leaves: the typed text, or the element as it was when
+    // nothing was typed. Not the textarea's value regardless, which shows tabs
+    // as spaces and would read an untouched element as rewritten.
+    const next = this.touched ? this.withText(element, text, regionKey) : element;
+    // A cell can be emptied without the table being blank. Only a whole
+    // element's text decides.
+    const blank = regionKey === null && isBlankElement(next);
+
+    if (provisional) {
+      // Not on the undo stack yet, so rewinding the session means removing it.
+      this.store.execute(deleteElements(this.store.document, [id]), true);
+      if (blank) {
+        this.store.restoreDirty(provisional);
+        this.deselect(id);
+        return;
+      }
+      const title = getDefinition(next.type).title.toLowerCase();
+      this.store.execute(addElements([next], `Add ${title}`));
+      return;
+    }
+
+    if (blank) {
+      // Rewound first, so the one step undo sees runs from the element as it
+      // was before the session to nothing. Undo then brings its text back.
+      if (this.touched && original) {
+        this.store.execute(replaceElements(this.store.document, [original], 'Edit text'), true);
+      }
+      this.store.execute(deleteElements(this.store.document, [id], 'Delete text'));
+      this.deselect(id);
+      return;
+    }
+
     // Opening an editor and closing it again is not an edit. The write-back
     // below always builds a fresh object, and `Store.execute` can only detect a
     // no-op by reference — so an untouched element still marks the board dirty
     // and pushes a phantom "Edit text" onto the undo stack. That surfaces as a
     // "Discard unsaved changes?" prompt after merely double-clicking a shape.
     if (!this.touched) return;
-
-    const next = this.withText(element, text, regionKey);
 
     // Rewind the transient typing edits, then apply the final text as a single
     // command — one undo step for the whole session.
@@ -671,5 +757,14 @@ export class TextEditor {
 
   cancel(): void {
     this.commit();
+  }
+
+  /**
+   * Drops a deleted element from the selection. `Store.execute` leaves the
+   * selection alone, and a stale id would keep the style panel describing an
+   * element that is gone.
+   */
+  private deselect(id: string): void {
+    this.store.setSelection(this.store.selectedIds().filter((selected) => selected !== id));
   }
 }

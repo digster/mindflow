@@ -161,6 +161,14 @@ export interface ControllerOptions {
    */
   onEditText: (element: MindflowElement, regionKey: string | null) => void;
   /**
+   * Puts a new text element on the board and opens the editor on it. The
+   * element is provisional: it reaches the undo stack only once something is
+   * typed, and closing the editor blank removes it without a trace. The
+   * controller cannot do that bookkeeping itself, because only the editor
+   * knows what was typed.
+   */
+  onCreateText: (element: MindflowElement) => void;
+  /**
    * Opens the name editor on a frame's name tab. A frame has no text of its
    * own for `onEditText` to open, so its name is what a double-click edits.
    */
@@ -678,10 +686,11 @@ export class InteractionController {
         zIndex: topZIndex(store.document),
       }),
     ]) as [MindflowElement];
-    store.execute(addElements([element], 'Add text'));
+    // The editor adds the element itself, so it can note the unsaved-changes
+    // flag before the add sets it, and put it back if the box is closed empty.
+    this.options.onCreateText(element);
     store.setSelection([element.id]);
     store.setTool('select');
-    this.options.onEditText(element, null);
   }
 
   // -------------------------------------------------------------------------

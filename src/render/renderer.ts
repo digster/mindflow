@@ -30,7 +30,7 @@
  * written against, and it is why no shape module contains rotation code.
  */
 
-import type { MindflowDocument, MindflowElement, Viewport } from '../model/types.ts';
+import type { ElementId, MindflowDocument, MindflowElement, Viewport } from '../model/types.ts';
 import type { RenderContext } from '../model/registry.ts';
 import { drawElement } from '../model/registry.ts';
 import { aabbIntersects, degToRad, elementWorldAABB, visibleSceneBounds } from '../model/geometry.ts';
@@ -50,6 +50,11 @@ export interface RendererOptions {
    * editing the document, keeps undo, autosave and "unsaved changes" blind to it.
    */
   displayed?: (element: MindflowElement) => MindflowElement;
+  /**
+   * The element an on-canvas editor is open on, read once per frame and handed
+   * to shapes as `RenderContext.editingId`. Omitted, nothing is being edited.
+   */
+  editingId?: () => ElementId | null;
 }
 
 export class Renderer {
@@ -57,6 +62,7 @@ export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly drawOverlay: ((render: RenderContext) => void) | undefined;
   private readonly displayed: ((element: MindflowElement) => MindflowElement) | undefined;
+  private readonly editingId: (() => ElementId | null) | undefined;
 
   private frameHandle = 0;
   private needsPaint = false;
@@ -77,6 +83,7 @@ export class Renderer {
     this.canvas = options.canvas;
     this.drawOverlay = options.drawOverlay;
     this.displayed = options.displayed;
+    this.editingId = options.editingId;
 
     const ctx = this.canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('This browser does not support the Canvas 2D API.');
@@ -156,6 +163,7 @@ export class Renderer {
       document: doc,
       images: this.images,
       exporting: false,
+      editingId: this.editingId?.() ?? null,
     };
 
     let drawn = 0;

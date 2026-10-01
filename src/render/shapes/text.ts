@@ -3,6 +3,14 @@
  *
  * Distinct from an element's `label`, which is text drawn *inside* another
  * shape. A `text` element stands on its own and owns its geometry.
+ *
+ * It has no fill or stroke of its own, so when its text is empty or only
+ * whitespace it paints nothing at all. The text editor deletes one that an edit
+ * leaves blank (see `isBlank`), but a blank one can still arrive in an opened
+ * file, a paste or an undo. On screen it is drawn as a marker instead (see
+ * {@link blankTextMarker}), so it can be found, clicked and filled in. The
+ * marker is not part of the format. It is never exported, and an external
+ * renderer draws nothing for it.
  */
 
 import type { ElementDefinition, ElementInit, RenderContext } from '../../model/registry.ts';
@@ -19,7 +27,122 @@ import {
   newElementId,
 } from '../../model/defaults.ts';
 import { clamp } from '../../model/geometry.ts';
+import type { TextBlockMetrics } from './shared.ts';
 import { booleanOr, drawTextBlock, enumOr, layoutText, numberOr, stringOr } from './shared.ts';
+
+/** The word a blank text element shows on screen, where it fits. */
+export const TEXT_PLACEHOLDER = 'Text';
+
+/**
+ * How strongly the blank-text marker is drawn, as a fraction of the element's
+ * own opacity. Faint enough to read as a placeholder rather than content, the
+ * way a form field's placeholder does.
+ */
+const MARKER_ALPHA = 0.4;
+
+/** Length of each dash, and of each gap, in the marker's outline. Screen pixels. */
+const MARKER_DASH = 4;
+
+/**
+ * Slack, in scene units, when deciding whether the placeholder fits. Stored
+ * geometry is rounded to two decimals on save, so a box measured for exactly
+ * one line can reload a hair smaller than that line.
+ */
+const MARKER_FIT_SLACK = 0.5;
+
+/**
+ * Whether `text` paints nothing: it is empty, or only spaces and line breaks.
+ *
+ * A regex rather than `trim() === ''`, which would copy every text element's
+ * string on every frame. `\S` stops at the first visible character, and it
+ * matches exactly the characters `trim` keeps.
+ */
+export function isBlankText(text: string): boolean {
+  return !/\S/.test(text);
+}
+
+/**
+ * How a text element is marked on screen when it has nothing visible to draw,
+ * or `null` when it is not marked.
+ *
+ * Without this, a blank text element is invisible, but still there. It still
+ * selects, saves and exports, and nothing on screen shows it. Editing never
+ * leaves one behind, since closing the editor on a blank text element deletes
+ * it. One can still come from a file (hand-written or generated), a paste, or
+ * undoing that deletion. The marker is a dashed outline of the box, plus
+ * {@link TEXT_PLACEHOLDER} in the element's own typography where the word fits
+ * the box.
+ *
+ * Not marked:
+ *
+ * - **When exporting.** The marker is editor chrome, not content.
+ * - **While the element is being edited.** The DOM editor is open on it, with
+ *   its own outline and caret. Its absence here is not optional. The renderer
+ *   paints an edited element with its text removed, so a shape that marked
+ *   every blank-looking element would draw the placeholder under the text
+ *   being typed.
+ *
+ * The word is left out rather than squeezed or clipped when the box is too
+ * small for it, such as an auto-width box with no text, which measures one em
+ * wide. The outline alone still marks it.
+ */
+export function blankTextMarker(
+  el: TextElement,
+  render: Pick<RenderContext, 'exporting' | 'editingId'>,
+): { word: TextBlockMetrics | null } | null {
+  if (!isBlankText(el.text) || render.exporting || render.editingId === el.id) return null;
+
+  const word = layoutText(TEXT_PLACEHOLDER, {
+    maxWidth: 0, // One line, never wrapped. A wrapped "Te/xt" would not read as a placeholder.
+    fontFamily: el.fontFamily,
+    fontSize: el.fontSize,
+    fontWeight: el.fontWeight,
+    lineHeight: el.lineHeight,
+  });
+  const fits =
+    word.width <= el.width + MARKER_FIT_SLACK && word.height <= el.height + MARKER_FIT_SLACK;
+  return { word: fits ? word : null };
+}
+
+/** Paints a {@link blankTextMarker} in the element's local frame. */
+function drawBlankTextMarker(
+  el: TextElement,
+  marker: { word: TextBlockMetrics | null },
+  { ctx, zoom }: RenderContext,
+): void {
+  ctx.save();
+  // Multiplied, not assigned: the renderer has already applied `opacity`.
+  ctx.globalAlpha *= MARKER_ALPHA;
+
+  // In the text's own colour, which is the colour the user picked to stand out
+  // against this board's background. A hairline in screen pixels, like the rest
+  // of the canvas chrome. It sits on the box edge, so a selection frame covers
+  // it exactly.
+  ctx.strokeStyle = el.color;
+  ctx.lineWidth = 1 / zoom;
+  ctx.setLineDash([MARKER_DASH / zoom, MARKER_DASH / zoom]);
+  ctx.strokeRect(0, 0, el.width, el.height);
+  ctx.setLineDash([]);
+
+  // Laid out exactly as typed text would be, in the element's own font, size
+  // and alignment, so it previews the text that goes there.
+  if (marker.word) {
+    drawTextBlock(
+      ctx,
+      marker.word,
+      { x: 0, y: 0, width: el.width, height: el.height },
+      {
+        color: el.color,
+        textAlign: el.textAlign,
+        verticalAlign: el.verticalAlign,
+        fontFamily: el.fontFamily,
+        fontSize: el.fontSize,
+        fontWeight: el.fontWeight,
+      },
+    );
+  }
+  ctx.restore();
+}
 
 /**
  * Recomputes the box a text element needs.
@@ -108,8 +231,14 @@ export const textDefinition: ElementDefinition<TextElement> = {
     };
   },
 
-  draw(el: TextElement, { ctx }: RenderContext): void {
+  draw(el: TextElement, render: RenderContext): void {
+    const marker = blankTextMarker(el, render);
+    if (marker) {
+      drawBlankTextMarker(el, marker, render);
+      return;
+    }
     if (el.text === '') return;
+    const { ctx } = render;
     const metrics = layoutText(el.text, {
       maxWidth: el.autoWidth ? 0 : el.width,
       fontFamily: el.fontFamily,
@@ -152,6 +281,11 @@ export const textDefinition: ElementDefinition<TextElement> = {
   /** The same rule `draw` and `measureTextElement` apply: `maxWidth: 0` with `autoWidth`. */
   wrapsText(el: TextElement): boolean {
     return !el.autoWidth;
+  },
+
+  /** A text element is its text. With none visible, there is nothing left to keep. */
+  isBlank(el: TextElement): boolean {
+    return isBlankText(el.text);
   },
 };
 

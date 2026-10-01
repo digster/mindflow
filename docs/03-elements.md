@@ -327,6 +327,15 @@ Free-standing text. Distinct from a `label`, which is text inside another elemen
 `style.stroke` and `style.fill` are unused — text draws with its own `color`.
 MindFlow writes them as `"transparent"`.
 
+**Empty text renders as nothing.** A `text` element whose `text` is empty, or
+only whitespace, is still a valid element. It keeps its box and is hit-tested
+across it like any other text, but it draws nothing. MindFlow never leaves one
+behind when editing (it deletes a text box closed empty), but it reads one from
+a file without complaint and shows a placeholder there on screen so the box can
+be found (see [05-interactions.md](05-interactions.md#an-empty-text-box)). That
+placeholder is editor chrome, not part of the rendering, and a renderer
+reproducing a board must not draw it.
+
 ### `autoWidth`
 
 - **`true`** — `width` is derived from the text and recomputed on every edit; the
