@@ -742,6 +742,110 @@ test.describe('text editing', () => {
     expect(text.height).toBeGreaterThan(0);
   });
 
+  test.describe('a text box nobody typed into', () => {
+    /**
+     * The only element's box, in canvas-relative CSS pixels, shrunk by `inset`
+     * on every side. The inset keeps a read inside the box clear of the
+     * marker's own outline, which sits on the box edge, and of the hover
+     * outline just outside it.
+     */
+    async function onlyElementOnScreen(page: Page, inset = 0) {
+      return page.evaluate((inset) => {
+        type Store = {
+          viewport: { x: number; y: number; zoom: number };
+          document: { elements: { x: number; y: number; width: number; height: number }[] };
+        };
+        const store = (window as unknown as { mindflow: { store: Store } }).mindflow.store;
+        const { x, y, zoom } = store.viewport;
+        const element = store.document.elements[0]!;
+        return {
+          x: (element.x - x) * zoom + inset,
+          y: (element.y - y) * zoom + inset,
+          width: element.width * zoom - inset * 2,
+          height: element.height * zoom - inset * 2,
+        };
+      }, inset);
+    }
+
+    /**
+     * `inkIn` with a threshold that also counts light grey. The marker is drawn
+     * at 40% of the text colour, so the default only sees typed text.
+     */
+    const ANY_INK = 230;
+
+    /** Opens a new text box at canvas (200, 200) and leaves it without typing. */
+    async function leaveEmptyTextBox(page: Page) {
+      await page.locator('[data-tool="text"]').click();
+      const box = await canvasBox(page);
+      await page.mouse.click(box.x + 200, box.y + 200);
+      await expect(page.locator('.mf-text-editor')).toBeFocused();
+      // A press on empty canvas closes the editor, and a second clears the
+      // selection, whose frame would otherwise be what shows the box.
+      await page.mouse.click(box.x + 600, box.y + 500);
+      await page.mouse.click(box.x + 600, box.y + 500);
+      expect(await editingId(page)).toBeNull();
+      expect(await selectedCount(page)).toBe(0);
+    }
+
+    test('stays visible on the canvas once deselected', async ({ page }) => {
+      // An empty text element draws no text, fill or stroke, so it used to be
+      // there (selectable, saved, exported) with nothing on screen to show it.
+      await leaveEmptyTextBox(page);
+
+      const doc = await getDocument(page);
+      expect(doc.elements).toHaveLength(1);
+      expect((doc.elements[0] as { text: string }).text).toBe('');
+
+      // The outline on the edge, and the placeholder word inside.
+      expect(await inkIn(page, await onlyElementOnScreen(page, -2), ANY_INK)).toBeGreaterThan(0);
+      expect(await inkIn(page, await onlyElementOnScreen(page, 2), ANY_INK)).toBeGreaterThan(0);
+      // Faint, as a placeholder: none of it is as dark as typed text.
+      expect(await inkIn(page, await onlyElementOnScreen(page, -2))).toBe(0);
+    });
+
+    test('can be found again and typed into', async ({ page }) => {
+      await leaveEmptyTextBox(page);
+      const box = await canvasBox(page);
+      const target = await onlyElementOnScreen(page);
+
+      await page.mouse.dblclick(box.x + target.x + target.width / 2, box.y + target.y + target.height / 2);
+      await typeIntoEditor(page, 'Found');
+      await page.keyboard.press('Escape');
+
+      const doc = await getDocument(page);
+      expect(doc.elements).toHaveLength(1);
+      expect((doc.elements[0] as { text: string }).text).toBe('Found');
+    });
+
+    test('is not marked under the open editor, before or after typing', async ({ page }) => {
+      // While the editor is open the canvas paints the element without its
+      // text, so it looks blank whatever has been typed. Marking it then would
+      // draw the placeholder underneath the words.
+      await page.locator('[data-tool="text"]').click();
+      const box = await canvasBox(page);
+      await page.mouse.click(box.x + 200, box.y + 200);
+      await expect(page.locator('.mf-text-editor')).toBeFocused();
+      expect(await inkIn(page, await onlyElementOnScreen(page, 2), ANY_INK)).toBe(0);
+
+      await page.keyboard.type('Typed');
+      expect(await inkIn(page, await onlyElementOnScreen(page, 2), ANY_INK)).toBe(0);
+    });
+
+    test('is marked again when everything typed into it is deleted', async ({ page }) => {
+      await page.locator('[data-tool="text"]').click();
+      const box = await canvasBox(page);
+      await page.mouse.click(box.x + 200, box.y + 200);
+      await typeIntoEditor(page, 'abc');
+      for (let i = 0; i < 3; i++) await page.keyboard.press('Backspace');
+      await page.mouse.click(box.x + 600, box.y + 500);
+      await page.mouse.click(box.x + 600, box.y + 500);
+
+      expect((((await getDocument(page)).elements[0]) as { text: string }).text).toBe('');
+      // Too narrow now for the word, so this is the outline alone.
+      expect(await inkIn(page, await onlyElementOnScreen(page, -2), ANY_INK)).toBeGreaterThan(0);
+    });
+  });
+
   /** A 300 x 200 sticky at (100, 100), deselected, so a double-click opens it. */
   async function drawSticky(page: Page) {
     await page.locator('[data-tool="sticky"]').click();

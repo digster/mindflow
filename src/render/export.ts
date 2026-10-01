@@ -168,7 +168,7 @@ export async function exportToPNG(
   ctx.scale(scale, scale);
   ctx.translate(-bounds.x, -bounds.y);
 
-  paintElements(elements, { ctx, zoom: scale, document, images, exporting: true });
+  paintElements(elements, { ctx, zoom: scale, document, images, exporting: true, editingId: null });
 
   return new Promise((resolve, reject) => {
     canvas.toBlob(

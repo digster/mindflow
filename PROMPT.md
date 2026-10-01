@@ -599,3 +599,18 @@ Only `Shift` counted as "add to the selection". `Cmd`-click on a Mac (and
 `Ctrl`-click elsewhere) now toggles the clicked element in or out, and the same
 modifier on a marquee adds what it contains. `Ctrl`-click on a Mac stays out of
 it, because there it is the secondary click that opens the context menu.
+
+---
+
+## 2026-10-01 — An empty text box leaves no trace
+
+> if a textbox is not filled and then deselected, it does leave any indication
+> that it exists but it's there and shows the textbox again when clicked. There
+> should be some indication that the textbox object exists even if it's not
+> typed into.
+
+An empty `text` element draws no text, fill or stroke, so it was on the board
+with nothing on screen to show it. The canvas now marks one with a dashed
+hairline outline and a faint "Text" placeholder, in the element's own colour
+and typography. It is screen-only: hidden while the editor is open on it, and
+never exported.

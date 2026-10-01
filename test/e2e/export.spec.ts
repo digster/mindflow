@@ -617,4 +617,38 @@ test.describe('PNG export', () => {
     expect(inside).toEqual([0xe0, 0x31, 0x31]);
     expect(outside).toEqual([255, 255, 255]);
   });
+
+  test('leaves out the marker an empty text box shows on screen', async ({ page }) => {
+    // On the canvas, a text box nobody typed into is drawn as a dashed outline
+    // with a faint placeholder, so it can be found. That is editor chrome: the
+    // exported picture shows what the board holds, which here is nothing.
+    await page.locator('[data-tool="text"]').click();
+    const canvas = (await page.locator('.mf-canvas').boundingBox())!;
+    await page.mouse.click(canvas.x + 200, canvas.y + 200);
+    await expect(page.locator('.mf-text-editor')).toBeFocused();
+    await page.keyboard.press('Escape');
+
+    await openExport(page, 'png');
+    await page.locator(`${DIALOG} select[aria-label="Resolution"]`).selectOption('1');
+    const { bytes } = await exportAndDownload(page);
+
+    const { size, marked } = await page.evaluate(async (base64) => {
+      const blob = await (await fetch(`data:image/png;base64,${base64}`)).blob();
+      const bitmap = await createImageBitmap(blob);
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(bitmap, 0, 0);
+      const { data } = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+      let marked = 0;
+      for (let index = 0; index < data.length; index += 4) {
+        if (data[index] !== 255 || data[index + 1] !== 255 || data[index + 2] !== 255) marked++;
+      }
+      return { size: bitmap.width * bitmap.height, marked };
+    }, bytes.toString('base64'));
+
+    // The box itself plus 24 of padding a side, so the picture is not empty
+    // for lack of anything to frame.
+    expect(size).toBeGreaterThan(48 * 48);
+    expect(marked).toBe(0);
+  });
 });

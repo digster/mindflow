@@ -162,9 +162,13 @@ export async function exportToPDF(
         setTextSink(ctx, sink);
       }
       try {
-        paintElements(onPage, { ctx, zoom: Math.min(scaleX, scaleY), document, images, exporting: true }, (_, at) => {
-          painting = at;
-        });
+        paintElements(
+          onPage,
+          { ctx, zoom: Math.min(scaleX, scaleY), document, images, exporting: true, editingId: null },
+          (_, at) => {
+            painting = at;
+          },
+        );
       } finally {
         setTextSink(ctx, null);
       }

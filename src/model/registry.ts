@@ -19,6 +19,7 @@
 
 import type {
   BaseElement,
+  ElementId,
   ElementType,
   FrameElement,
   ImageElement,
@@ -46,6 +47,17 @@ export interface RenderContext {
   images: Map<string, CanvasImageSource>;
   /** True while rendering for export, where interactive affordances are omitted. */
   exporting: boolean;
+  /**
+   * The element an on-canvas editor is open on, or `null`. Always `null` when
+   * exporting.
+   *
+   * Lets a shape leave out an on-screen affordance that the editor replaces.
+   * The shape cannot work this out from the element alone. While editing, the
+   * renderer paints a copy with the edited text removed (see
+   * `RendererOptions.displayed`), so the shape gets `text: ""` whatever has
+   * been typed.
+   */
+  editingId: ElementId | null;
 }
 
 /** Initial geometry supplied when a tool creates an element. */

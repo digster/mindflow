@@ -432,6 +432,16 @@ option rather than the document, so undo, autosave and the dirty flag never see
 it. Agreement between the engines is best effort. This is what stops a small
 disagreement from showing up as two overlapping copies of the text.
 
+One consequence: while the editor is open, the shape is handed blank text
+whatever has been typed, so it cannot tell "empty" from "being edited". A shape
+that draws something *because* its text is blank has to ask
+`RenderContext.editingId`, which the renderer fills from the store each frame
+and the exporters set to `null`. The text shape's empty-box marker
+(`blankTextMarker` in `render/shapes/text.ts`) is the one user. It is also the
+first user of `RenderContext.exporting`, which keeps on-screen chrome out of
+PNG and PDF. SVG needs nothing, because the SVG exporter writes the text itself
+and empty text produces no markup.
+
 See [LEARNINGS.md](LEARNINGS.md) for the failure modes this replaced.
 
 ### Renaming a frame

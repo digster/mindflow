@@ -146,6 +146,7 @@ npm run check       # typecheck + test + build
 | Undo behaviour | `src/store/commands.ts`, `src/store/history.ts` |
 | A gesture | `src/input/controller.ts` |
 | Renaming a frame on the canvas | `src/ui/frameNameEditor.ts`, picked by `frameToRename` in `src/input/hitTest.ts` |
+| How an empty text box shows on screen (never exported) | `blankTextMarker` in `src/render/shapes/text.ts` |
 | Page zoom on touch (must stay blocked) | `src/input/pageZoom.ts` + `touch-action` in `src/styles/app.css` |
 | Connector routing | `src/input/binding.ts` + `docs/07-rendering.md` |
 | A keyboard shortcut | `src/input/keyboard.ts` (and its `SHORTCUT_REFERENCE`) |

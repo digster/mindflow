@@ -1449,3 +1449,28 @@ The e2e suite runs Chromium on Linux, where `ControlOrMeta` is `Control`. To
 reach the Mac branch a test overrides `Navigator.prototype.platform` in
 `addInitScript` and reloads. `IS_MAC` is read once at load, so setting it
 after the page has booted does nothing.
+
+---
+
+## While the editor is open, a shape cannot tell "empty" from "being edited"
+
+The renderer paints an element under the open text editor through
+`TextEditor.displayed`, which hands the shape a copy with the edited text
+removed (see "Never let both engines draw the same text"). So during editing,
+`draw` sees `text: ""` whether the user has typed nothing or a paragraph.
+
+That is harmless until a shape draws something *because* its text is blank.
+The empty-text-box marker does: a dashed outline and a faint "Text"
+placeholder. Gated on the text alone, it would sit under every edited text
+element, with the placeholder showing through behind whatever was being typed.
+
+The element cannot carry the answer, because `displayed` is transient UI state
+that must never reach the document. So the renderer passes
+`RenderContext.editingId`, read from the store each frame, and
+`blankTextMarker` leaves out the element it names. Exporters pass `null` and
+`exporting: true`, and the marker checks `exporting` first, so nothing about
+editing can leak into a PNG or PDF.
+
+The e2e test reads the canvas's own backing store under the open editor with a
+light-grey threshold. `inkIn`'s default of 110 is tuned for typed text and
+would not see a 40% placeholder at all, so the test would pass with the bug.

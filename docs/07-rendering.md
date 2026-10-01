@@ -23,6 +23,12 @@ file may not be sorted.
 
 Elements with `visible: false` are not drawn, not exported and not hit-testable.
 
+A `text` element with empty or whitespace-only `text` is visible and
+hit-testable, but draws nothing. MindFlow marks one on screen with a dashed
+outline and a placeholder word, so it can be found. That mark is editor chrome.
+No export includes it, and a renderer must not draw it. See
+[03-elements.md](03-elements.md#text).
+
 Per element, in order:
 
 1. `ctx.globalAlpha = element.opacity` — applies to stroke and fill together.
