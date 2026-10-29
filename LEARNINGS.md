@@ -1508,3 +1508,55 @@ provisional element and the board no longer does. Restoring "clean" there would
 hide a real difference. Comparing documents instead would not work either:
 `applyCommand` stamps `meta.updatedAt`, so a rewound document never compares
 equal.
+
+## iPad Safari can still zoom the page, and a page cannot zoom itself back
+
+**Symptom:** on an iPad, with touch alone, the top bar and the tool palette
+sometimes vanished. Only the board was left, blurry, and every pinch made it
+smaller. The page was pinch-zoomed about 4x onto the canvas. The chrome was
+there, out of view. The canvas, which owns every pinch, kept the user there.
+The tell in a screenshot: Safari's own UI is crisp while the board's strokes
+are smeared over several device pixels (a bitmap upscale). There is also no
+`--mf-bg` grey anywhere, so nothing scrolled.
+
+**What WebKit's source says** (read at `main`, October 2026):
+
+- **iPad never focus-zooms.** `_allowScalingToRevealFocusedElement` returns NO
+  unless the idiom is small-screen. On iPad, look elsewhere for a zoom.
+- **A page cannot undo a zoom the user made.** `viewportConfigurationChanged`
+  keeps the scale once `m_userHasChangedPageScaleFactor` is set, clamped to
+  `maximumScale()`. In Safari that is `max(meta maximum-scale, 5)`, because of
+  `forceAlwaysUserScalable`. Rewriting the viewport meta does nothing; a page
+  load resets it.
+- **The guards are best-effort.**
+  - `touch-action` is looked up once per finger at touchdown, from the event
+    region of the hit compositing view. A miss counts as `auto`.
+  - `scrollViewWillStartPanOrPinchGesture` makes touch events uncancellable
+    for the rest of the sequence, and with them `gesturestart`.
+
+**Fix:** treat a zoomed page as a mode with a way out (`watchPageZoom`). It is
+not only a state to prevent. See ARCHITECTURE.
+
+**Traps on the way:**
+
+- **The "back to normal" margin must be tiny.** It was 1.01 at first. A pinch
+  that stopped at 1.007 then re-armed the guards with a strip of the chrome
+  still cut off. It is now 1.001. A pinch past the minimum clamps to exactly 1.
+- **`touch-action` intersects up the ancestor chain**, in Chromium at least.
+  `pinch-zoom` on the canvas allows nothing while `html, body` say
+  `pan-x pan-y`. The escape rule has to cover the root as well.
+- **CDP's `Input.dispatchTouchEvent` takes CSS pixels from the visual
+  viewport's corner.** These are neither screen pixels nor layout pixels. At 3x
+  a 1024-wide window is only about 341 of them across. A "pinch at the screen
+  centre ± 200" put one finger off the canvas, and a test passed for the wrong
+  reason. Take coordinates from `visualViewport.width/height`, and assert that
+  both fingers reached the element.
+- **Chromium cancels both pointers when it takes a pinch**, so the board never
+  sees a pinch the browser performs. A board-side bug there is invisible in
+  Playwright. WebKit may hand the pointers on. To test the board's side, keep
+  the pinch from the browser (`touch-action: none !important` on the canvas).
+- **Zooming the page in a test:** `Input.synthesizePinchGesture` with
+  `gestureSourceType: 'mouse'` over the top bar makes a real page zoom.
+  `touch-action` does not govern a trackpad. Over the canvas it becomes board
+  zoom through the Ctrl+wheel handler. `Emulation.setPageScaleFactor` sets a
+  scale too, but the visual viewport could not then be panned by any input.

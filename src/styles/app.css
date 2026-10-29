@@ -1487,6 +1487,75 @@ kbd {
 }
 
 /* --------------------------------------------------------------------------
+   When the page got zoomed anyway
+   -------------------------------------------------------------------------- */
+
+/*
+ * The page-zoom guards are best-effort on iPad Safari. When a pinch gets past
+ * them, the view ends up a small piece of the board with the chrome off screen,
+ * and the user can only get out with a pinch that zooms the PAGE.
+ * `input/pageZoom.ts` puts `mf-page-zoomed` on <html> while the page is zoomed.
+ *
+ * `touch-action` is resolved as the intersection of an element's value and its
+ * ancestors', so the root and body have to allow `pinch-zoom` too, or the
+ * canvas rule below allows nothing. `*` covers every scroller, which WebKit
+ * resolves from scratch, so a finger on a panel can pinch as well.
+ *
+ * The canvas allows a pinch and nothing else. One finger stays the board's, so
+ * a stray drag still draws or selects rather than panning the page about.
+ */
+html.mf-page-zoomed,
+html.mf-page-zoomed * {
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+html.mf-page-zoomed .mf-canvas {
+  touch-action: pinch-zoom;
+}
+
+/* A full-width strip pinned to the layout viewport's corner. `ui/pageZoomHint.ts`
+   moves it onto the visible area and sets its width and scale. */
+.mf-page-zoom-hint {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  pointer-events: none; /* Over the board, where the fingers will land. */
+  transform-origin: 0 0;
+}
+
+/* `display: flex` above would otherwise beat the user-agent rule for [hidden]. */
+.mf-page-zoom-hint[hidden] {
+  display: none;
+}
+
+.mf-page-zoom-hint-pill {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: 100%;
+  padding: 8px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  /* Inverted, so it stands out from a board that is mostly the surface colour.
+     The tokens swap in dark mode, and the pair keeps its contrast there too.
+     The board's background is the board's own, not the theme's, so in dark mode
+     the light pill can sit on a white board. The border gives it an edge there. */
+  color: var(--mf-surface);
+  background: var(--mf-text);
+  border: 1px solid var(--mf-border);
+  border-radius: 999px;
+  box-shadow: var(--mf-shadow-lg);
+}
+
+.mf-page-zoom-hint-pill > svg {
+  flex: 0 0 auto;
+}
+
+/* --------------------------------------------------------------------------
    Fallbacks
    -------------------------------------------------------------------------- */
 

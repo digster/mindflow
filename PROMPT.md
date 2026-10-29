@@ -659,3 +659,19 @@ reload does), and shows where the touch defences can leak. Three options are
 in `memory/2026-10-29.md`: an escape hatch that lets a pinch zoom the page
 back out, a reload fallback, and an on-device diagnostic to find the leak.
 None started.
+
+---
+
+## 2026-10-29 — Option 1: a way back out of a zoomed page
+
+> lets try option 1 for now.
+
+When the page zooms anyway on a touch device, it becomes a mode with a way out.
+While `visualViewport.scale` is above 1.001:
+
+- A pinch anywhere zooms the page instead of the board.
+- One finger still works on the board.
+- A note at the top of the visible area says "The page is zoomed in. Pinch to
+  zoom out."
+
+Back at 1x, the guards return.

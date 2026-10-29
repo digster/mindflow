@@ -428,7 +428,7 @@ undo it. Three layers block it, because each browser listens to a different one:
 
 | Layer | Stops | Where |
 |---|---|---|
-| `user-scalable=no, maximum-scale=1` in the viewport meta | Mobile Chromium and Firefox. Also the zoom iOS Safari starts by itself when a small-text field takes focus. | `src/index.template.html` |
+| `user-scalable=no, maximum-scale=1` in the viewport meta | Mobile Chromium and Firefox. Also the zoom Safari on an iPhone starts by itself when a small-text field takes focus. (iPad Safari never zooms for a focused field.) | `src/index.template.html` |
 | `touch-action: pan-x pan-y` on the page, repeated on each scrolling container | Pinch and double-tap zoom in every engine, including a touchscreen laptop, whose desktop browser ignores the viewport meta. Panels still scroll. | `src/styles/app.css` |
 | Cancelling `gesturestart`, `gesturechange` and `gestureend` | iOS Safari, which ignores `user-scalable=no` for a pinch. | `src/input/pageZoom.ts` |
 
@@ -436,6 +436,26 @@ The canvas is `touch-action: none` and does its own pan and pinch, above, so
 that is the only zoom a finger reaches. The gesture events are cancelled only on
 a device that reports touch points. macOS Safari sends the same events for a
 trackpad pinch, and that is left as it was.
+
+**If the page zooms anyway, a pinch zooms it back out.** On iPad Safari the
+layers are best-effort, and a pinch sometimes gets past them. What is left on
+screen is a small piece of the board, with the top bar and tool palette out of
+view, and a page cannot reset its own zoom: Safari keeps a zoom the user made
+until the next page load. So while the page is zoomed (`visualViewport.scale`
+above 1.001), the app stops blocking a pinch, and two fingers anywhere zoom the
+page rather than the board. A note pinned to the top of the visible area reads
+"The page is zoomed in. Pinch to zoom out." Throughout:
+
+- One finger is still the board's, so a drag still draws, moves or selects.
+- A two-finger touch never zooms the board, even where the browser leaves it
+  the pointers.
+- A pinch that stops short of 1x leaves the way out open.
+- The decision is made when a pinch starts, so one that reaches 1x is not cut
+  off halfway.
+
+Back at 1x, the guards return, and a pinch zooms the board again. This is touch
+devices only, like the gesture guard. Elsewhere the way out would be a finger
+pinch the device cannot make.
 
 **Ending a text edit does not depend on focus.** See
 [Text editing](#text-editing).
