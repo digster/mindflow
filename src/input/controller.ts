@@ -150,7 +150,9 @@ type Gesture =
   | { kind: 'createLinear'; origin: Point; element: LinearElement }
   | { kind: 'freehand'; element: DrawElement; points: PointTuple[] }
   | { kind: 'erase' }
-  | { kind: 'pinch'; start: PinchPair; startViewport: Viewport };
+  | { kind: 'pinch'; start: PinchPair; startViewport: Viewport }
+  /** Two fingers on a zoomed page: the browser's pinch, which the board sits out. */
+  | { kind: 'pagePinch' };
 
 export interface ControllerOptions {
   canvas: HTMLCanvasElement;
@@ -197,6 +199,12 @@ export interface ControllerOptions {
    * `Ctrl` elsewhere. See {@link isAdditiveSelect}.
    */
   isMac: boolean;
+  /**
+   * Whether the browser has zoomed the page itself. While it has, a second
+   * finger belongs to the browser, so a pinch can zoom the page back out
+   * instead of zooming the board. See `input/pageZoom.ts`.
+   */
+  isPageZoomed: () => boolean;
 }
 
 export class InteractionController {
@@ -617,6 +625,17 @@ export class InteractionController {
     // tap when the fingers lift.
     this.lastTap = null;
 
+    // The page is zoomed, so this pinch is the user's way back out, and it is
+    // the browser's to perform (`app.css` lets it while the page is zoomed).
+    // Zooming the board as well would move the one thing still on screen
+    // underneath their fingers. The first finger's gesture is still abandoned
+    // above: two fingers were never a request to draw or move.
+    if (this.options.isPageZoomed()) {
+      this.gesture = { kind: 'pagePinch' };
+      this.options.onOverlayChange();
+      return;
+    }
+
     this.gesture = {
       kind: 'pinch',
       start: [first, second] as PinchPair,
@@ -704,6 +723,7 @@ export class InteractionController {
         this.updatePinch();
         return;
       }
+      if (this.gesture.kind === 'pagePinch') return;
     }
     if (!event.isPrimary) return;
     const { store } = this.options;
@@ -949,10 +969,12 @@ export class InteractionController {
   private onPointerUp = (event: PointerEvent): void => {
     this.touches.delete(event.pointerId);
 
-    if (this.gesture.kind === 'pinch') {
+    if (this.gesture.kind === 'pinch' || this.gesture.kind === 'pagePinch') {
       // Lifting one finger ends the pinch outright. Handing the gesture to the
       // finger still down would lurch the board, because that finger has
-      // travelled a long way from where it would have started a drag.
+      // travelled a long way from where it would have started a drag. The
+      // same goes for a pinch the browser made on a zoomed page: falling
+      // through would also record the lift as half of a double tap.
       this.gesture = { kind: 'none' };
       this.releaseCapture(event.pointerId);
       this.pointerDownScreen = null;

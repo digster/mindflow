@@ -628,3 +628,50 @@ element, no undo step and no unsaved-changes flag, and typing into it is one
 "Add text" step. Emptying an existing box is one "Delete text" step that undo
 reverses. Sticky notes, labels and table cells are unaffected. The on-screen
 marker stays, for blank text that arrives in a file, a paste or an undo.
+
+---
+
+## 2026-10-29 — The sidebar sometimes disappears (investigation only)
+
+> sometimes the sidebar gets hidden because of some bug, investigate but dont
+> start work on it.
+
+(With an iPad Safari screenshot: no top bar, no tool palette, only the board.)
+
+Investigated, not fixed. The chrome is not hidden: the page itself is
+pinch-zoomed about 4x onto the canvas, so the top bar and tool palette are
+outside the visible area, and every finger pinch then lands on the canvas and
+zooms the board instead of the page. The likely trigger is a trackpad pinch on
+an iPad keyboard, which none of the existing page-zoom defences cover. Findings
+and fix options are in `memory/2026-10-29.md`.
+
+---
+
+## 2026-10-29 — Not a trackpad; what are the solutions?
+
+> this happens on ipad directly without any trackpad inputs.
+
+> what are the solutions?
+
+Touch only, so the trackpad theory was wrong. WebKit's source rules out
+focus-zoom on iPad, shows a page cannot reset a zoom you made yourself (only a
+reload does), and shows where the touch defences can leak. Three options are
+in `memory/2026-10-29.md`: an escape hatch that lets a pinch zoom the page
+back out, a reload fallback, and an on-device diagnostic to find the leak.
+None started.
+
+---
+
+## 2026-10-29 — Option 1: a way back out of a zoomed page
+
+> lets try option 1 for now.
+
+When the page zooms anyway on a touch device, it becomes a mode with a way out.
+While `visualViewport.scale` is above 1.001:
+
+- A pinch anywhere zooms the page instead of the board.
+- One finger still works on the board.
+- A note at the top of the visible area says "The page is zoomed in. Pinch to
+  zoom out."
+
+Back at 1x, the guards return.

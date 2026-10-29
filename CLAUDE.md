@@ -149,6 +149,7 @@ npm run check       # typecheck + test + build
 | What closing the text editor leaves behind (a blank text box is deleted; a new one is provisional) | `commit` and `create` in `src/ui/textEditor.ts`, `isBlank` on the registry, `restoreDirty` in `src/store/store.ts` |
 | How a blank text element shows on screen (never exported) | `blankTextMarker` in `src/render/shapes/text.ts` |
 | Page zoom on touch (must stay blocked) | `src/input/pageZoom.ts` + `touch-action` in `src/styles/app.css` |
+| The way out when the page zooms anyway (pinch out, the note) | `watchPageZoom` in `src/input/pageZoom.ts`, `html.mf-page-zoomed` in `src/styles/app.css`, `src/ui/pageZoomHint.ts`, `pagePinch` in `src/input/controller.ts` |
 | Connector routing | `src/input/binding.ts` + `docs/07-rendering.md` |
 | A keyboard shortcut | `src/input/keyboard.ts` (and its `SHORTCUT_REFERENCE`) |
 | Which modifier adds to the selection (Shift, Cmd on a Mac, Ctrl elsewhere) | `isAdditiveSelect` in `src/input/modifiers.ts` |

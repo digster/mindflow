@@ -21,7 +21,7 @@ import { layoutText } from '../render/shapes/shared.ts';
 import { InteractionController } from '../input/controller.ts';
 import { installKeyboardShortcuts, isTypingTarget } from '../input/keyboard.ts';
 import { createPasteGate } from '../input/pasteGate.ts';
-import { blockPageZoom } from '../input/pageZoom.ts';
+import { blockPageZoom, PAGE_ZOOMED_CLASS, watchPageZoom } from '../input/pageZoom.ts';
 import { screenToScene } from '../model/geometry.ts';
 import { enrolInFrames } from '../model/frames.ts';
 import { PALETTE } from '../model/defaults.ts';
@@ -36,6 +36,7 @@ import { buildCommands } from './commands.ts';
 import { StylePanel } from '../ui/stylePanel.ts';
 import { TextEditor } from '../ui/textEditor.ts';
 import { FrameNameEditor } from '../ui/frameNameEditor.ts';
+import { PageZoomHint } from '../ui/pageZoomHint.ts';
 import { showContextMenu } from '../ui/contextMenu.ts';
 import { closePopover } from '../ui/popover.ts';
 import { openColorPopover } from '../ui/colorPicker.ts';
@@ -108,6 +109,13 @@ export class MindflowApp {
   /** Cached Drive folder for the session, so we resolve it once. */
   private driveFolder: { id: string; name: string } | null = null;
 
+  /**
+   * Whether the browser has zoomed the page itself, which the guards in
+   * `input/pageZoom.ts` should prevent and on iPad sometimes do not. Only ever
+   * true on a touch device. See `wire`.
+   */
+  private pageZoomed = false;
+
   constructor(private readonly root: HTMLElement) {
     this.canvas = el('canvas', { class: 'mf-canvas', 'aria-label': 'Whiteboard canvas' });
 
@@ -151,6 +159,7 @@ export class MindflowApp {
       onContextMenu: ({ scene, screen, hit }) =>
         showContextMenu({ store: this.store, actions: this.actions, scene, screen, hit }),
       isMac: IS_MAC,
+      isPageZoomed: () => this.pageZoomed,
     });
 
     // Held as a field rather than passed inline: the command palette renders the
@@ -244,7 +253,31 @@ export class MindflowApp {
     // A pinch on a touchscreen zooms the board, never the page around it. The
     // CSS and the viewport meta do most of this. This covers iOS Safari, which
     // ignores both in places. See `input/pageZoom.ts` for which layer covers what.
-    this.disposers.push(blockPageZoom(document, navigator.maxTouchPoints > 0));
+    const touchDevice = navigator.maxTouchPoints > 0;
+    this.disposers.push(blockPageZoom(document, touchDevice, () => this.pageZoomed));
+
+    // If the page gets zoomed anyway, a pinch zooms it again so the user can get
+    // back out, and a note says so. Touch devices only, like the guard: the way
+    // out is a finger pinch, and a trackpad pinch over the board zooms the board,
+    // so on a desktop the note would give advice that does not work.
+    const visualViewport = window.visualViewport;
+    if (touchDevice && visualViewport) {
+      const hint = new PageZoomHint(visualViewport);
+      this.root.append(hint.element);
+      this.disposers.push(
+        watchPageZoom(visualViewport, (zoomed) => {
+          this.pageZoomed = zoomed;
+          document.documentElement.classList.toggle(PAGE_ZOOMED_CLASS, zoomed);
+          if (zoomed) hint.show();
+          else hint.hide();
+        }),
+        () => {
+          hint.hide();
+          hint.element.remove();
+          document.documentElement.classList.remove(PAGE_ZOOMED_CLASS);
+        },
+      );
+    }
 
     // ---- Resize ----------------------------------------------------------
     const resizeObserver = new ResizeObserver(() => {

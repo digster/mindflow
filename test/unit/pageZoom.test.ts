@@ -18,7 +18,13 @@ import { describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { blockPageZoom, PAGE_ZOOM_GESTURE_EVENTS } from '../../src/input/pageZoom.ts';
+import {
+  blockPageZoom,
+  isPageZoomed,
+  PAGE_ZOOM_GESTURE_EVENTS,
+  PAGE_ZOOMED_CLASS,
+  watchPageZoom,
+} from '../../src/input/pageZoom.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -67,6 +73,100 @@ describe('blockPageZoom', () => {
     dispose();
 
     expect(cancelled(target, 'gesturestart')).toBe(false);
+  });
+
+  it('lets a whole pinch through when the page is already zoomed', () => {
+    // The way back out of a page that got zoomed anyway.
+    const target = new EventTarget();
+    blockPageZoom(target, true, () => true);
+
+    for (const type of PAGE_ZOOM_GESTURE_EVENTS) {
+      expect(cancelled(target, type), type).toBe(false);
+    }
+  });
+
+  it('decides once per pinch, when it starts', () => {
+    // A pinch that zooms the page back to 1x must not be cut off halfway, and
+    // one that starts at 1x must not get through because of what it did.
+    let zoomed = true;
+    const target = new EventTarget();
+    blockPageZoom(target, true, () => zoomed);
+
+    expect(cancelled(target, 'gesturestart')).toBe(false);
+    zoomed = false;
+    expect(cancelled(target, 'gesturechange')).toBe(false);
+    expect(cancelled(target, 'gestureend')).toBe(false);
+
+    expect(cancelled(target, 'gesturestart')).toBe(true);
+    zoomed = true;
+    expect(cancelled(target, 'gesturechange')).toBe(true);
+    expect(cancelled(target, 'gestureend')).toBe(true);
+  });
+});
+
+describe('isPageZoomed', () => {
+  it('is false at rest, including for float noise', () => {
+    expect(isPageZoomed(1)).toBe(false);
+    expect(isPageZoomed(1.000001)).toBe(false);
+    expect(isPageZoomed(1.0005)).toBe(false);
+  });
+
+  it('is true once the page is zoomed in by any real amount', () => {
+    // A pinch out that stops short can leave this, with a strip of the chrome
+    // still off screen. The way out has to stay open until it is all back.
+    expect(isPageZoomed(1.007)).toBe(true);
+    expect(isPageZoomed(1.1)).toBe(true);
+    expect(isPageZoomed(4)).toBe(true);
+  });
+
+  it('is false for a page shrunk to fit, which hides nothing', () => {
+    expect(isPageZoomed(0.5)).toBe(false);
+  });
+});
+
+/** A stand-in for `window.visualViewport`: a scale and a `resize` event. */
+class FakeViewport extends EventTarget {
+  constructor(public scale: number) {
+    super();
+  }
+
+  zoomTo(scale: number): void {
+    this.scale = scale;
+    this.dispatchEvent(new Event('resize'));
+  }
+}
+
+describe('watchPageZoom', () => {
+  it('reports the state it starts in', () => {
+    const calls: boolean[] = [];
+    watchPageZoom(new FakeViewport(1), (zoomed) => calls.push(zoomed));
+    watchPageZoom(new FakeViewport(3), (zoomed) => calls.push(zoomed));
+
+    expect(calls).toEqual([false, true]);
+  });
+
+  it('reports each change, and only changes', () => {
+    const viewport = new FakeViewport(1);
+    const calls: boolean[] = [];
+    watchPageZoom(viewport, (zoomed) => calls.push(zoomed));
+
+    viewport.zoomTo(1); // A resize that is not a zoom: the keyboard, a rotation.
+    viewport.zoomTo(2);
+    viewport.zoomTo(4); // Still zoomed.
+    viewport.zoomTo(1);
+
+    expect(calls).toEqual([false, true, false]);
+  });
+
+  it('stops once disposed', () => {
+    const viewport = new FakeViewport(1);
+    const calls: boolean[] = [];
+    const dispose = watchPageZoom(viewport, (zoomed) => calls.push(zoomed));
+    dispose();
+
+    viewport.zoomTo(3);
+
+    expect(calls).toEqual([false]);
   });
 });
 
@@ -119,6 +219,24 @@ describe('the stylesheet', () => {
   it('keeps the canvas for the board’s own pan and pinch', async () => {
     const canvas = (await cssRules()).find(([selector]) => selector === '.mf-canvas');
     expect(declared(canvas![1], 'touch-action')).toBe('none');
+  });
+
+  it('lets a pinch zoom a page that got zoomed anyway, from anywhere', async () => {
+    // `touch-action` intersects with the ancestors' values, so the root and
+    // every element have to allow `pinch-zoom`, not just the canvas.
+    const rules = await cssRules();
+    const everywhere = rules.find(
+      ([selector]) => selector.replace(/\s+/g, ' ') === `html.${PAGE_ZOOMED_CLASS}, html.${PAGE_ZOOMED_CLASS} *`,
+    );
+    expect(everywhere, 'the zoomed-page rule for the root and everything in it').toBeDefined();
+    expect(declared(everywhere![1], 'touch-action')).toBe('pan-x pan-y pinch-zoom');
+  });
+
+  it('keeps one finger on the board while the page is zoomed', async () => {
+    // A pinch, and nothing else. Panning would make every one-finger drag on
+    // the board scroll the page instead.
+    const canvas = (await cssRules()).find(([selector]) => selector === `html.${PAGE_ZOOMED_CLASS} .mf-canvas`);
+    expect(declared(canvas![1], 'touch-action')).toBe('pinch-zoom');
   });
 });
 

@@ -57,7 +57,8 @@ between sessions.
 **Touch** — tap to select, drag to move, double-tap to edit text or a frame's name, long-press for
 the context menu, two-finger drag to pan and pinch to zoom. Hit targets and drag
 thresholds size themselves to whatever is doing the pointing. A pinch zooms the
-board, never the page: the toolbars stay put.
+board, never the page: the toolbars stay put. If iPad Safari zooms the page
+anyway, a note says so and a pinch zooms it back out.
 
 **Connectors** — arrows that bind to shapes and re-route automatically when those
 shapes move. Straight, curved or elbow routing; five arrowhead styles.

@@ -613,4 +613,227 @@ test.describe('page zoom', () => {
     await expect.poll(() => tools.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
     expect(await pageScale(page)).toBe(1);
   });
+
+  /**
+   * The guards above are not watertight on iPad Safari. Something there still
+   * zooms the page now and then, by a path not yet found, and leaves nothing on
+   * screen but the board: the top bar and the tool palette are outside the
+   * zoomed-in view. The board's own pinch then kept the user there, because
+   * every pinch they tried zoomed the board instead. So while the page is
+   * zoomed, a pinch zooms the page, and a note on screen says so.
+   *
+   * The page is zoomed here by a trackpad-style pinch over the top bar.
+   * `touch-action` does not govern a trackpad, so this is a real page zoom made
+   * by the browser itself, with none of the app's guards removed by hand.
+   */
+  test.describe('when the page got zoomed anyway', () => {
+    async function zoomPage(page: Page) {
+      const topBar = await centreOf(page, '.mf-topbar');
+      await (await cdp(page)).send('Input.synthesizePinchGesture', {
+        x: topBar.x,
+        y: topBar.y,
+        scaleFactor: 3,
+        gestureSourceType: 'mouse',
+      });
+      await expect.poll(() => pageScale(page)).toBeGreaterThan(2);
+    }
+
+    /**
+     * The middle of what is on screen, in the coordinates CDP's touch events
+     * take: CSS pixels from the visible area's top-left corner. On a zoomed page
+     * those are neither layout nor screen pixels. At 3x the whole screen is
+     * about 341 x 256 of them, so every distance below is small.
+     */
+    async function screenCentre(page: Page) {
+      return page.evaluate(() => ({ x: window.visualViewport!.width / 2, y: window.visualViewport!.height / 2 }));
+    }
+
+    /**
+     * Two fingers either side of the middle of the screen, closing or opening
+     * from `fromHalfSpread` to `toHalfSpread` CSS pixels each side, so it lands
+     * on whatever the user is looking at.
+     */
+    async function pinchOnScreen(page: Page, fromHalfSpread: number, toHalfSpread: number) {
+      const centre = await screenCentre(page);
+      const at = (half: number) => [
+        { x: centre.x - half, y: centre.y, id: 1 },
+        { x: centre.x + half, y: centre.y, id: 2 },
+      ];
+      await dispatch(page, 'touchStart', at(fromHalfSpread));
+      for (let step = 1; step <= 10; step += 1) {
+        await dispatch(page, 'touchMove', at(fromHalfSpread + ((toHalfSpread - fromHalfSpread) * step) / 10));
+      }
+      await dispatch(page, 'touchEnd', []);
+    }
+
+    /** The class of whatever is under the middle of the screen. */
+    async function underScreenCentre(page: Page) {
+      return page.evaluate(() => {
+        const v = window.visualViewport!;
+        return document.elementFromPoint(v.offsetLeft + v.width / 2, v.offsetTop + v.height / 2)?.className ?? null;
+      });
+    }
+
+    test('a pinch on the board zooms the page back out and leaves the board alone', async ({ page }) => {
+      await zoomPage(page);
+      expect(await underScreenCentre(page), 'the pinch must land on the board to mean anything').toBe('mf-canvas');
+      const before = await viewport(page);
+
+      await pinchOnScreen(page, 100, 5);
+
+      await expect.poll(() => pageScale(page)).toBe(1);
+      expect(await viewport(page)).toEqual(before);
+    });
+
+    test('says how to get back out, inside the zoomed-in view and at its normal size', async ({ page }) => {
+      const hint = page.locator('.mf-page-zoom-hint');
+      await expect(hint).toBeHidden();
+
+      await zoomPage(page);
+
+      await expect(hint).toBeVisible();
+      await expect(hint).toContainText('Pinch');
+      // `position: fixed` follows the layout viewport, most of which is off
+      // screen on a zoomed page. The note has to be inside the part that is not,
+      // and not magnified along with everything else.
+      const placement = await hint.locator('.mf-page-zoom-hint-pill').evaluate((pill) => {
+        const box = pill.getBoundingClientRect();
+        const v = window.visualViewport!;
+        return {
+          inside:
+            box.left >= v.offsetLeft &&
+            box.right <= v.offsetLeft + v.width &&
+            box.top >= v.offsetTop &&
+            box.bottom <= v.offsetTop + v.height,
+          heightOnScreen: box.height * v.scale,
+        };
+      });
+      expect(placement.inside).toBe(true);
+      expect(placement.heightOnScreen).toBeGreaterThan(20);
+      expect(placement.heightOnScreen).toBeLessThan(60);
+
+      await pinchOnScreen(page, 100, 5);
+
+      await expect(hint).toBeHidden();
+    });
+
+    test('a pinch that stops short leaves the way out open', async ({ page }) => {
+      await zoomPage(page);
+
+      await pinchOnScreen(page, 60, 40);
+
+      const scale = await pageScale(page);
+      expect(scale, 'still zoomed, just less').toBeGreaterThan(1.05);
+      expect(scale).toBeLessThan(2.9);
+      await expect(page.locator('.mf-page-zoom-hint')).toBeVisible();
+
+      const before = await viewport(page);
+      await pinchOnScreen(page, 100, 5);
+
+      await expect.poll(() => pageScale(page)).toBe(1);
+      expect(await viewport(page)).toEqual(before);
+    });
+
+    test('once the page is back to normal, a pinch zooms the board again and not the page', async ({ page }) => {
+      await zoomPage(page);
+      await pinchOnScreen(page, 100, 5);
+      await expect.poll(() => pageScale(page)).toBe(1);
+      const before = await viewport(page);
+
+      await pinch(page, [[400, 300], [500, 300]], [[350, 300], [550, 300]]);
+
+      expect(await pageScale(page)).toBe(1);
+      expect((await viewport(page)).zoom).toBeCloseTo(before.zoom * 2, 1);
+    });
+
+    /**
+     * Chromium cancels both pointers the moment it takes a pinch, so the board
+     * never sees one and the tests above would pass without the board's part.
+     * WebKit may hand the pointers on instead. Holding the canvas at
+     * `touch-action: none` keeps the pinch away from the browser here, which
+     * stands in for an engine that does that.
+     */
+    async function keepPinchFromBrowser(page: Page) {
+      await page.addStyleTag({ content: 'html.mf-page-zoomed .mf-canvas { touch-action: none !important }' });
+    }
+
+    test('the board sits out a pinch on a zoomed page even when it gets the pointers', async ({ page }) => {
+      await zoomPage(page);
+      await keepPinchFromBrowser(page);
+      await page.evaluate(() => {
+        const touches = new Set<number>();
+        document.querySelector('.mf-canvas')!.addEventListener('pointerdown', (event) => {
+          touches.add((event as PointerEvent).pointerId);
+          (window as unknown as { canvasTouches: number }).canvasTouches = touches.size;
+        });
+      });
+      const before = await viewport(page);
+
+      await pinchOnScreen(page, 60, 8);
+
+      expect(
+        await page.evaluate(() => (window as unknown as { canvasTouches?: number }).canvasTouches),
+        'both fingers must reach the board for this to mean anything',
+      ).toBe(2);
+      expect(await pageScale(page), 'the browser must have been kept out of it').toBeGreaterThan(2);
+      expect(await viewport(page)).toEqual(before);
+    });
+
+    test('a pinch on a zoomed page does not count as half of a double tap', async ({ page }) => {
+      await zoomPage(page);
+      await keepPinchFromBrowser(page);
+      const centre = await screenCentre(page);
+      // Where the first finger of `pinchOnScreen(…, 8)` lifts.
+      const lift = { x: centre.x - 8, y: centre.y };
+
+      // A sticky under the middle of the screen, drawn with a finger.
+      await page.evaluate(() =>
+        (window as unknown as { mindflow: { store: { setTool(tool: string): void } } }).mindflow.store.setTool('sticky'),
+      );
+      await dispatch(page, 'touchStart', [{ x: centre.x - 60, y: centre.y - 45 }]);
+      for (let step = 1; step <= 8; step += 1) {
+        await dispatch(page, 'touchMove', [{ x: centre.x - 60 + step * 15, y: centre.y - 45 + step * 11 }]);
+      }
+      await dispatch(page, 'touchEnd', []);
+      await page.keyboard.press('Escape');
+      expect(await editingId(page)).toBeNull();
+
+      // Guards the premise: a real double tap at that spot does open it.
+      for (let tapNumber = 0; tapNumber < 2; tapNumber += 1) {
+        await dispatch(page, 'touchStart', [lift]);
+        await dispatch(page, 'touchEnd', []);
+      }
+      expect(await editingId(page), 'a double tap there must open the sticky').not.toBeNull();
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(400); // Past the double-tap window.
+
+      await pinchOnScreen(page, 60, 8);
+      await dispatch(page, 'touchStart', [lift]);
+      await dispatch(page, 'touchEnd', []);
+
+      expect(await editingId(page)).toBeNull();
+    });
+
+    test('one finger still draws on the board while the page is zoomed', async ({ page }) => {
+      // The way out must not take the board away: only a second finger goes to
+      // the page. A `touch-action` that let the browser pan would turn this drag
+      // into a page scroll instead.
+      await zoomPage(page);
+      await page.evaluate(() =>
+        (window as unknown as { mindflow: { store: { setTool(tool: string): void } } }).mindflow.store.setTool('rectangle'),
+      );
+      const centre = await screenCentre(page);
+
+      await dispatch(page, 'touchStart', [{ x: centre.x - 60, y: centre.y - 45 }]);
+      for (let step = 1; step <= 8; step += 1) {
+        await dispatch(page, 'touchMove', [{ x: centre.x - 60 + step * 15, y: centre.y - 45 + step * 11 }]);
+      }
+      await dispatch(page, 'touchEnd', []);
+
+      const elements = (await getDocument(page)).elements;
+      expect(elements).toHaveLength(1);
+      expect(elements[0]!.type).toBe('rectangle');
+      expect(await pageScale(page)).toBeGreaterThan(2);
+    });
+  });
 });

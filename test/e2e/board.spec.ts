@@ -1467,6 +1467,18 @@ test.describe('viewport', () => {
     );
     expect(zoom).toBeGreaterThan(1); // A small shape on a big canvas zooms in.
   });
+
+  test('without a touchscreen, a zoomed page is left to the browser', async ({ page }) => {
+    // The way out of a zoomed page is a finger pinch, which needs a touchscreen
+    // to make. A trackpad pinch over the board zooms the board, so offering one
+    // here would be advice that does not work. See touch.spec.ts.
+    const session = await page.context().newCDPSession(page);
+    await session.send('Input.synthesizePinchGesture', { x: 640, y: 26, scaleFactor: 3, gestureSourceType: 'mouse' });
+    await expect.poll(() => page.evaluate(() => window.visualViewport!.scale)).toBeGreaterThan(2);
+
+    await expect(page.locator('.mf-page-zoom-hint')).toBeHidden();
+    expect(await page.evaluate(() => document.documentElement.classList.contains('mf-page-zoomed'))).toBe(false);
+  });
 });
 
 test.describe('document integrity', () => {

@@ -335,6 +335,26 @@ one touch rule keyed off the *device* (`navigator.maxTouchPoints`), not the
 gesture. A gesture event does not say what produced it, and the device check is
 what leaves macOS Safari's trackpad pinch alone.
 
+**A zoomed page is a mode, not just a state to prevent.** The guards are
+best-effort on iPad Safari. When the page zooms anyway, the chrome leaves the
+view, and a page cannot reset its own zoom (WebKit keeps a user's zoom until the
+next load). So `watchPageZoom` in `input/pageZoom.ts` watches
+`visualViewport.scale`, and while it is above 1 the app lets the user out. The
+mode flows outward from one boolean, `MindflowApp.pageZoomed`:
+
+- `mf-page-zoomed` on `<html>` adds `pinch-zoom` to every `touch-action` in
+  `app.css`.
+- `blockPageZoom`'s predicate lets a gesture through, decided at
+  `gesturestart`.
+- The controller's `isPageZoomed` option turns a second finger into a
+  `pagePinch` the board sits out.
+- `ui/pageZoomHint.ts` shows the note, placed in visual-viewport coordinates.
+
+Each part is needed on its own. `touch-action` intersects up the ancestor chain,
+so the root must allow the pinch too. And Chromium cancels the pointers when it
+takes a pinch where WebKit may not, which is why the board side is tested by
+keeping the pinch from the browser.
+
 **Paste has two entry points and one owner.** The Cmd/Ctrl+V keydown
 (`input/keyboard.ts`) and the native `paste` event (`app/app.ts`) can both fire
 for one press, and pasting is not idempotent. Neither calls `actions.paste()`
