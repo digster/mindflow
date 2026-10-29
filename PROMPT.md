@@ -644,3 +644,18 @@ outside the visible area, and every finger pinch then lands on the canvas and
 zooms the board instead of the page. The likely trigger is a trackpad pinch on
 an iPad keyboard, which none of the existing page-zoom defences cover. Findings
 and fix options are in `memory/2026-10-29.md`.
+
+---
+
+## 2026-10-29 — Not a trackpad; what are the solutions?
+
+> this happens on ipad directly without any trackpad inputs.
+
+> what are the solutions?
+
+Touch only, so the trackpad theory was wrong. WebKit's source rules out
+focus-zoom on iPad, shows a page cannot reset a zoom you made yourself (only a
+reload does), and shows where the touch defences can leak. Three options are
+in `memory/2026-10-29.md`: an escape hatch that lets a pinch zoom the page
+back out, a reload fallback, and an on-device diagnostic to find the leak.
+None started.
