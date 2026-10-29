@@ -628,3 +628,19 @@ element, no undo step and no unsaved-changes flag, and typing into it is one
 "Add text" step. Emptying an existing box is one "Delete text" step that undo
 reverses. Sticky notes, labels and table cells are unaffected. The on-screen
 marker stays, for blank text that arrives in a file, a paste or an undo.
+
+---
+
+## 2026-10-29 — The sidebar sometimes disappears (investigation only)
+
+> sometimes the sidebar gets hidden because of some bug, investigate but dont
+> start work on it.
+
+(With an iPad Safari screenshot: no top bar, no tool palette, only the board.)
+
+Investigated, not fixed. The chrome is not hidden: the page itself is
+pinch-zoomed about 4x onto the canvas, so the top bar and tool palette are
+outside the visible area, and every finger pinch then lands on the canvas and
+zooms the board instead of the page. The likely trigger is a trackpad pinch on
+an iPad keyboard, which none of the existing page-zoom defences cover. Findings
+and fix options are in `memory/2026-10-29.md`.
