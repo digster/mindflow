@@ -665,6 +665,10 @@ export interface DocumentMeta {
   name: string;
   /** ISO 8601 UTC, e.g. `2026-08-14T10:42:11.000Z`. */
   createdAt: string;
+  /**
+   * ISO 8601 UTC. When the board's content last changed. Every command moves
+   * it, and saving does not (format 1.6.3; before, a save stamped it).
+   */
   updatedAt: string;
   /** Which program wrote this file. Informational; never affects parsing. */
   app: {
@@ -705,7 +709,7 @@ export interface MindflowDocument {
 }
 
 /** The schema version this build reads and writes natively. */
-export const CURRENT_SCHEMA_VERSION = '1.6.2';
+export const CURRENT_SCHEMA_VERSION = '1.6.3';
 
 /** Canonical filename extension for a board. */
 export const FILE_EXTENSION = '.mindflow.json';

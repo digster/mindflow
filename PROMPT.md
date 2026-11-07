@@ -688,3 +688,18 @@ It reads `meta.updatedAt`. Autosave no longer stamps that with the write time,
 so a board reopened from the menu keeps its real edit time. An abandoned text
 box gives the time back. The name field now fits its text so the label sits
 beside it. Details in `memory/2026-11-07.md`.
+
+---
+
+## 2026-11-07 — Saves keep the edit time too (format 1.6.3)
+
+> Yes, change saves
+
+(In answer to: should saves also keep the last edit time, instead of stamping
+the save time?)
+
+Format 1.6.3, a patch. `serializeDocument` writes `meta.updatedAt` as the
+board holds it, so a save no longer moves it, and two saves of an unchanged
+board are byte-identical. A missing `updatedAt` now loads as `createdAt`. New
+schema file, identity migration, CHANGELOG entry. Details in
+`memory/2026-11-07.md`.

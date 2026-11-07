@@ -354,10 +354,10 @@ export class Autosave {
     const { document, preserved, unsaved } = snapshot;
 
     try {
-      // Unstamped: the copy keeps the time of the last edit, not of this write,
-      // which may only be the board being opened. The top bar shows it as
-      // "Edited …" when the copy is reopened. See `SerializeOptions`.
-      const contents = serializeDocument(document, preserved, { stampUpdatedAt: false });
+      // Holds the board's own `updatedAt`, the time of its last edit, not of
+      // this write (which may only be the board being opened). That is also
+      // what lets the identical-write check below ever match.
+      const contents = serializeDocument(document, preserved);
       const last = this.last;
       const sameContents = last?.boardId === document.id && last.contents === contents;
       // Skip identical writes: undo/redo round trips and no-op edits otherwise

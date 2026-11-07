@@ -259,15 +259,19 @@ on screen, and only if its copy is unsaved. The marker is written on every
 
 The top bar's *Edited 5 minutes ago* reads `meta.updatedAt`, and nothing else
 keeps time. `applyCommand` moves it on every command, so the store's document
-always holds the last edit, transient commands included. Two things keep it
+always holds the last edit, transient commands included. Three things keep it
 honest:
 
-- **Only a save stamps it.** `serializeDocument` sets `updatedAt` to now, as
-  `docs/02` specifies for a file. Autosave passes `stampUpdatedAt: false`. It
-  writes a copy when a board is opened, so a stamp there would make every
-  board reopened from the menu read as edited when it was last opened. This
-  also made autosave's identical-write check able to match at all. Before,
-  every serialisation differed by its timestamp.
+- **Nothing stamps it on the way out.** `serializeDocument` writes `updatedAt`
+  as the board holds it (format 1.6.3). It used to set it to now, and that went
+  wrong twice. A reopened file read as edited when it was saved. Worse, autosave
+  writes a copy when a board is merely opened, so a board reopened from the
+  menu read as edited when it was last opened. With no stamp, the output is
+  a pure function of the board. That is what lets autosave's identical-write
+  check match at all, and what lets the round-trip contract test compare bytes.
+- **A missing stamp is read as "never edited".** The loader defaults
+  `updatedAt` to `createdAt`, not to now. A default of now would be saved back
+  as an edit nobody made.
 - **A rewound transient edit gives the time back.** `Store.restoreDirty` puts
   `updatedAt` back along with the dirty flag, so an abandoned text box leaves
   no trace in the label either.

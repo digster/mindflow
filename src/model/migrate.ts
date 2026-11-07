@@ -11,7 +11,8 @@
  * inequality, so a missing step would make every older board load with a "no
  * migration is available" warning, which reads as data loss. 1.5.0 is the first
  * to transform anything — it retired four element types. 1.6.0 is additive again,
- * and 1.6.1 and 1.6.2 change only rendering rules.
+ * 1.6.1 and 1.6.2 change only rendering rules, and 1.6.3 only what a writer puts
+ * in `meta.updatedAt`.
  *
  * ---------------------------------------------------------------------------
  * Adding a migration
@@ -157,6 +158,19 @@ const MIGRATIONS: Record<string, Migration> = {
   '1.6.1': {
     to: '1.6.2',
     description: 'Text is set in the typefaces MindFlow ships, not whatever the system has.',
+    migrate: (document) => document,
+  },
+
+  /**
+   * Identity: 1.6.3 writes `meta.updatedAt` as the time of the last edit,
+   * where earlier versions stamped it with the time of the save. An older
+   * file's stamp is a save time, which is the closest thing to an edit time it
+   * holds, and is no earlier than the edit. There is nothing better to put
+   * there, so it is kept.
+   */
+  '1.6.2': {
+    to: '1.6.3',
+    description: '`meta.updatedAt` is the time of the last edit, and saving no longer moves it.',
     migrate: (document) => document,
   },
 };

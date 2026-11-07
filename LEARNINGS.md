@@ -1575,11 +1575,17 @@ re-stamped the copy, and the *next* reopen read the opening time back as the
 edit time. Two rounds are needed to see it, which is why the e2e test reopens
 twice.
 
-**Fix:** `serializeDocument(..., { stampUpdatedAt: false })` for autosave only.
-Files are unchanged.
+**Fix, in two steps:** first, autosave alone stopped stamping. Then format
+1.6.3 stopped every write from stamping. A save stamped too, so a board edited
+at 10:00 and saved at 10:30 read 10:00 while it was open and 10:30 once
+reopened. `serializeDocument` now writes `updatedAt` as the board holds it. The
+loader defaults a missing `updatedAt` to `createdAt`, not to now, because the
+default is now saved back.
 
 **Side effect worth knowing:** autosave's "skip identical writes" check could
-never match before. Every serialisation differed by its timestamp. It matches
+never match before. Every serialisation differed by its timestamp. So did the
+"two saves are byte-identical" promise in `docs/02`, which was not true until
+1.6.3. It matches
 now when a board is saved or flagged after its last write. An undo/redo round
 trip still differs, because `applyCommand` moves `updatedAt` on undo as well.
 The persistence doc used to claim that round trip was skipped. It never was.
@@ -1616,3 +1622,13 @@ The name field fits its text with a grid cell shared by the `<input>` and a
 hidden copy of the text (`.mf-board-name-field`). A fitted field has no spare
 width, so it loses the end of the name to any squeeze. Below 760px, where no
 label follows it, it keeps the old fixed 140px box for that reason.
+
+## A byte-for-byte round-trip test does not catch a "now" stamp
+
+Once saves stopped stamping `updatedAt`, the round-trip tests
+(`contract.test.ts`, `document.test.ts` › is idempotent) were tightened to
+compare the output byte for byte. Putting `updatedAt: new Date().toISOString()`
+back did **not** fail them. Both serialisations run in the same millisecond, so
+"now" is the same string twice. What does catch it is a test with a stamp
+fixed in the past: `serializeDocument` › writes both stamps as the board holds
+them. The test looks redundant next to the round trip, but it is not.

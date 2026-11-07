@@ -84,22 +84,6 @@ export interface LoadResult {
   preserved: unknown[];
 }
 
-export interface SerializeOptions {
-  /**
-   * Whether to set `meta.updatedAt` to now. Default true, which is what a save
-   * does (`docs/02-document-format.md#canonical-output`).
-   *
-   * False writes the board's own `updatedAt` unchanged. Autosave uses this. Its
-   * copy is private to this browser, and it is written when a board is merely
-   * opened, so stamping it would make a reopened board claim an edit at the
-   * time it was last opened. The store's `updatedAt` already holds the last
-   * edit, since every command moves it. A side benefit: two writes of an
-   * unchanged board are then byte-identical, so autosave's identical-write
-   * check can match.
-   */
-  stampUpdatedAt?: boolean;
-}
-
 /** Thrown only when the input is not a MindFlow document at all. */
 export class DocumentLoadError extends Error {
   override readonly name = 'DocumentLoadError';
@@ -391,6 +375,13 @@ export function loadDocument(input: string | unknown): LoadResult {
   // ignore zIndex still render correctly.
   elements.sort((a, b) => a.zIndex - b.zIndex);
 
+  // A missing `updatedAt` defaults to `createdAt`, not to now. A file that says
+  // when it was made but not when it changed has, as far as anyone can tell,
+  // not changed. Since saves write `updatedAt` as the board holds it (1.6.3),
+  // a default of now would be written back as an edit nobody made, and the top
+  // bar would call the board edited at the moment it was opened.
+  const createdAt = asIsoDate(rawMeta.createdAt, now);
+
   const document: MindflowDocument = {
     $schema: asString(source.$schema, SCHEMA_URL),
     type: 'mindflow.board',
@@ -398,8 +389,8 @@ export function loadDocument(input: string | unknown): LoadResult {
     id: asString(source.id, '') || newBoardId(),
     meta: {
       name: asString(rawMeta.name, 'Untitled board'),
-      createdAt: asIsoDate(rawMeta.createdAt, now),
-      updatedAt: asIsoDate(rawMeta.updatedAt, now),
+      createdAt,
+      updatedAt: asIsoDate(rawMeta.updatedAt, createdAt),
       app: {
         name: asString(rawApp.name, 'unknown'),
         version: asString(rawApp.version, '0.0.0'),
@@ -568,14 +559,18 @@ function roundElement(el: MindflowElement): MindflowElement {
  * `preserved` holds elements of unknown type from {@link LoadResult}; they are
  * merged back in z-order so a round trip through an older build is lossless.
  *
- * `meta.updatedAt` is stamped with the current time, as `docs/02` specifies
- * for a save, unless `options.stampUpdatedAt` is false. See
- * {@link SerializeOptions}.
+ * `meta.updatedAt` is written as the board holds it, the time of its last
+ * edit, never stamped with the time of the write (format 1.6.3). Every command
+ * already moves it (`applyCommand`), so the board knows when it last changed.
+ * A save is not a change. A stamp would make a reopened file read as edited
+ * when it was saved, and autosave, which writes when a board is merely opened,
+ * would make it read as edited when it was opened. It also leaves the output a
+ * pure function of the board, so two saves of an unchanged board are
+ * byte-identical, as `docs/02` promises.
  */
 export function serializeDocument(
   document: MindflowDocument,
   preserved: readonly unknown[] = [],
-  options: SerializeOptions = {},
 ): string {
   const elements: unknown[] = document.elements.map(roundElement);
 
@@ -598,7 +593,7 @@ export function serializeDocument(
     meta: {
       name: document.meta.name,
       createdAt: document.meta.createdAt,
-      updatedAt: options.stampUpdatedAt === false ? document.meta.updatedAt : new Date().toISOString(),
+      updatedAt: document.meta.updatedAt,
       app: { name: 'mindflow', version: APP_VERSION },
     },
     canvas: document.canvas,

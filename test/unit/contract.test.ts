@@ -358,7 +358,9 @@ describe('documented examples', () => {
         const first = serializeDocument(loadDocument(raw).document);
         const second = serializeDocument(loadDocument(first).document);
 
-        expect(stripTimestamps(second)).toEqual(stripTimestamps(first));
+        // Byte for byte, timestamps included: a save writes `updatedAt` as the
+        // board holds it (1.6.3), so nothing in the output depends on when it ran.
+        expect(second).toBe(first);
       });
 
       it('the re-serialised form still validates', () => {
@@ -390,10 +392,3 @@ describe('documented examples', () => {
     });
   }
 });
-
-/** `updatedAt` is rewritten on every save, so it cannot participate in equality. */
-function stripTimestamps(json: string): unknown {
-  const parsed = JSON.parse(json) as { meta: { updatedAt?: string } };
-  delete parsed.meta.updatedAt;
-  return parsed;
-}

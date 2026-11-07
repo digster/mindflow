@@ -72,8 +72,8 @@ queues one follow-up save and never starts a second one alongside.
 
 **Last edited** — beside the board name, the top bar says when the board last
 changed (*Edited 5 minutes ago*, *Edited 3 Mar*), with the full date and time on
-hover. It keeps up with the clock, and a board reopened from the recent-boards
-menu says when it was last edited, not when it was last opened.
+hover. It keeps up with the clock. Saving does not change it, and neither does
+reopening the board from a file or the recent-boards menu.
 
 **Recent boards** — every board you work on keeps a copy in the browser
 (IndexedDB). Click the logo at the top left to switch between up to ten of them

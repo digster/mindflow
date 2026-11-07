@@ -55,12 +55,28 @@ Reference implementation: [`src/model/document.ts`](../src/model/document.ts).
 |---|---|---|
 | `name` | string | Display name. Not a filename — it may contain characters a filesystem rejects. |
 | `createdAt` | string | ISO 8601 UTC with milliseconds. Preserved across saves. |
-| `updatedAt` | string | ISO 8601 UTC. Rewritten on every save. MindFlow also moves it on every edit, and shows it as when the board was last edited. |
+| `updatedAt` | string | ISO 8601 UTC with milliseconds. When the board's content last changed. Saving does not move it (since 1.6.3; see below). |
 | `app.name` | string | Which program wrote the file. Informational only. |
 | `app.version` | string | Version of that program. Informational only. |
 
 `app` is **never** used to alter parsing. It exists for debugging ("which build
 produced this?"), and a reader that branches on it is doing something wrong.
+
+**`updatedAt` is the time of the last edit, not of the last save.** A writer
+moves it when the board's content changes and leaves it alone otherwise.
+MindFlow moves it on every edit: adding, changing or deleting an element,
+renaming the board, changing the canvas settings, and undo and redo. Moving the
+camera, selecting and saving are not edits. A board never edited has
+`updatedAt` equal to `createdAt`. MindFlow shows it beside the board name
+([05-interactions.md](05-interactions.md#when-the-board-was-last-edited)).
+
+- **Missing or unreadable**, the loader uses `createdAt`: a board that does not
+  say it changed is taken not to have. A missing `createdAt` is the time of
+  loading, so a file with neither stamp gets one instant for both.
+- **Files before 1.6.3** hold the time of their last save here, because a save
+  used to stamp it. It is kept as it is ([CHANGELOG](CHANGELOG.md#163--2026-11-07)).
+- To know when a file was **written**, use the file system's or the storage
+  service's modification time.
 
 ### `canvas`
 
@@ -284,7 +300,10 @@ When MindFlow writes a file:
 - Coordinates are rounded to **2 decimal places**; angles and opacity to 3; zoom
   to 4.
 - `elements` is sorted ascending by `zIndex`.
-- `meta.updatedAt` is set to now; `meta.createdAt` is preserved.
+- `meta.createdAt` and `meta.updatedAt` are written as the board holds them.
+  Saving is not an edit, so it moves neither ([`meta`](#meta)). Before 1.6.3,
+  a save set `updatedAt` to now, which also made every save differ from the
+  last.
 
 **Why pretty-printed?** It costs roughly 30% file size against minified JSON and
 buys readable `git diff`s, the ability to inspect or hand-edit a board in any text

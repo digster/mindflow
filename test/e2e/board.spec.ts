@@ -1666,16 +1666,49 @@ test.describe('when the board was last edited', () => {
     }, iso);
 
   /** Opens a board file through the same loader a dropped file goes through. */
-  async function openBoardFile(page: Page, board: object) {
+  async function openBoardFile(page: Page, board: object | string) {
+    const content = typeof board === 'string' ? board : JSON.stringify(board);
+    const name = (JSON.parse(content) as { meta: { name: string } }).meta.name;
     await page.evaluate((content) => {
       const data = new DataTransfer();
       data.items.add(new File([content], 'plan.mindflow.json', { type: 'application/json' }));
       document
         .querySelector('.mf-canvas')!
         .dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
-    }, JSON.stringify(board));
-    await expect.poll(async () => (await getDocument(page)).meta.name).toBe('Old plan');
+    }, content);
+    await expect.poll(async () => (await getDocument(page)).meta.name).toBe(name);
   }
+
+  /**
+   * Stands in for the File System Access save picker, keeping what each save
+   * writes in `window.__written`. Installed before the app boots, which is when
+   * it decides whether the picker exists.
+   */
+  async function recordFileSaves(page: Page) {
+    await page.addInitScript(() => {
+      const written: string[] = [];
+      const handle = {
+        name: 'Plan.mindflow.json',
+        queryPermission: async () => 'granted',
+        requestPermission: async () => 'granted',
+        createWritable: async () => {
+          let data = '';
+          return {
+            write: async (chunk: unknown) => {
+              data += typeof chunk === 'string' ? chunk : await new Response(chunk as Blob).text();
+            },
+            close: async () => {
+              written.push(data);
+            },
+          };
+        },
+      };
+      Object.assign(window, { __written: written, showSaveFilePicker: async () => handle });
+    });
+  }
+
+  const written = (page: Page) =>
+    page.evaluate(() => (window as unknown as { __written: string[] }).__written);
 
   /** A board last saved on 14 March 2025, a year and more before any test runs. */
   const OLD_BOARD = {
@@ -1724,6 +1757,42 @@ test.describe('when the board was last edited', () => {
     await expect(label(page)).toHaveAttribute('title', `Last edited ${expected.full}`);
     // Showing the time is not an edit.
     expect(await isDirty(page)).toBe(false);
+  });
+
+  test('a save writes when the board was edited, not when it was saved', async ({ page }) => {
+    // Format 1.6.3. A stamp of the save time would make the board read 10:00
+    // while it was open and 10:30 once reopened, and a save of an untouched
+    // board would make it newer.
+    await recordFileSaves(page);
+    await onClock(page, '2026-11-07T10:00:00.000Z');
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    const input = page.locator('.mf-board-name');
+    await input.fill('Plan');
+    await input.press('Enter');
+    const editedAt = (await stamps(page)).updatedAt;
+
+    await page.clock.fastForward('30:00');
+    await page.locator('[data-action="save"]').click();
+    await expect.poll(async () => (await written(page)).length).toBe(1);
+    expect(await isDirty(page)).toBe(false);
+
+    const file = (await written(page))[0]!;
+    expect((JSON.parse(file) as { meta: { updatedAt: string } }).meta.updatedAt).toBe(editedAt);
+    // Saving left the board's own time alone, and the label with it.
+    expect((await stamps(page)).updatedAt).toBe(editedAt);
+    await expect(label(page)).toHaveText('Edited 30 minutes ago');
+
+    // Saved again without an edit, the file comes out byte for byte the same.
+    await page.locator('[data-action="save"]').click();
+    await expect.poll(async () => (await written(page)).length).toBe(2);
+    expect((await written(page))[1]).toBe(file);
+
+    // And reopened, the file reads exactly as the board did.
+    await page.getByRole('button', { name: 'New board' }).click();
+    await expect.poll(async () => (await getDocument(page)).meta.name).toBe('Untitled board');
+    await openBoardFile(page, file);
+    await expect(label(page)).toHaveText('Edited 30 minutes ago');
   });
 
   test('a text box closed empty leaves the time alone, and a real edit moves it', async ({ page }) => {

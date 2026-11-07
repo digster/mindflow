@@ -297,7 +297,9 @@ describe('serialisation', () => {
     const once = serializeDocument(doc);
     const twice = serializeDocument(loadDocument(once).document);
 
-    expect(stripUpdatedAt(twice)).toEqual(stripUpdatedAt(once));
+    // Byte for byte, timestamps included: a save no longer stamps the time of
+    // the write (1.6.3), so nothing in the output depends on when it ran.
+    expect(twice).toBe(once);
   });
 
   it('rounds coordinates so saves are byte-stable', () => {
@@ -321,23 +323,19 @@ describe('serialisation', () => {
     expect(output.endsWith('\n')).toBe(true);
   });
 
-  it('preserves createdAt but refreshes updatedAt', () => {
+  // 1.6.3. A stamp would make a reopened file read as edited when it was last
+  // saved, and autosave, which writes when a board is merely opened, as
+  // edited when it was last opened.
+  it('writes both stamps as the board holds them, never the time of the save', () => {
     const doc = createDocument();
     doc.meta.createdAt = '2020-01-01T00:00:00.000Z';
-    const output = JSON.parse(serializeDocument(doc)) as { meta: { createdAt: string; updatedAt: string } };
-    expect(output.meta.createdAt).toBe('2020-01-01T00:00:00.000Z');
-    expect(output.meta.updatedAt).not.toBe('2020-01-01T00:00:00.000Z');
-  });
-
-  // Autosave's mode. Its copy is written when a board is merely opened, so a
-  // stamp would make the board claim an edit at that moment.
-  it('keeps updatedAt unchanged when told not to stamp it, so writes are byte-identical', () => {
-    const doc = createDocument();
     doc.meta.updatedAt = '2020-01-02T03:04:05.000Z';
-    const first = serializeDocument(doc, [], { stampUpdatedAt: false });
-    const output = JSON.parse(first) as { meta: { updatedAt: string } };
+    const first = serializeDocument(doc);
+    const output = JSON.parse(first) as { meta: { createdAt: string; updatedAt: string } };
+    expect(output.meta.createdAt).toBe('2020-01-01T00:00:00.000Z');
     expect(output.meta.updatedAt).toBe('2020-01-02T03:04:05.000Z');
-    expect(serializeDocument(doc, [], { stampUpdatedAt: false })).toBe(first);
+    // So two saves of an unchanged board are byte-identical, as docs/02 says.
+    expect(serializeDocument(doc)).toBe(first);
   });
 
   it('always writes the current schema version', () => {
@@ -662,8 +660,57 @@ describe('1.6.1 → 1.6.2: bundled fonts', () => {
   });
 });
 
-function stripUpdatedAt(json: string): unknown {
-  const parsed = JSON.parse(json) as { meta: { updatedAt?: string } };
-  delete parsed.meta.updatedAt;
-  return parsed;
-}
+/**
+ * 1.6.3 changes what a writer puts in `meta.updatedAt`: the time of the last
+ * edit, where earlier versions stamped the time of the save. An older file's
+ * save time is the best edit time it has, so it is kept as it is.
+ */
+describe('1.6.2 → 1.6.3: updatedAt is the last edit', () => {
+  it('upgrades a 1.6.2 board quietly and keeps both of its stamps', () => {
+    const board = {
+      type: 'mindflow.board',
+      schemaVersion: '1.6.2',
+      meta: { name: 'Saved earlier', createdAt: '2026-09-01T09:00:00.000Z', updatedAt: '2026-09-02T17:30:00.000Z' },
+      elements: [],
+    };
+    const { document, warnings } = loadDocument(JSON.stringify(board));
+    expect(warnings.find((warning) => warning.message.includes('1.6.2 → 1.6.3'))?.level).toBe('info');
+    expect(warnings.filter((warning) => warning.level !== 'info')).toEqual([]);
+    expect(document.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(document.meta.createdAt).toBe('2026-09-01T09:00:00.000Z');
+    expect(document.meta.updatedAt).toBe('2026-09-02T17:30:00.000Z');
+
+    // And a save of it, untouched, keeps the old stamp rather than the save time.
+    const saved = JSON.parse(serializeDocument(document)) as { meta: { updatedAt: string } };
+    expect(saved.meta.updatedAt).toBe('2026-09-02T17:30:00.000Z');
+  });
+});
+
+describe('loading the stamps', () => {
+  const load = (meta: Record<string, unknown>) =>
+    loadDocument(JSON.stringify({ type: 'mindflow.board', schemaVersion: CURRENT_SCHEMA_VERSION, meta, elements: [] }))
+      .document.meta;
+
+  // Saves now write `updatedAt` back as loaded, so a default of now would be
+  // persisted as an edit nobody made.
+  it('reads a missing updatedAt as never edited: the same as createdAt', () => {
+    const meta = load({ name: 'Hand-written', createdAt: '2026-03-01T08:00:00.000Z' });
+    expect(meta.updatedAt).toBe('2026-03-01T08:00:00.000Z');
+  });
+
+  it('does the same for an unreadable updatedAt', () => {
+    const meta = load({ name: 'Hand-written', createdAt: '2026-03-01T08:00:00.000Z', updatedAt: 'last Tuesday' });
+    expect(meta.updatedAt).toBe('2026-03-01T08:00:00.000Z');
+  });
+
+  it('gives a board with neither stamp one instant for both', () => {
+    const meta = load({ name: 'No stamps' });
+    expect(meta.updatedAt).toBe(meta.createdAt);
+    expect(Number.isNaN(Date.parse(meta.createdAt))).toBe(false);
+  });
+
+  it('normalises a readable stamp to ISO 8601 UTC with milliseconds', () => {
+    const meta = load({ createdAt: '2026-03-01T08:00:00Z', updatedAt: '2026-03-01T10:00:00+02:00' });
+    expect(meta.updatedAt).toBe('2026-03-01T08:00:00.000Z');
+  });
+});

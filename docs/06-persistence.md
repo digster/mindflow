@@ -101,11 +101,12 @@ menu also starts a new board.
   skipped, so a board saved, or flagged and unflagged, after its last write
   does not rewrite megabytes. Undo and redo are edits and do move
   `meta.updatedAt`, so an undo/redo round trip is written again.
-- **A copy keeps the board's own `meta.updatedAt`**, the time of its last edit.
-  It is not stamped with the time of the write, as a save is. The copy is also
-  written when a board is merely opened, so a stamp would make the board read
-  as edited when it was last opened. The top bar shows this time as *Edited …*
-  ([05-interactions.md](05-interactions.md#when-the-board-was-last-edited)).
+- **A copy keeps the board's own `meta.updatedAt`**, the time of its last edit,
+  as a saved file does ([02-document-format.md](02-document-format.md#meta)).
+  This matters more for a copy than for a file, because a copy is also written
+  when a board is merely opened. Stamped with the time of the write, a board
+  would read as edited when it was last opened. The top bar shows this time as
+  *Edited …* ([05-interactions.md](05-interactions.md#when-the-board-was-last-edited)).
 - Each copy carries an **`unsaved`** flag: true while it holds changes that were
   never saved to a file or to Drive. An explicit save **clears the flag rather
   than deleting the copy**, and writes it at once rather than after the debounce.

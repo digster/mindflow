@@ -631,6 +631,57 @@ end-to-end suite checks for every face.
 substitute in the spirit of the logical name, and will break lines slightly
 differently, as every reader did before this version.
 
+---
+
+## 1.6.3 — 2026-11-07
+
+`meta.updatedAt` is the time of the board's last edit. No field or file
+structure changes, and every 1.6.2 file is a valid 1.6.3 file. What changes is
+the time a writer puts there.
+
+### Changed
+
+**A save writes `meta.updatedAt` as the board holds it, and no longer stamps it
+with the time of the save.** A writer moves it when the board's content
+changes and leaves it alone otherwise. MindFlow moves it on every edit: adding,
+changing or deleting an element, renaming the board, changing the canvas
+settings, and undo and redo. Moving the camera, selecting and saving are not
+edits. A board never edited has `updatedAt` equal to `createdAt`. Specified in
+[02-document-format.md](02-document-format.md#meta).
+
+**A missing or unreadable `updatedAt` is read as `createdAt`**, where it used
+to default to the time of loading. A file that says when it was made but not
+when it changed has, as far as anyone can tell, not changed. Since saves now
+write the value back, a default of "now" would be saved as an edit nobody made.
+
+**Why.** MindFlow now shows *Edited 5 minutes ago* beside the board name
+([05-interactions.md](05-interactions.md#when-the-board-was-last-edited)), and a
+save time is the wrong answer to "when did this last change?". A board edited at
+10:00 and saved at 10:30 read 10:00 while it was open and 10:30 once reopened,
+and saving an unchanged board made it newer. It also makes the canonical output
+claim true at last: two saves of the same board are byte-identical, where until
+now they differed by the stamp. The round-trip contract test now compares files
+byte for byte, timestamps included.
+
+**Why a patch.** The field's structure is unchanged, and its value is still a
+time at which the board was up to date. A 1.6.2 reader that took it for a save
+time now reads a time a little earlier than the save, and nothing in the format
+depends on the difference.
+
+### Migration: 1.6.2 → 1.6.3
+
+Identity. An older file's `updatedAt` holds the time of its last save. That is
+the closest thing to an edit time the file holds, and it is never earlier than
+the edit. The real edit time cannot be recovered, so the save time is kept.
+
+### Notes for implementers
+
+- A tool that rewrites a board without changing its content, for example to
+  reformat it or to upgrade its `schemaVersion`, should leave `updatedAt` alone.
+  A tool that changes the content should set it to now.
+- To know when a file was last written, use the file system's or the storage
+  service's own modification time. `updatedAt` no longer says.
+
 ## Unreleased
 
 Candidates under consideration, in rough priority order:

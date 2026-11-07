@@ -857,18 +857,18 @@ it for the full date and time.
 
 - **The time is `meta.updatedAt`.** Every edit moves it: drawing, deleting,
   restyling, renaming the board, changing the background, undo and redo.
-  Panning, zooming, selecting and saving do not.
+  Panning, zooming, selecting and saving do not
+  ([02-document-format.md](02-document-format.md#meta)).
 - **A board never edited says *Created …*** with `meta.createdAt`. That is a
   board whose `updatedAt` is not after its `createdAt`, as a new board's two
   stamps are equal. *Edited just now* on a blank board would claim an edit that
   never happened.
-- **A board opened from a file** shows the `updatedAt` it was saved with. A
-  save stamps that with the time of the save
-  ([02-document-format.md](02-document-format.md#canonical-output)), so a
-  reopened file reads as edited when it was last saved.
+- **Saving does not move it**, so a board reads the same before a save, after
+  it, and once reopened from the file. A file saved before format 1.6.3 reads
+  as edited when it was last saved, since saves used to stamp that time.
 - **A board reopened from the recent-boards menu** shows when it was last
   edited, not when it was last opened. Its copy keeps the board's own
-  `updatedAt` ([06-persistence.md](06-persistence.md#autosave-and-recent-boards)).
+  `updatedAt` too ([06-persistence.md](06-persistence.md#autosave-and-recent-boards)).
 - **A text box closed empty leaves the time alone**, as it leaves the
   unsaved-changes flag alone ([An empty text box](#an-empty-text-box)).
 - **It keeps up with the clock.** The wording changes at the moment it becomes
