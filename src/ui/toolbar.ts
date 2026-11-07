@@ -12,6 +12,7 @@ import { getDefinition } from '../model/registry.ts';
 import { el, icon, MOD_KEY } from './dom.ts';
 import { ICONS, type IconName } from './icons.ts';
 import { Popover, closePopover } from './popover.ts';
+import { describeLastEdit, relativeTimeChangesIn } from './time.ts';
 
 interface ToolSpec {
   id: ToolId;
@@ -31,6 +32,18 @@ const SHAPE_STORAGE_KEY = 'mindflow.shapeTool';
 
 const SAVE_TITLE = `Save — ${MOD_KEY}S`;
 const SAVING_TITLE = 'Saving…';
+
+/**
+ * The longest the "Edited …" label goes without being recomputed.
+ *
+ * Its timer normally fires exactly when the wording changes (see
+ * `relativeTimeChangesIn`), which for an old board can be a day away. Timers
+ * run on a clock that stops while the computer sleeps, so after a night's
+ * sleep that timer would leave "3 hours ago" up for hours. Capping the delay
+ * makes the label correct within a minute of waking, for one cheap
+ * recomputation a minute.
+ */
+const EDITED_RECHECK_MS = 60_000;
 
 const TOOLS: ToolSpec[] = [
   { id: 'select', icon: 'select', label: 'Select', shortcut: 'V' },
@@ -79,10 +92,17 @@ export class Toolbar {
 
   private toolButtons = new Map<ToolId, HTMLButtonElement>();
   private nameInput!: HTMLInputElement;
+  /** A hidden copy of the name that sizes the field. See {@link fitName}. */
+  private nameSizer!: HTMLElement;
   private zoomLabel!: HTMLButtonElement;
   private undoButton!: HTMLButtonElement;
   private redoButton!: HTMLButtonElement;
   private dirtyDot!: HTMLElement;
+  /** "Edited 5 minutes ago", beside the name. See {@link refreshEdited}. */
+  private editedLabel!: HTMLTimeElement;
+  /** The board stamps the label was last written for, so `sync` skips it otherwise. */
+  private editedFor = '';
+  private editedTimer: ReturnType<typeof setTimeout> | null = null;
   private saveButton!: HTMLButtonElement;
   /** A save is in flight. Session state owned by the app, not the store. */
   private saving = false;
@@ -277,6 +297,13 @@ export class Toolbar {
       type: 'text',
       'aria-label': 'Board name',
       spellcheck: 'false',
+      // Drops the browser's default width of about twenty characters. Chromium
+      // already ignores it under `width: 100%`, but sizing a percentage-width
+      // input in a shrink-to-fit cell is where engines differ, and a floor of
+      // twenty characters would put the label back at the end of a fixed box.
+      // See `.mf-board-name-field`.
+      size: 1,
+      oninput: (event: Event) => this.fitName((event.target as HTMLInputElement).value),
       onchange: (event: Event) => {
         const value = (event.target as HTMLInputElement).value.trim();
         this.callbacks.onRename(value === '' ? 'Untitled board' : value);
@@ -288,11 +315,24 @@ export class Toolbar {
       },
     });
 
+    // The field is as wide as the name, so what follows it sits beside the
+    // name rather than at the end of a fixed-width box. A hidden copy of the
+    // text shares the input's grid cell and sizes it. Pure CSS layout, so the
+    // width comes from the same font and box as the input, with nothing to
+    // measure. See `.mf-board-name-field` in `app.css`.
+    this.nameSizer = el('span', { class: 'mf-board-name-sizer', 'aria-hidden': 'true' });
+    const nameField = el('span', { class: 'mf-board-name-field' }, this.nameSizer, this.nameInput);
+
     this.dirtyDot = el('span', {
       class: 'mf-dirty-dot',
       title: 'Unsaved changes',
       'aria-hidden': 'true',
     });
+
+    // A `<time>`, so the instant is in the markup (`datetime`) as well as the
+    // words. Not a live region: rewording itself every minute would make a
+    // screen reader announce the clock.
+    this.editedLabel = el('time', { class: 'mf-edited' });
 
     this.undoButton = this.iconButton('undo', `Undo — ${MOD_KEY}Z`, () => this.store.undo());
     this.redoButton = this.iconButton('redo', `Redo — ${MOD_KEY}⇧Z`, () => this.store.redo());
@@ -312,8 +352,9 @@ export class Toolbar {
         'div',
         { class: 'mf-topbar-group' },
         this.brandButton,
-        this.nameInput,
+        nameField,
         this.dirtyDot,
+        this.editedLabel,
       ),
       el(
         'div',
@@ -468,12 +509,59 @@ export class Toolbar {
     // would jump while they are typing.
     if (document.activeElement !== this.nameInput) {
       this.nameInput.value = state.document.meta.name;
+      this.fitName(state.document.meta.name);
     }
 
     this.dirtyDot.classList.toggle('is-visible', state.dirty);
     this.undoButton.disabled = !this.store.history.canUndo();
     this.redoButton.disabled = !this.store.history.canRedo();
     this.zoomLabel.textContent = `${Math.round(state.viewport.zoom * 100)}%`;
+
+    // `sync` runs on every store change, pans and zooms at 60 fps included, so
+    // the label is only recomputed when one of its stamps moved. Its own timer
+    // covers the passing of time.
+    const { createdAt, updatedAt } = state.document.meta;
+    const stamps = `${createdAt}|${updatedAt}`;
+    if (stamps !== this.editedFor) {
+      this.editedFor = stamps;
+      this.refreshEdited();
+    }
+  }
+
+  /**
+   * Sizes the name field to `text`. Compared first, because `sync` calls this
+   * at 60 fps during a pan, and a text write invalidates layout.
+   */
+  private fitName(text: string): void {
+    if (this.nameSizer.textContent !== text) this.nameSizer.textContent = text;
+  }
+
+  /**
+   * Rewrites the "Edited …" label and schedules the next rewrite.
+   *
+   * The next one is due when the wording would change ("just now" becomes
+   * "1 minute ago" exactly a minute after the edit), capped by
+   * {@link EDITED_RECHECK_MS}. A timer that fires a moment early finds the
+   * same wording and simply schedules again for the few milliseconds left.
+   */
+  private refreshEdited(): void {
+    if (this.editedTimer !== null) clearTimeout(this.editedTimer);
+
+    const now = Date.now();
+    const label = describeLastEdit(this.store.getState().document.meta, now);
+    // Compared first: writing identical text still invalidates layout.
+    if (this.editedLabel.textContent !== label.text) this.editedLabel.textContent = label.text;
+    this.editedLabel.title = label.title;
+    this.editedLabel.dateTime = label.iso;
+
+    const due = relativeTimeChangesIn(label.iso, now) ?? EDITED_RECHECK_MS;
+    this.editedTimer = setTimeout(() => this.refreshEdited(), Math.min(due, EDITED_RECHECK_MS));
+  }
+
+  /** Stops the label's timer. The elements go with the app's root. */
+  destroy(): void {
+    if (this.editedTimer !== null) clearTimeout(this.editedTimer);
+    this.editedTimer = null;
   }
 }
 

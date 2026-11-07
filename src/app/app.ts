@@ -1005,6 +1005,7 @@ export class MindflowApp {
 
   destroy(): void {
     for (const dispose of this.disposers) dispose();
+    this.toolbar.destroy();
     this.controller.destroy();
     this.renderer.destroy();
     this.images.clear();

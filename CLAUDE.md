@@ -156,6 +156,8 @@ npm run check       # typecheck + test + build
 | Drive behaviour | `src/io/drive/` + `docs/08-google-drive.md` |
 | Save ordering, or the Save button's spinner | `src/app/saveQueue.ts`, `requestSave` in `src/app/app.ts`, `setSaving` in `src/ui/toolbar.ts` |
 | What a finished save records (dirty flag, origin, recent copy) | `completeSave` in `src/store/store.ts`, `recordSave` in `src/app/app.ts` |
+| The top bar's "Edited 5 minutes ago" (wording, timer, layout) | `src/ui/time.ts`, `refreshEdited` in `src/ui/toolbar.ts`, `.mf-edited` and `.mf-board-name-field` in `src/styles/app.css` |
+| What moves the last-edited time (`meta.updatedAt`) | `applyCommand` in `src/store/commands.ts`, `restoreDirty` in `src/store/store.ts`, `stampUpdatedAt` in `src/model/document.ts` |
 | PDF export: page order, fit, sizes | `src/render/pdfLayout.ts` + `docs/07-rendering.md#pdf` |
 | PDF export: which elements a page shows | `frameContents` in `src/model/frames.ts` |
 | Which frame a new element joins (every adding path) | `enrolInFrames` in `src/model/frames.ts` |

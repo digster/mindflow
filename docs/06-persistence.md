@@ -97,8 +97,15 @@ menu also starts a new board.
 
 - Debounced 1200 ms after the last edit. A board is also written when it is
   opened, so a board opened from a file or from Drive appears in the menu too.
-- **One copy per board**, keyed by the board's `id`. Identical writes are skipped,
-  so undo/redo round trips do not rewrite megabytes.
+- **One copy per board**, keyed by the board's `id`. Identical writes are
+  skipped, so a board saved, or flagged and unflagged, after its last write
+  does not rewrite megabytes. Undo and redo are edits and do move
+  `meta.updatedAt`, so an undo/redo round trip is written again.
+- **A copy keeps the board's own `meta.updatedAt`**, the time of its last edit.
+  It is not stamped with the time of the write, as a save is. The copy is also
+  written when a board is merely opened, so a stamp would make the board read
+  as edited when it was last opened. The top bar shows this time as *Edited …*
+  ([05-interactions.md](05-interactions.md#when-the-board-was-last-edited)).
 - Each copy carries an **`unsaved`** flag: true while it holds changes that were
   never saved to a file or to Drive. An explicit save **clears the flag rather
   than deleting the copy**, and writes it at once rather than after the debounce.

@@ -1560,3 +1560,59 @@ not only a state to prevent. See ARCHITECTURE.
   `touch-action` does not govern a trackpad. Over the canvas it becomes board
   zoom through the Ctrl+wheel handler. `Emulation.setPageScaleFactor` sets a
   scale too, but the visual viewport could not then be panned by any input.
+
+## `serializeDocument` stamps `updatedAt`, and autosave serialises on open
+
+**Symptom (caught before it shipped):** the new "Edited …" label read
+`meta.updatedAt`. A board reopened from the recent-boards menu said *Edited
+just now* although nobody had touched it. Nothing was wrong on the first reopen,
+only from the second on.
+
+**Cause:** `serializeDocument` writes `updatedAt: now`, as `docs/02` specifies
+for a save. Autosave goes through it too, and autosave writes a board's copy
+whenever the board is *loaded*, not only when it is edited. So every open
+re-stamped the copy, and the *next* reopen read the opening time back as the
+edit time. Two rounds are needed to see it, which is why the e2e test reopens
+twice.
+
+**Fix:** `serializeDocument(..., { stampUpdatedAt: false })` for autosave only.
+Files are unchanged.
+
+**Side effect worth knowing:** autosave's "skip identical writes" check could
+never match before. Every serialisation differed by its timestamp. It matches
+now when a board is saved or flagged after its last write. An undo/redo round
+trip still differs, because `applyCommand` moves `updatedAt` on undo as well.
+The persistence doc used to claim that round trip was skipped. It never was.
+
+**Also:** a transient edit moves `updatedAt` too. An abandoned text box needed
+`restoreDirty` to give the time back along with the dirty flag.
+
+## A timer test that cannot tell exact scheduling from a fixed tick
+
+The label reschedules its timer whenever `updatedAt` moves. So, right after an
+edit, "refresh every 60 s" and "refresh exactly when the wording changes" fire
+at the same moments. A test that edits and then fast-forwards a minute passes
+for both, so it proves nothing. It was checked by swapping in the fixed tick,
+and it passed.
+
+The case that separates them is a time the page did not see happen: open a
+board last edited 2m30s ago. The wording changes 30 s later. A fixed tick from
+the opening changes it after 60 s. `page.clock.install` plus `fastForward` drives
+this. Install before `reload`, or timers created before the install keep
+running on the real clock.
+
+## A shrinking flex group of fixed-size buttons overlaps rather than shrinks
+
+`.mf-topbar-group` has `min-width: 0`, so when the top bar is short of room
+every group's box shrinks, including the two that hold only fixed-size buttons.
+Their contents cannot shrink, so the buttons overflow into the next group and
+overlap. This happened below about 820px even before the "Edited" label existed.
+Above 760px the button groups now have `flex-shrink: 0`, and the left group
+gives way: the label (`flex-shrink: 100`) first, then the name. Below 760px
+nothing changed, and the button groups still overlap there (seen at 724px).
+See "Noticed" in `memory/2026-11-07.md`.
+
+The name field fits its text with a grid cell shared by the `<input>` and a
+hidden copy of the text (`.mf-board-name-field`). A fitted field has no spare
+width, so it loses the end of the name to any squeeze. Below 760px, where no
+label follows it, it keeps the old fixed 140px box for that reason.

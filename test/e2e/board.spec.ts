@@ -1640,6 +1640,197 @@ test.describe('new board', () => {
   });
 });
 
+test.describe('when the board was last edited', () => {
+  const label = (page: Page) => page.locator('.mf-edited');
+
+  /** The board's two stamps, read from the live store. */
+  const stamps = (page: Page) =>
+    page.evaluate(() => {
+      const mf = (window as unknown as { mindflow: { store: { document: { meta: { createdAt: string; updatedAt: string } } } } })
+        .mindflow;
+      const { createdAt, updatedAt } = mf.store.document.meta;
+      return { createdAt, updatedAt };
+    });
+
+  /**
+   * How the page itself writes a stamp, as a date and as a tooltip. Computed in
+   * the page, so the assertions hold whatever locale the browser runs in.
+   */
+  const inPage = (page: Page, iso: string) =>
+    page.evaluate((iso) => {
+      const date = new Date(iso);
+      return {
+        date: date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }),
+        full: date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
+      };
+    }, iso);
+
+  /** Opens a board file through the same loader a dropped file goes through. */
+  async function openBoardFile(page: Page, board: object) {
+    await page.evaluate((content) => {
+      const data = new DataTransfer();
+      data.items.add(new File([content], 'plan.mindflow.json', { type: 'application/json' }));
+      document
+        .querySelector('.mf-canvas')!
+        .dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
+    }, JSON.stringify(board));
+    await expect.poll(async () => (await getDocument(page)).meta.name).toBe('Old plan');
+  }
+
+  /** A board last saved on 14 March 2025, a year and more before any test runs. */
+  const OLD_BOARD = {
+    type: 'mindflow.board',
+    schemaVersion: '1.6.2',
+    id: 'board-last-edited',
+    meta: {
+      name: 'Old plan',
+      createdAt: '2025-01-02T09:00:00.000Z',
+      updatedAt: '2025-03-14T09:30:00.000Z',
+      app: { name: 'mindflow', version: '0.1.0' },
+    },
+    elements: [],
+    files: {},
+  };
+
+  /** Restarts the page on a fake clock that starts at `iso` and keeps running. */
+  async function onClock(page: Page, iso: string) {
+    await page.clock.install({ time: new Date(iso) });
+    await page.reload();
+    await page.waitForFunction(() => 'mindflow' in window);
+  }
+
+  test('a new board says when it was created, and its first edit says "Edited"', async ({ page }) => {
+    const before = await stamps(page);
+    expect(before.updatedAt).toBe(before.createdAt);
+    await expect(label(page)).toHaveText('Created just now');
+    await expect(label(page)).toHaveAttribute('datetime', before.createdAt);
+    await expect(label(page)).toHaveAttribute('title', `Created ${(await inPage(page, before.createdAt)).full}`);
+
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [250, 200]);
+
+    const after = await stamps(page);
+    await expect(label(page)).toHaveText('Edited just now');
+    await expect(label(page)).toHaveAttribute('datetime', after.updatedAt);
+    await expect(label(page)).toHaveAttribute('title', `Last edited ${(await inPage(page, after.updatedAt)).full}`);
+  });
+
+  test('a board opened from a file shows the edit time it was saved with', async ({ page }) => {
+    await openBoardFile(page, OLD_BOARD);
+
+    const expected = await inPage(page, OLD_BOARD.meta.updatedAt);
+    await expect(label(page)).toHaveText(`Edited ${expected.date}`);
+    await expect(label(page)).toHaveAttribute('datetime', OLD_BOARD.meta.updatedAt);
+    await expect(label(page)).toHaveAttribute('title', `Last edited ${expected.full}`);
+    // Showing the time is not an edit.
+    expect(await isDirty(page)).toBe(false);
+  });
+
+  test('a text box closed empty leaves the time alone, and a real edit moves it', async ({ page }) => {
+    // The text tool adds its box before anything is typed. Closed blank, the box
+    // is taken back off and leaves no trace, so the time must not move either.
+    await openBoardFile(page, OLD_BOARD);
+    const expected = await inPage(page, OLD_BOARD.meta.updatedAt);
+    await expect(label(page)).toHaveText(`Edited ${expected.date}`);
+
+    await page.keyboard.press('t');
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 300, box.y + 200);
+    await expect(page.locator('.mf-text-editor')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.mf-text-editor')).toBeHidden();
+
+    expect((await stamps(page)).updatedAt).toBe(OLD_BOARD.meta.updatedAt);
+    await expect(label(page)).toHaveText(`Edited ${expected.date}`);
+    expect(await isDirty(page)).toBe(false);
+
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await expect(label(page)).toHaveText('Edited just now');
+  });
+
+  test('keeps up with the clock between edits', async ({ page }) => {
+    await onClock(page, '2026-11-07T09:00:00.000Z');
+    await page.locator('[data-tool="rectangle"]').click();
+    await drag(page, [100, 100], [250, 200]);
+    await expect(label(page)).toHaveText('Edited just now');
+
+    await page.clock.fastForward('01:00');
+    await expect(label(page)).toHaveText('Edited 1 minute ago');
+
+    await page.clock.fastForward('03:00:00');
+    await expect(label(page)).toHaveText('Edited 3 hours ago');
+  });
+
+  test('changes its wording when it becomes true, for a time it did not see happen', async ({ page }) => {
+    // Opened two and a half minutes after its last edit, the board reads "2
+    // minutes ago" for thirty seconds more. A fixed one-minute tick counted from
+    // the opening would leave that up for a full minute, half of it wrong.
+    await onClock(page, '2026-11-07T09:00:00.000Z');
+    await openBoardFile(page, {
+      ...OLD_BOARD,
+      meta: { ...OLD_BOARD.meta, createdAt: '2026-11-07T08:00:00.000Z', updatedAt: '2026-11-07T08:57:30.000Z' },
+    });
+    await expect(label(page)).toHaveText('Edited 2 minutes ago');
+
+    await page.clock.fastForward('00:30');
+    await expect(label(page)).toHaveText('Edited 3 minutes ago');
+  });
+
+  test('sits beside the board name, and is left out on a phone-sized screen', async ({ page }) => {
+    const name = (await page.locator('.mf-board-name').boundingBox())!;
+    const edited = (await label(page).boundingBox())!;
+    expect(edited.x).toBeGreaterThan(name.x + name.width);
+    // Beside the name itself: the field fits "Untitled board", so only the
+    // dirty dot's slot and a margin lie between, not a fixed-width box.
+    expect(edited.x - (name.x + name.width)).toBeLessThan(24);
+    // On the name's line: centred on it, give or take a pixel.
+    expect(Math.abs(edited.y + edited.height / 2 - (name.y + name.height / 2))).toBeLessThan(2);
+    // In full at desktop width, not cut to an ellipsis.
+    expect(await label(page).evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+
+    await page.setViewportSize({ width: 375, height: 700 });
+    await expect(label(page)).toBeHidden();
+  });
+
+  test('the name field grows with the name, so the label stays beside it', async ({ page }) => {
+    const input = page.locator('.mf-board-name');
+    const before = (await input.boundingBox())!.width;
+
+    await input.fill('Q4 product roadmap and launch planning');
+    const typed = (await input.boundingBox())!;
+    expect(typed.width).toBeGreaterThan(before + 100);
+    // Grown while typing, not only once committed, and with the whole name in view.
+    expect(await input.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+
+    await input.press('Enter');
+    await expect.poll(async () => (await getDocument(page)).meta.name).toBe('Q4 product roadmap and launch planning');
+    const edited = (await label(page).boundingBox())!;
+    expect(edited.x - (typed.x + typed.width)).toBeLessThan(24);
+  });
+
+  test('on a narrow window, the label and then the name give way, never the buttons', async ({ page }) => {
+    // The buttons are fixed sizes, so squeezing their groups only overlaps them.
+    await page.setViewportSize({ width: 900, height: 700 });
+    const input = page.locator('.mf-board-name');
+    await input.fill('Q4 product roadmap and launch planning');
+    await input.press('Enter');
+
+    const overflow = await page.evaluate(() =>
+      [...document.querySelectorAll('.mf-topbar-group')].map((group) => group.scrollWidth - group.clientWidth),
+    );
+    expect(overflow).toEqual([0, 0, 0]);
+    // The label went first, all of it, and the name was cut after it.
+    expect(await label(page).evaluate((node) => node.clientWidth)).toBe(0);
+    expect(await input.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+
+    // A short name has room for the label in full at the same width.
+    await input.fill('Retro');
+    await input.press('Enter');
+    expect(await label(page).evaluate((node) => node.clientWidth > 0 && node.scrollWidth <= node.clientWidth)).toBe(true);
+  });
+});
+
 test.describe('align and distribute', () => {
   /** Draws `count` rectangles at staggered positions and selects them all. */
   async function drawAndSelectAll(page: Page, boxes: [number, number][][]) {
@@ -3707,6 +3898,28 @@ test.describe('recent boards', () => {
     await openMenu(page);
     await expect(row(page, 'Beta')).toContainText('2 elements');
     await expect(row(page, 'Alpha').locator('.mf-recent-tag--current')).toBeVisible();
+  });
+
+  test('a reopened board says when it was last edited, not when it was last opened', async ({ page }) => {
+    // Opening a board writes its copy, not only editing it. A copy stamped with
+    // the time of that write, as a save is, would tell the next reopen that the
+    // board was edited when it was merely opened. So two rounds: the first
+    // reopen writes the copy the second reads.
+    await page.clock.install({ time: new Date('2026-11-07T09:00:00.000Z') });
+    await page.reload();
+    await page.waitForFunction(() => 'mindflow' in window);
+
+    await makeBoard(page, 'Alpha');
+    await waitForStored(page, 'Alpha', 1);
+
+    for (const hours of [2, 4]) {
+      await newBoard(page);
+      await page.clock.fastForward('02:00:00');
+      await openMenu(page);
+      await row(page, 'Alpha').locator('.mf-recent-open').click();
+      await expect.poll(async () => (await getDocument(page)).meta.name).toBe('Alpha');
+      await expect(page.locator('.mf-edited')).toHaveText(`Edited ${hours} hours ago`);
+    }
   });
 
   test('keeps the last edits of a board left before the debounce fires', async ({ page }) => {

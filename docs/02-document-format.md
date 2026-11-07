@@ -55,7 +55,7 @@ Reference implementation: [`src/model/document.ts`](../src/model/document.ts).
 |---|---|---|
 | `name` | string | Display name. Not a filename — it may contain characters a filesystem rejects. |
 | `createdAt` | string | ISO 8601 UTC with milliseconds. Preserved across saves. |
-| `updatedAt` | string | ISO 8601 UTC. Rewritten on every save. |
+| `updatedAt` | string | ISO 8601 UTC. Rewritten on every save. MindFlow also moves it on every edit, and shows it as when the board was last edited. |
 | `app.name` | string | Which program wrote the file. Informational only. |
 | `app.version` | string | Version of that program. Informational only. |
 

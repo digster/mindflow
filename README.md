@@ -70,6 +70,11 @@ search and copy. SVG export carries the fonts it uses. A slow save, such as one 
 Save button into a spinner until it finishes. Pressing Save again meanwhile
 queues one follow-up save and never starts a second one alongside.
 
+**Last edited** — beside the board name, the top bar says when the board last
+changed (*Edited 5 minutes ago*, *Edited 3 Mar*), with the full date and time on
+hover. It keeps up with the clock, and a board reopened from the recent-boards
+menu says when it was last edited, not when it was last opened.
+
 **Recent boards** — every board you work on keeps a copy in the browser
 (IndexedDB). Click the logo at the top left to switch between up to ten of them
 or start a new one; boards with changes never saved to a file are marked

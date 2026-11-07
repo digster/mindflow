@@ -847,6 +847,41 @@ discard the app and any unsaved work with it. Both listeners therefore sit on
 - A drag carrying **no files** is left untouched, so text can still be dragged
   into the board-name field. Same rule as the keyboard and clipboard handlers.
 
+## When the board was last edited
+
+Beside the board name, the top bar says when the board last changed:
+*Edited just now*, *Edited 5 minutes ago*, *Edited yesterday*, then a date
+such as *Edited 3 Mar* (with the year once it is not this one). The wording is
+the recent-boards menu's, from `formatRelativeTime` in `src/ui/time.ts`. Hover
+it for the full date and time.
+
+- **The time is `meta.updatedAt`.** Every edit moves it: drawing, deleting,
+  restyling, renaming the board, changing the background, undo and redo.
+  Panning, zooming, selecting and saving do not.
+- **A board never edited says *Created …*** with `meta.createdAt`. That is a
+  board whose `updatedAt` is not after its `createdAt`, as a new board's two
+  stamps are equal. *Edited just now* on a blank board would claim an edit that
+  never happened.
+- **A board opened from a file** shows the `updatedAt` it was saved with. A
+  save stamps that with the time of the save
+  ([02-document-format.md](02-document-format.md#canonical-output)), so a
+  reopened file reads as edited when it was last saved.
+- **A board reopened from the recent-boards menu** shows when it was last
+  edited, not when it was last opened. Its copy keeps the board's own
+  `updatedAt` ([06-persistence.md](06-persistence.md#autosave-and-recent-boards)).
+- **A text box closed empty leaves the time alone**, as it leaves the
+  unsaved-changes flag alone ([An empty text box](#an-empty-text-box)).
+- **It keeps up with the clock.** The wording changes at the moment it becomes
+  true: a minute after the edit, *just now* becomes *1 minute ago*. It is
+  rechecked at least once a minute, so it is right again within a minute of a
+  computer waking from sleep.
+- **It gives way when the bar is short of room.** Above 760px the label is
+  ellipsised and then dropped before the board name is cut, and the name before
+  any button. Below 760px it is not shown at all.
+
+The name field is as wide as the name, up to 320px, so the label sits right
+after the name rather than at the end of a fixed box.
+
 ## Recent boards
 
 The **logo** at the left of the top bar opens a menu of every board that has a

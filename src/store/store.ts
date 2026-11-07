@@ -122,11 +122,13 @@ export interface SaveTicket {
 }
 
 /**
- * The unsaved-changes flag at one moment, for {@link Store.restoreDirty}.
- * Only the store reads the fields.
+ * The unsaved-changes flag and the edit time at one moment, for
+ * {@link Store.restoreDirty}. Only the store reads the fields.
  */
 export interface DirtyCheckpoint {
   readonly dirty: boolean;
+  /** `meta.updatedAt`, which every command moves, transient ones included. */
+  readonly updatedAt: string;
   readonly generation: number;
   readonly settled: number;
 }
@@ -288,9 +290,14 @@ export class Store {
     this.revision++;
   }
 
-  /** Captures the unsaved-changes flag, for {@link restoreDirty}. */
+  /** Captures the unsaved-changes flag and the edit time, for {@link restoreDirty}. */
   dirtyCheckpoint(): DirtyCheckpoint {
-    return { dirty: this.state.dirty, generation: this.generation, settled: this.settled };
+    return {
+      dirty: this.state.dirty,
+      updatedAt: this.state.document.meta.updatedAt,
+      generation: this.generation,
+      settled: this.settled,
+    };
   }
 
   /**
@@ -303,6 +310,10 @@ export class Store {
    * would ask "Discard unsaved changes?" about nothing. The text editor uses
    * this for a new text box closed without typing.
    *
+   * `meta.updatedAt` goes back too, for the same reason: the top bar's
+   * "Edited …" label would otherwise report an edit that left nothing behind,
+   * and autosave would keep that time in the board's copy.
+   *
    * Refused, returning false, when anything the flag answers for happened since
    * the checkpoint: a recorded command, an undo or redo, a save, or another
    * board. The flag then describes a real change and stays. Rewinding the
@@ -310,12 +321,24 @@ export class Store {
    */
   restoreDirty(checkpoint: DirtyCheckpoint): boolean {
     if (checkpoint.generation !== this.generation || checkpoint.settled !== this.settled) return false;
+
+    let changed = false;
     if (this.state.dirty !== checkpoint.dirty) {
       this.state.dirty = checkpoint.dirty;
-      // `document`, as `markDirty` uses, so the Save button and the
-      // recent-boards copy both pick up the flag.
-      this.emit('document');
+      changed = true;
     }
+    const { meta } = this.state.document;
+    if (meta.updatedAt !== checkpoint.updatedAt) {
+      // Replaced rather than mutated, like every other document change, so a
+      // subscriber comparing by identity sees it. Only `meta` changes:
+      // `elements` stays the same array, which nothing outside the commands
+      // may touch.
+      this.state.document = { ...this.state.document, meta: { ...meta, updatedAt: checkpoint.updatedAt } };
+      changed = true;
+    }
+    // `document`, as `markDirty` uses, so the Save button, the "Edited" label
+    // and the recent-boards copy all pick up the change. Once, for both.
+    if (changed) this.emit('document');
     return true;
   }
 

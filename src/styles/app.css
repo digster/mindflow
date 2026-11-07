@@ -214,14 +214,48 @@ textarea {
   transform: scale(0.94);
 }
 
-.mf-board-name {
-  min-width: 0;
+/* The name field, as wide as the name (up to a cap) so the "Edited" label
+   after it sits beside the name. The input and a hidden copy of its text
+   share one grid cell. The copy sets the column's width, and the input fills
+   it. `size="1"` in `toolbar.ts` makes sure the input's own default width of
+   about twenty characters can never floor the cell. `field-sizing: content`
+   would do all of this in one line, but not yet in every browser MindFlow
+   supports. */
+.mf-board-name-field {
+  display: inline-grid;
+  flex: 0 1 auto;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 64px;
   max-width: 320px;
+}
+
+.mf-board-name-field > * {
+  grid-area: 1 / 1;
+}
+
+/* Everything that decides the width, shared by the input and its copy. */
+.mf-board-name,
+.mf-board-name-sizer {
   padding: 5px 8px;
   font-size: 14px;
   font-weight: 550;
-  background: transparent;
   border: 1px solid transparent;
+}
+
+.mf-board-name-sizer {
+  overflow: hidden;
+  /* A spare 2px so the caret at the end of the name is never clipped. */
+  padding-right: 10px;
+  white-space: pre;
+  visibility: hidden;
+}
+
+.mf-board-name {
+  width: 100%;
+  min-width: 0;
+  /* A name cut short by a narrow window says so, once the field is left. */
+  text-overflow: ellipsis;
+  background: transparent;
   border-radius: var(--mf-radius-sm);
   transition: background var(--mf-transition), border-color var(--mf-transition);
 }
@@ -236,8 +270,19 @@ textarea {
   outline: none;
 }
 
+/* Above the phone layout, the buttons never give way when the bar is short of
+   room. Shrinking a group of fixed-size buttons only overlaps them. The left
+   group gives way instead: the "Edited" label first, then the name. Below
+   760px the label is gone and the field is a fixed box, as before. */
+@media (width > 760px) {
+  .mf-topbar-group:not(:first-child) {
+    flex-shrink: 0;
+  }
+}
+
 /* Unsaved-changes indicator: present but not alarming. */
 .mf-dirty-dot {
+  flex: 0 0 auto;
   width: 6px;
   height: 6px;
   background: var(--mf-text-faint);
@@ -248,6 +293,21 @@ textarea {
 
 .mf-dirty-dot.is-visible {
   opacity: 1;
+}
+
+/* "Edited 5 minutes ago". Metadata, not a control, so it is as quiet as the
+   dirty dot. It gives way first when the bar is short of room: it shrinks
+   (with an ellipsis) before the name does, and is dropped on narrow screens. */
+.mf-edited {
+  flex: 0 100 auto;
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--mf-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
 }
 
 .mf-zoom-label {
@@ -1617,8 +1677,17 @@ html.mf-page-zoomed .mf-canvas {
     left: auto;
   }
 
-  .mf-board-name {
-    max-width: 140px;
+  /* A fixed box, as before the field fitted its text: with no label to sit
+     beside, fitting buys nothing here, and the bar is short of room at these
+     widths. The spare width in a fixed box is what the squeeze takes first,
+     where a fitted field would lose the end of the name. */
+  .mf-board-name-field {
+    width: 140px;
+  }
+
+  /* No room beside a 140px name, and no hover for its tooltip on a phone. */
+  .mf-edited {
+    display: none;
   }
 }
 

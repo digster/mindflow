@@ -329,6 +329,17 @@ describe('serialisation', () => {
     expect(output.meta.updatedAt).not.toBe('2020-01-01T00:00:00.000Z');
   });
 
+  // Autosave's mode. Its copy is written when a board is merely opened, so a
+  // stamp would make the board claim an edit at that moment.
+  it('keeps updatedAt unchanged when told not to stamp it, so writes are byte-identical', () => {
+    const doc = createDocument();
+    doc.meta.updatedAt = '2020-01-02T03:04:05.000Z';
+    const first = serializeDocument(doc, [], { stampUpdatedAt: false });
+    const output = JSON.parse(first) as { meta: { updatedAt: string } };
+    expect(output.meta.updatedAt).toBe('2020-01-02T03:04:05.000Z');
+    expect(serializeDocument(doc, [], { stampUpdatedAt: false })).toBe(first);
+  });
+
   it('always writes the current schema version', () => {
     const output = JSON.parse(serializeDocument(createDocument())) as { schemaVersion: string };
     expect(output.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);

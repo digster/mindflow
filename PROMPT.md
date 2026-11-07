@@ -675,3 +675,16 @@ While `visualViewport.scale` is above 1.001:
   zoom out."
 
 Back at 1x, the guards return.
+
+---
+
+## 2026-11-07 — The last edit date beside the board name
+
+> display the last edit date for a file beside its name in the main toolbar.
+
+The top bar now says *Edited 5 minutes ago* (or *Created just now* for a board
+never edited) right after the board name, with the full date and time on hover.
+It reads `meta.updatedAt`. Autosave no longer stamps that with the write time,
+so a board reopened from the menu keeps its real edit time. An abandoned text
+box gives the time back. The name field now fits its text so the label sits
+beside it. Details in `memory/2026-11-07.md`.

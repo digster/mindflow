@@ -16,6 +16,7 @@ import type { RecentBoard } from '../io/autosave.ts';
 import { el, icon } from './dom.ts';
 import { ICONS } from './icons.ts';
 import { Popover, installListNavigation } from './popover.ts';
+import { formatRelativeTime } from './time.ts';
 
 export interface RecentBoardsMenuOptions {
   /** The element the menu hangs from — the logo button. */
@@ -200,37 +201,4 @@ export function describeRecentBoard(
 ): string {
   const count = `${board.elementCount} ${board.elementCount === 1 ? 'element' : 'elements'}`;
   return `${count} · ${formatRelativeTime(board.savedAt, now, locale)}`;
-}
-
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-/**
- * A short, human time: "just now", "5 minutes ago", "yesterday", then a date.
- *
- * Relative for the first week, because "which board was I on this morning" is
- * the question the menu answers. Beyond that a date reads better than "23 days
- * ago". A time in the future — a clock that moved backwards — reads as "just now"
- * rather than "in 3 minutes".
- */
-export function formatRelativeTime(iso: string, now: number = Date.now(), locale?: string): string {
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return 'unknown time';
-
-  const elapsed = Math.max(0, now - then);
-  if (elapsed < MINUTE) return 'just now';
-
-  const relative = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
-  if (elapsed < HOUR) return relative.format(-Math.floor(elapsed / MINUTE), 'minute');
-  if (elapsed < DAY) return relative.format(-Math.floor(elapsed / HOUR), 'hour');
-  if (elapsed < 7 * DAY) return relative.format(-Math.floor(elapsed / DAY), 'day');
-
-  const date = new Date(then);
-  return date.toLocaleDateString(locale, {
-    day: 'numeric',
-    month: 'short',
-    // The year only when it is not this one; "3 Mar" is enough on its own.
-    year: date.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric',
-  });
 }

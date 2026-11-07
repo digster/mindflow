@@ -8,7 +8,7 @@
  * hide a real change.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../src/render/shapes/index.ts';
 import { getDefinition } from '../../src/model/registry.ts';
@@ -54,12 +54,85 @@ describe('Store.restoreDirty', () => {
     const checkpoint = store.dirtyCheckpoint();
     addAndRewind(store);
 
-    const reasons: ChangeReason[] = [];
-    store.subscribe((_state, reason) => reasons.push(reason));
-    expect(store.restoreDirty(checkpoint)).toBe(true);
-
+    store.restoreDirty(checkpoint);
     expect(store.getState().dirty).toBe(true);
-    expect(reasons).toEqual([]);
+  });
+
+  // `meta.updatedAt` drives the top bar's "Edited …" label and is kept in the
+  // autosave copy. Every command moves it, transient ones included, so time is
+  // faked to make that movement certain rather than a matter of milliseconds.
+  describe('the edit time', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(Date.parse('2026-11-07T10:00:00.000Z'));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('goes back to before the rewound edit, with one notification for both', () => {
+      const store = new Store();
+      store.execute(addElements([makeRect()]));
+      store.markSaved();
+      const editedAt = store.document.meta.updatedAt;
+      const checkpoint = store.dirtyCheckpoint();
+
+      vi.setSystemTime(Date.parse('2026-11-07T10:05:00.000Z'));
+      addAndRewind(store);
+      expect(store.document.meta.updatedAt).not.toBe(editedAt);
+
+      const reasons: ChangeReason[] = [];
+      store.subscribe((_state, reason) => reasons.push(reason));
+      const before = store.document;
+      expect(store.restoreDirty(checkpoint)).toBe(true);
+
+      expect(store.document.meta.updatedAt).toBe(editedAt);
+      expect(store.getState().dirty).toBe(false);
+      expect(reasons).toEqual(['document']);
+      // Replaced, not mutated, and the elements untouched.
+      expect(store.document).not.toBe(before);
+      expect(store.document.elements).toBe(before.elements);
+    });
+
+    it('goes back on a board that stays unsaved, which notifies for the time alone', () => {
+      const store = new Store();
+      store.execute(addElements([makeRect()]));
+      const editedAt = store.document.meta.updatedAt;
+      const checkpoint = store.dirtyCheckpoint();
+
+      vi.setSystemTime(Date.parse('2026-11-07T10:05:00.000Z'));
+      addAndRewind(store);
+
+      const reasons: ChangeReason[] = [];
+      store.subscribe((_state, reason) => reasons.push(reason));
+      expect(store.restoreDirty(checkpoint)).toBe(true);
+
+      expect(store.document.meta.updatedAt).toBe(editedAt);
+      expect(store.getState().dirty).toBe(true);
+      expect(reasons).toEqual(['document']);
+    });
+
+    it('stays when the restore is refused, because the edit was real', () => {
+      const store = new Store();
+      const checkpoint = store.dirtyCheckpoint();
+
+      vi.setSystemTime(Date.parse('2026-11-07T10:05:00.000Z'));
+      store.execute(addElements([makeRect()]));
+      addAndRewind(store);
+
+      expect(store.restoreDirty(checkpoint)).toBe(false);
+      expect(store.document.meta.updatedAt).toBe('2026-11-07T10:05:00.000Z');
+    });
+
+    it('notifies nothing when neither the flag nor the time moved', () => {
+      const store = new Store();
+      const checkpoint = store.dirtyCheckpoint();
+      const reasons: ChangeReason[] = [];
+      store.subscribe((_state, reason) => reasons.push(reason));
+
+      expect(store.restoreDirty(checkpoint)).toBe(true);
+      expect(reasons).toEqual([]);
+    });
   });
 
   describe('refuses, keeping the board unsaved, when since the checkpoint', () => {

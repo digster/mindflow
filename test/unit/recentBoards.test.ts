@@ -4,12 +4,13 @@
  * The IndexedDB side is covered end to end in the Playwright suite, because the
  * unit environment is node and has no IndexedDB. What is left here is the logic
  * that decides things: which boards the cap evicts, the menu's order, and how a
- * row describes itself.
+ * row describes itself. The relative-time wording is shared with the top bar and
+ * tested in `time.test.ts`.
  */
 
 import { describe, expect, it } from 'vitest';
 import { MAX_RECENT_BOARDS, pickEvictions, sortRecentBoards, type RecentBoard } from '../../src/io/autosave.ts';
-import { describeRecentBoard, formatRelativeTime } from '../../src/ui/recentBoards.ts';
+import { describeRecentBoard } from '../../src/ui/recentBoards.ts';
 
 function board(boardId: string, savedAt: string, unsaved = false): RecentBoard {
   return { boardId, name: boardId, savedAt, elementCount: 1, unsaved };
@@ -79,37 +80,6 @@ describe('sortRecentBoards', () => {
     ];
     expect(sortRecentBoards(boards).map((entry) => entry.boardId)).toEqual(['new', 'mid', 'old']);
     expect(boards[0]!.boardId).toBe('old');
-  });
-});
-
-describe('formatRelativeTime', () => {
-  const now = Date.parse('2026-09-23T12:00:00.000Z');
-  const ago = (ms: number) => new Date(now - ms).toISOString();
-  const MINUTE = 60_000;
-  const HOUR = 60 * MINUTE;
-  const DAY = 24 * HOUR;
-
-  it('says "just now" under a minute, and for a clock that moved backwards', () => {
-    expect(formatRelativeTime(ago(0), now, 'en')).toBe('just now');
-    expect(formatRelativeTime(ago(59_000), now, 'en')).toBe('just now');
-    expect(formatRelativeTime(ago(-5 * MINUTE), now, 'en')).toBe('just now');
-  });
-
-  it('counts minutes, hours and days for the first week', () => {
-    expect(formatRelativeTime(ago(5 * MINUTE), now, 'en')).toBe('5 minutes ago');
-    expect(formatRelativeTime(ago(3 * HOUR), now, 'en')).toBe('3 hours ago');
-    expect(formatRelativeTime(ago(DAY + HOUR), now, 'en')).toBe('yesterday');
-    expect(formatRelativeTime(ago(6 * DAY), now, 'en')).toBe('6 days ago');
-  });
-
-  it('switches to a date after a week, with the year only when it differs', () => {
-    // "Sep" or "Sept" depending on the ICU build Node ships with.
-    expect(formatRelativeTime('2026-09-01T12:00:00.000Z', now, 'en-GB')).toMatch(/^1 Sept?$/);
-    expect(formatRelativeTime('2025-12-24T12:00:00.000Z', now, 'en-GB')).toBe('24 Dec 2025');
-  });
-
-  it('does not throw on a malformed timestamp', () => {
-    expect(formatRelativeTime('not a date', now, 'en')).toBe('unknown time');
   });
 });
 

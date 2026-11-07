@@ -255,6 +255,27 @@ on screen, and only if its copy is unsaved. The marker is written on every
 `load`, and once startup has decided. See
 [`docs/06-persistence.md`](docs/06-persistence.md#autosave-and-recent-boards).
 
+### The last-edited time
+
+The top bar's *Edited 5 minutes ago* reads `meta.updatedAt`, and nothing else
+keeps time. `applyCommand` moves it on every command, so the store's document
+always holds the last edit, transient commands included. Two things keep it
+honest:
+
+- **Only a save stamps it.** `serializeDocument` sets `updatedAt` to now, as
+  `docs/02` specifies for a file. Autosave passes `stampUpdatedAt: false`. It
+  writes a copy when a board is opened, so a stamp there would make every
+  board reopened from the menu read as edited when it was last opened. This
+  also made autosave's identical-write check able to match at all. Before,
+  every serialisation differed by its timestamp.
+- **A rewound transient edit gives the time back.** `Store.restoreDirty` puts
+  `updatedAt` back along with the dirty flag, so an abandoned text box leaves
+  no trace in the label either.
+
+The label's timer (`refreshEdited` in `ui/toolbar.ts`) fires when the wording
+would next change (`relativeTimeChangesIn` in `ui/time.ts`, pure and
+unit-tested), capped at a minute because timers stop while the computer sleeps.
+
 ### Explicit saves run one at a time
 
 Every path that writes the board goes through `App.requestSave` into
@@ -481,7 +502,7 @@ invisible box.
 
 Transient commands still mark the board dirty, so an abandoned box would leave
 "unsaved changes" behind. `Store.dirtyCheckpoint` / `restoreDirty` put the flag
-back. The store refuses when anything the flag answers for (a recorded
+back, and `meta.updatedAt` with it. The store refuses when anything the flag answers for (a recorded
 command, an undo or redo, a save, another board) happened in between. The
 editor can rely on nothing else being recorded meanwhile, because a press
 anywhere outside it commits first.
