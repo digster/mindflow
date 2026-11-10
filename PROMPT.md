@@ -703,3 +703,19 @@ board holds it, so a save no longer moves it, and two saves of an unchanged
 board are byte-identical. A missing `updatedAt` now loads as `createdAt`. New
 schema file, identity migration, CHANGELOG entry. Details in
 `memory/2026-11-07.md`.
+
+---
+
+## 2026-11-10 — Workspaces within a file (plan only)
+
+> * I want to come up with the concept of workspaces within a file.
+> * A file will start with the default workspace and clicking on a new workspace would show a new empty environment for that file. Clicking on the old workspace should take back to that workspace's work.
+> * All these workspaces are still part of the same file.
+> * Create a plan artifact for this.
+> * Before you create the plan artifact, show me visually some ideas for how the workspace ui could look.
+
+Nothing built. Four switcher ideas were mocked up over the real chrome, and the
+user chose the top-bar switcher (B) and undo per workspace. The plan proposes
+format 2.0.0 (a `workspaces` list replaces the top-level `canvas`, `viewport`
+and `elements`) and a store that keeps one workspace on stage and parks the
+rest. Links and the open questions are in `memory/2026-11-10.md`.
