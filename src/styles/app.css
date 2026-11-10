@@ -295,6 +295,60 @@ textarea {
   opacity: 1;
 }
 
+/* The workspace switcher, after the board name like a breadcrumb:
+   `Board › Workspace ▾`. It gives way last when the bar is short of room: the
+   "Edited" label shrinks first, then the board name, then this. A tiny shrink
+   factor rather than zero, so a very narrow window ellipsises the workspace
+   name instead of pushing the buttons off the bar. */
+.mf-workspace-separator {
+  flex: 0 0 auto;
+  margin: 0 2px;
+  color: var(--mf-text-faint);
+}
+
+.mf-workspace-button {
+  display: inline-flex;
+  flex: 0 0.05 auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 56px;
+  max-width: 220px;
+  height: 32px;
+  padding: 0 8px 0 10px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--mf-text);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: var(--mf-radius-sm);
+  transition: background var(--mf-transition), color var(--mf-transition);
+}
+
+.mf-workspace-button:hover,
+.mf-workspace-button[aria-expanded="true"] {
+  background: var(--mf-surface-hover);
+}
+
+.mf-workspace-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-workspace-chevron {
+  flex: 0 0 auto;
+  color: var(--mf-text-muted);
+}
+
+/* Shown only below 760px, where the name does not fit. */
+.mf-workspace-glyph {
+  display: none;
+  flex: 0 0 auto;
+}
+
 /* "Edited 5 minutes ago". Metadata, not a control, so it is as quiet as the
    dirty dot. It gives way first when the bar is short of room: it shrinks
    (with an ellipsis) before the name does, and is dropped on narrow screens. */
@@ -1428,6 +1482,59 @@ kbd {
   background: var(--mf-danger-soft);
 }
 
+/* Workspaces — the switcher's list. Built from the recent-board pieces above;
+   these are only what it adds: the "⋯" per row, the inline rename, and the
+   row menu, which is a child of the popover rather than a second popover. */
+.mf-workspace-more {
+  flex: 0 0 auto;
+  color: var(--mf-text-muted);
+}
+
+@media (hover: hover) {
+  .mf-workspace-more {
+    opacity: 0;
+  }
+
+  .mf-recent-item:hover .mf-workspace-more,
+  .mf-recent-item:focus-within .mf-workspace-more,
+  .mf-workspace-more[aria-expanded="true"] {
+    opacity: 1;
+  }
+}
+
+/* `.mf-recent-open` is a flex box, and a class's `display` beats the UA's
+   `[hidden]` rule. See LEARNINGS.md. */
+.mf-workspace-open[hidden] {
+  display: none;
+}
+
+.mf-workspace-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 4px 0 4px 3px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--mf-text);
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-accent);
+  border-radius: var(--mf-radius-sm);
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.mf-workspace-actions {
+  position: absolute;
+  z-index: 1;
+  min-width: 168px;
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: var(--mf-radius);
+  box-shadow: var(--mf-shadow-lg);
+}
+
 .mf-recent-empty,
 .mf-recent-note {
   margin: 0;
@@ -1688,6 +1795,53 @@ html.mf-page-zoomed .mf-canvas {
   /* No room beside a 140px name, and no hover for its tooltip on a phone. */
   .mf-edited {
     display: none;
+  }
+
+  /* The bar's buttons do not fit a phone: at 390px its three groups need
+     about twice the width. Shrunk, fixed-size buttons overlap rather than
+     shrink (LEARNINGS.md), which left a third of them impossible to tap. So
+     here the bar scrolls sideways instead, as the tool palette below does.
+     Every button keeps its place, and the board name and the workspace
+     switcher, which come first, are on screen when the bar is at rest. */
+  .mf-topbar {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    touch-action: pan-x pan-y; /* No page zoom here either. See `html`. */
+  }
+
+  .mf-topbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mf-topbar-group {
+    flex-shrink: 0;
+  }
+}
+
+/* The switcher's compact form: its glyph, a square button like the others,
+   with the workspace's name in its label and tooltip. The board name keeps
+   its place. 860px rather than the phone layout's 760px, because a named
+   switcher needs about 784px of bar before the board name gives way to it;
+   between the two, the buttons would overlap it. */
+@media (width <= 860px) {
+  .mf-workspace-separator,
+  .mf-workspace-name,
+  .mf-workspace-chevron {
+    display: none;
+  }
+
+  .mf-workspace-button {
+    flex: 0 0 auto;
+    justify-content: center;
+    width: 32px;
+    min-width: 32px;
+    padding: 0;
+    color: var(--mf-text-muted);
+  }
+
+  .mf-workspace-glyph {
+    display: block;
   }
 }
 

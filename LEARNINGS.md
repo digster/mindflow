@@ -1632,3 +1632,61 @@ back did **not** fail them. Both serialisations run in the same millisecond, so
 "now" is the same string twice. What does catch it is a test with a stamp
 fixed in the past: `serializeDocument` › writes both stamps as the board holds
 them. The test looks redundant next to the round trip, but it is not.
+
+## A gesture in flight replays into the next workspace unless it is cancelled
+
+Switching workspaces swaps `state.document` underneath the controller. A drag
+does not notice: it keeps applying transient `replaceElements` commands, and on
+release `commitGesture` replays the result as a real one. `replaceElements`
+looks the elements up in whatever document is on stage, finds nothing, and so
+records them as *created*. Pressing `Page Down` mid-drag added the dragged
+shapes to the next workspace and left the originals parked half-moved.
+
+`App.leaveStage` therefore calls `InteractionController.cancelGesture` before
+any change of stage. It rewinds the transient edits, as `pointercancel` does,
+and marks every pointer still down as abandoned, so its moves and its release
+are ignored rather than read as a click, or as half of a double tap on touch.
+Any future code that replaces the stage (another kind of switch, a reload in
+place) must go through `leaveStage` too.
+
+## An unfilled shape is hollow to a test's press, too
+
+The e2e test for the above first pressed in the middle of a freshly drawn
+rectangle and dragged. It passed with the fix removed, because nothing was
+dragged: an unfilled shape is hit only on its outline (see "Unfilled shapes are
+hollow to clicks"), so the press started a marquee. A test that drags a shape
+must press on its stroke, and should assert that the drag moved it before
+asserting anything about what came after. Reverting the fix and watching the
+test fail is what caught it.
+
+## Counting "is the board empty?" from `document.elements` now sees one workspace
+
+Since 2.0.0, `state.document` is one workspace. Two existing checks asked "does
+this board have anything in it?" by reading `document.elements.length`:
+autosave, which deletes the copy of an empty board, and the prompt before
+leaving a board ("Leave" versus "Discard"). Right after *New workspace* the
+stage is empty, so both would have treated a full board as empty: the recent
+copy deleted, and "Discard" offered for work that was in fact kept. Both now
+count every workspace (`boardElementCount`). `validateDocument`'s "unreferenced
+file" check had the same shape of bug and now counts image use board-wide. Any
+new "whole board" question must go through `Store.boardForSave()`.
+
+## The phone top bar has more buttons than width; scroll it, do not shrink it
+
+At 390px the top bar's three groups need about 820px. Shrinking them overlapped
+fixed-size buttons (the entry above), and at HEAD seven of them could not be
+tapped at all. The workspace switcher would have been the eighth. Making the
+first group rigid only moved the overlap onto Save. Below 760px the bar now
+scrolls sideways (`overflow-x: auto`, with `touch-action: pan-x pan-y` like every
+scroller here), and every group keeps its width. The e2e suite checks that a
+click at each control's centre lands on that control once it is scrolled into
+view. Between 760px and about 784px a named switcher still does not fit beside
+the other groups, so its compact form starts at 860px, not 760px.
+
+## `git stash` with a committed build artifact loses the race to `npm run build`
+
+To compare against HEAD, I stashed my changes and rebuilt. The rebuild rewrote
+`index.html`, which is committed, so `git stash pop` refused to apply over it.
+Nothing was lost (the stash is kept, and `git checkout -- index.html` then pop
+restores it), but the safer way to look at HEAD's build is
+`git show HEAD:index.html > somewhere-else.html`, which touches nothing.

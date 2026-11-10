@@ -488,7 +488,7 @@ test.describe('PDF export', () => {
           mindflow: {
             store: {
               document: { canvas: Record<string, unknown>; elements: Record<string, unknown>[] };
-              load(result: unknown, origin: unknown): void;
+              boardForSave(): object; load(result: unknown, origin: unknown): void;
             };
           };
         }
@@ -497,7 +497,7 @@ test.describe('PDF export', () => {
       document.canvas.background = '#fff9db';
       const frame = document.elements.find((element) => element.type === 'frame')!;
       frame.style = { ...(frame.style as object), fill: 'transparent', fillStyle: 'none' };
-      mf.store.load({ document, warnings: [], preserved: [] }, { kind: 'local', name: 'board.mindflow.json' });
+      mf.store.load({ ...mf.store.boardForSave(), document }, { kind: 'local', name: 'board.mindflow.json' });
     });
 
     await openExport(page, 'pdf');
@@ -635,13 +635,13 @@ test.describe('PNG export', () => {
       const mf = (
         window as unknown as {
           mindflow: {
-            store: { document: { elements: Record<string, unknown>[] }; load(result: unknown, origin: unknown): void };
+            store: { document: { elements: Record<string, unknown>[] }; boardForSave(): object; load(result: unknown, origin: unknown): void };
           };
         }
       ).mindflow;
       const document = structuredClone(mf.store.document);
       document.elements[0]!.text = '';
-      mf.store.load({ document, warnings: [], preserved: [] }, { kind: 'local', name: 'board.mindflow.json' });
+      mf.store.load({ ...mf.store.boardForSave(), document }, { kind: 'local', name: 'board.mindflow.json' });
     });
 
     await openExport(page, 'png');

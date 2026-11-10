@@ -6,7 +6,7 @@
  * UI and IO modules each know nothing about each other, and are composed here.
  */
 
-import type { MindflowDocument, MindflowElement, Point } from '../model/types.ts';
+import type { MindflowElement, Point, WorkspaceId } from '../model/types.ts';
 import { FILE_EXTENSION } from '../model/types.ts';
 import { Store, type BoardOrigin, type SaveTicket } from '../store/store.ts';
 import { addElements, setCanvasSettings, renameBoard } from '../store/commands.ts';
@@ -25,12 +25,15 @@ import { blockPageZoom, PAGE_ZOOMED_CLASS, watchPageZoom } from '../input/pageZo
 import { screenToScene } from '../model/geometry.ts';
 import { enrolInFrames } from '../model/frames.ts';
 import { PALETTE } from '../model/defaults.ts';
-import { loadDocument, serializeDocument, type LoadResult } from '../model/document.ts';
+import { loadDocument, serializeBoard, type LoadResult } from '../model/document.ts';
+import { isNewerMajor } from '../model/migrate.ts';
+import { boardElementCount, type StagedBoard } from '../model/workspaces.ts';
 import { Actions } from './actions.ts';
 import { createSaveQueue } from './saveQueue.ts';
 import { Toolbar, type ToolbarCallbacks } from '../ui/toolbar.ts';
 import { showCommandPalette } from '../ui/commandPalette.ts';
 import { showRecentBoardsMenu } from '../ui/recentBoards.ts';
+import { describeDeletion, showWorkspaceMenu, type WorkspaceCallbacks } from '../ui/workspaceMenu.ts';
 import { showFindBar } from '../ui/findBar.ts';
 import { buildCommands } from './commands.ts';
 import { StylePanel } from '../ui/stylePanel.ts';
@@ -81,8 +84,8 @@ import { el, IS_MAC } from '../ui/dom.ts';
 /** A board as a save writes it, plus the ticket saying which state that was. */
 interface SaveSnapshot {
   ticket: SaveTicket;
-  document: MindflowDocument;
-  preserved: readonly unknown[];
+  /** Every workspace, as `Store.boardForSave` gave it. */
+  board: StagedBoard;
 }
 
 export class MindflowApp {
@@ -95,6 +98,8 @@ export class MindflowApp {
   private readonly toolbar: Toolbar;
   /** Shared by the toolbar and the command palette; see the constructor. */
   private readonly appCallbacks: ToolbarCallbacks;
+  /** Shared by the workspace list, the command palette and the keyboard. */
+  private readonly workspaceCallbacks: WorkspaceCallbacks;
   private readonly stylePanel: StylePanel;
   private readonly textEditor: TextEditor;
   private readonly frameNameEditor: FrameNameEditor;
@@ -177,6 +182,16 @@ export class MindflowApp {
       onBackground: (at) => this.openBackgroundPicker(at),
       onRename: (name) => this.store.execute(renameBoard(this.store.document, name)),
       onRecentBoards: () => void this.openRecentBoards(),
+      onWorkspaces: () => this.openWorkspaces(),
+    };
+
+    this.workspaceCallbacks = {
+      onSwitch: (id) => this.switchWorkspace(id),
+      onAdd: () => this.addWorkspace(),
+      onRename: (id, name) => this.store.renameWorkspace(id, name),
+      onDuplicate: (id) => this.duplicateWorkspace(id),
+      onMove: (id, index) => this.store.moveWorkspace(id, index),
+      onDelete: (id) => void this.deleteWorkspace(id),
     };
 
     this.toolbar = new Toolbar(this.store, this.actions, this.appCallbacks);
@@ -221,10 +236,11 @@ export class MindflowApp {
     // ---- Store → view ----------------------------------------------------
     this.disposers.push(
       this.store.subscribe((state, reason) => {
-        if (reason === 'document' || reason === 'load') {
+        if (reason === 'document' || reason === 'load' || reason === 'workspace') {
           this.images.sync(state.document);
           // A load is written too, not only an edit: that is what puts a board
-          // opened from a file or from Drive into the recent-boards menu.
+          // opened from a file or from Drive into the recent-boards menu. And a
+          // switch, so a recovered board reopens on the workspace it was left on.
           this.autosave.schedule(this.snapshot());
         }
         if (reason === 'saved') {
@@ -237,11 +253,11 @@ export class MindflowApp {
           this.images.prune(state.document);
           void this.autosave.markOpen(state.document.id);
         }
-        if (reason === 'viewport' || reason === 'load') {
+        if (reason === 'viewport' || reason === 'load' || reason === 'workspace') {
           this.textEditor.reposition();
           this.frameNameEditor.reposition();
         }
-        if (reason === 'selection' || reason === 'document' || reason === 'load') {
+        if (reason === 'selection' || reason === 'document' || reason === 'load' || reason === 'workspace') {
           this.stylePanel.sync();
         }
         this.toolbar.sync();
@@ -309,6 +325,7 @@ export class MindflowApp {
         onToggleStylePanel: () => this.stylePanel.toggleCollapsed(),
         onCommitText: () => this.commitEditing(),
         onPasteShortcut: () => pasteGate.shortcut(),
+        onStepWorkspace: (delta) => this.stepWorkspace(delta),
       }),
     );
 
@@ -480,9 +497,22 @@ export class MindflowApp {
     // elements that no longer exist would act on a stale selection.
     closePopover();
     this.images.clear();
-    this.store.load(result, origin);
+
+    // A file from a later major version opens detached, like a new board, so
+    // Save asks where to write instead of overwriting it. This build cannot
+    // know what such a file holds that it does not read: 2.0.0 itself moved a
+    // board's whole drawing somewhere 1.x never looked.
+    const newer = isNewerMajor(result.sourceVersion);
+    this.store.load(result, newer ? { kind: 'new' } : origin);
     this.images.sync(result.document);
     showLoadWarnings(result.warnings);
+    if (newer) {
+      toast(
+        `This board was saved by a newer version of MindFlow (format ${result.sourceVersion}). ` +
+          'Some of it may not show. Saving will ask where to save, so the original file is not overwritten.',
+        'error',
+      );
+    }
   }
 
   /**
@@ -498,6 +528,11 @@ export class MindflowApp {
         onFind: () => showFindBar(this.store, this.actions),
         onToggleStylePanel: () => this.stylePanel.toggleCollapsed(),
         onExportPdf: () => void this.exportBoard('pdf'),
+        workspaces: {
+          ...this.workspaceCallbacks,
+          onStep: (delta) => this.stepWorkspace(delta),
+          onRenameCurrent: () => this.openWorkspaces(this.store.getState().activeWorkspaceId),
+        },
       }),
     );
   }
@@ -515,8 +550,9 @@ export class MindflowApp {
     const state = this.store.getState();
     if (!state.dirty) return true;
 
-    const kept =
-      this.autosave.available && state.document.elements.length + state.preserved.length > 0;
+    // Counted across every workspace, as autosave counts it: a board whose
+    // workspace on screen is empty is still kept if another one is not.
+    const kept = this.autosave.available && boardElementCount(this.store.boardForSave()) > 0;
     if (kept) {
       return confirmDialog({
         title: 'Leave unsaved changes?',
@@ -607,7 +643,7 @@ export class MindflowApp {
       // Still before the first await, so it is the board the user asked to save.
       const written = this.snapshotForSave();
       const existingHandle = state.origin.kind === 'local' ? state.origin.handle : undefined;
-      const result = await saveToFile(written.document, written.preserved, { existingHandle, saveAs });
+      const result = await saveToFile(written.board, { existingHandle, saveAs });
 
       this.recordSave(written, { kind: 'local', name: result.name, handle: result.handle });
 
@@ -628,11 +664,7 @@ export class MindflowApp {
    * describes exactly the state that reaches the file.
    */
   private snapshotForSave(): SaveSnapshot {
-    return {
-      ticket: this.store.saveTicket(),
-      document: this.store.documentForSave(),
-      preserved: this.store.getState().preserved,
-    };
+    return { ticket: this.store.saveTicket(), board: this.store.boardForSave() };
   }
 
   /**
@@ -647,7 +679,7 @@ export class MindflowApp {
     // as written here, so that copy now matches the file: clear the flag. In
     // every other case the flag stays. At worst that lists as unsaved a board
     // that is saved, which loses nothing.
-    void this.autosave.saveNow({ document: written.document, preserved: written.preserved, unsaved: false });
+    void this.autosave.saveNow({ board: written.board, unsaved: false });
   }
 
   /**
@@ -680,7 +712,9 @@ export class MindflowApp {
     );
     try {
       if (choice.format === 'json') {
-        const contents = serializeDocument(document, this.store.getState().preserved);
+        // The board file, every workspace included, like a save. The picture
+        // formats show the workspace on screen.
+        const contents = serializeBoard(this.store.boardForSave());
         downloadBlob(new Blob([contents], { type: 'application/json' }), `${baseName}${FILE_EXTENSION}`);
       } else if (choice.format === 'svg') {
         const svg = exportToSVG(document, { elements, background: !choice.transparent });
@@ -711,18 +745,100 @@ export class MindflowApp {
   }
 
   // -------------------------------------------------------------------------
+  // Workspaces
+  // -------------------------------------------------------------------------
+
+  /** Opens the workspace list. With `renaming`, that workspace's name is ready to edit. */
+  private openWorkspaces(renaming?: WorkspaceId): void {
+    const button = this.toolbar.workspaceButton;
+    showWorkspaceMenu({
+      ...this.workspaceCallbacks,
+      anchor: button,
+      workspaces: () => this.store.workspaceSummaries(),
+      renaming,
+      onClose: () => button.setAttribute('aria-expanded', 'false'),
+    });
+    // After the list exists: opening it closes any other popover first, and
+    // that one's close must not be the last word on the switcher's state.
+    button.setAttribute('aria-expanded', 'true');
+  }
+
+  /**
+   * Ends everything that writes to the workspace on stage, before another
+   * workspace takes its place.
+   *
+   * An open editor writes what was typed, as on any other way out of it. A
+   * gesture in flight is abandoned and rewound: left running, its transient
+   * edits would be parked half-done and its release would replay the result
+   * into the incoming workspace. A popover (a context menu, the find bar)
+   * describes elements that are about to leave the screen.
+   */
+  private leaveStage(): void {
+    this.commitEditing();
+    this.controller.cancelGesture();
+    closePopover();
+  }
+
+  private switchWorkspace(id: WorkspaceId): void {
+    if (id === this.store.getState().activeWorkspaceId) return;
+    this.leaveStage();
+    this.store.switchWorkspace(id);
+  }
+
+  /** The next (1) or previous (-1) workspace in the list. Stops at the ends. */
+  private stepWorkspace(delta: 1 | -1): void {
+    const { workspaces, activeWorkspaceId } = this.store.getState();
+    const index = workspaces.findIndex((entry) => entry.id === activeWorkspaceId);
+    const target = workspaces[index + delta];
+    if (target) this.switchWorkspace(target.id);
+  }
+
+  private addWorkspace(): void {
+    this.leaveStage();
+    this.store.addWorkspace();
+  }
+
+  private duplicateWorkspace(id: WorkspaceId): void {
+    this.leaveStage();
+    this.store.duplicateWorkspace(id);
+  }
+
+  /**
+   * Deletes a workspace. One with content asks first, because a delete is not
+   * undoable: undo lives inside a workspace, and this removes the workspace
+   * itself. An empty one goes at once, since nothing is lost.
+   */
+  private async deleteWorkspace(id: WorkspaceId): Promise<void> {
+    const summaries = this.store.workspaceSummaries();
+    const summary = summaries.find((candidate) => candidate.id === id);
+    if (!summary || summaries.length < 2) return;
+
+    // A popover and a modal cannot share the screen; see `removeRecent`.
+    closePopover();
+    if (summary.elementCount > 0) {
+      const confirmed = await confirmDialog({
+        title: 'Delete workspace?',
+        message: describeDeletion(summary),
+        confirmLabel: 'Delete workspace',
+        destructive: true,
+      });
+      if (!confirmed) return;
+    }
+    if (id === this.store.getState().activeWorkspaceId) this.leaveStage();
+    this.store.deleteWorkspace(id);
+  }
+
+  // -------------------------------------------------------------------------
   // Recent boards
   // -------------------------------------------------------------------------
 
   /** What autosave writes: the board as it would be saved, plus its dirty flag. */
   private snapshot(): BoardSnapshot {
-    const state = this.store.getState();
     return {
       // With the live viewport folded in, so a reopened board comes back
-      // looking at the same spot.
-      document: this.store.documentForSave(),
-      preserved: state.preserved,
-      unsaved: state.dirty,
+      // looking at the same spot, on the same workspace.
+      board: this.store.boardForSave(),
+      unsaved: this.store.getState().dirty,
     };
   }
 
@@ -960,7 +1076,7 @@ export class MindflowApp {
         this.driveFolder = { id: folder.id, name: folder.name };
       }
 
-      const saved = await saveBoard(written.document, written.preserved, {
+      const saved = await saveBoard(written.board, {
         folderId: this.driveFolder.id,
         fileId: targetId,
         name,

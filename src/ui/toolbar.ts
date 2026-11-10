@@ -82,6 +82,8 @@ export interface ToolbarCallbacks {
   onRename: (name: string) => void;
   /** Opens the recent-boards menu, anchored to the logo. */
   onRecentBoards: () => void;
+  /** Opens the workspace list, anchored to the switcher. */
+  onWorkspaces: () => void;
 }
 
 export class Toolbar {
@@ -89,6 +91,8 @@ export class Toolbar {
   readonly topBarElement: HTMLElement;
   /** The logo, which opens the recent-boards menu. Exposed as that menu's anchor. */
   readonly brandButton: HTMLButtonElement;
+  /** The workspace switcher beside the board name. Exposed as its list's anchor. */
+  readonly workspaceButton: HTMLButtonElement;
 
   private toolButtons = new Map<ToolId, HTMLButtonElement>();
   private nameInput!: HTMLInputElement;
@@ -98,6 +102,8 @@ export class Toolbar {
   private undoButton!: HTMLButtonElement;
   private redoButton!: HTMLButtonElement;
   private dirtyDot!: HTMLElement;
+  /** The switcher's label: the name of the workspace on screen. */
+  private workspaceName!: HTMLElement;
   /** "Edited 5 minutes ago", beside the name. See {@link refreshEdited}. */
   private editedLabel!: HTMLTimeElement;
   /** The board stamps the label was last written for, so `sync` skips it otherwise. */
@@ -131,8 +137,39 @@ export class Toolbar {
       },
       icon(ICONS.sticky, 20),
     ) as HTMLButtonElement;
+    this.workspaceButton = this.buildWorkspaceButton();
     this.topBarElement = this.buildTopBar();
     this.sync();
+  }
+
+  /**
+   * The workspace switcher: the current workspace's name and a chevron, after
+   * the board name like a breadcrumb. Always shown, even for a board with one
+   * workspace, because it is also how a second one is added.
+   *
+   * Below 760px there is no room for a name, so the stylesheet shows only the
+   * layers glyph and the label and tooltip carry the name. The board name
+   * keeps its place, and stays renamable where it is.
+   */
+  private buildWorkspaceButton(): HTMLButtonElement {
+    this.workspaceName = el('span', { class: 'mf-workspace-name' });
+    const glyph = icon(ICONS.workspaces, 18);
+    glyph.classList.add('mf-workspace-glyph');
+    const chevron = icon(ICONS.chevronDown, 14);
+    chevron.classList.add('mf-workspace-chevron');
+    return el(
+      'button',
+      {
+        class: 'mf-workspace-button',
+        type: 'button',
+        'aria-haspopup': 'dialog',
+        'data-action': 'workspaces',
+        onclick: () => this.callbacks.onWorkspaces(),
+      },
+      glyph,
+      this.workspaceName,
+      chevron,
+    ) as HTMLButtonElement;
   }
 
   private buildToolPalette(): HTMLElement {
@@ -354,6 +391,13 @@ export class Toolbar {
         this.brandButton,
         nameField,
         this.dirtyDot,
+        // A breadcrumb mark: the workspace is inside the board.
+        (() => {
+          const separator = icon(ICONS.chevronRight, 14);
+          separator.classList.add('mf-workspace-separator');
+          return separator;
+        })(),
+        this.workspaceButton,
         this.editedLabel,
       ),
       el(
@@ -513,6 +557,15 @@ export class Toolbar {
     }
 
     this.dirtyDot.classList.toggle('is-visible', state.dirty);
+
+    // Compared first, like the name sizer: `sync` runs at 60 fps during a pan.
+    const workspace = state.workspaces.find((entry) => entry.id === state.activeWorkspaceId)?.name ?? '';
+    if (this.workspaceName.textContent !== workspace) {
+      this.workspaceName.textContent = workspace;
+      const label = `Workspace: ${workspace}`;
+      this.workspaceButton.title = `${label}. Show all workspaces`;
+      this.workspaceButton.setAttribute('aria-label', label);
+    }
     this.undoButton.disabled = !this.store.history.canUndo();
     this.redoButton.disabled = !this.store.history.canRedo();
     this.zoomLabel.textContent = `${Math.round(state.viewport.zoom * 100)}%`;

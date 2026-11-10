@@ -12,7 +12,8 @@
  * migration is available" warning, which reads as data loss. 1.5.0 is the first
  * to transform anything — it retired four element types. 1.6.0 is additive again,
  * 1.6.1 and 1.6.2 change only rendering rules, and 1.6.3 only what a writer puts
- * in `meta.updatedAt`.
+ * in `meta.updatedAt`. 2.0.0 is the first major: it moves the drawing into a
+ * list of workspaces.
  *
  * ---------------------------------------------------------------------------
  * Adding a migration
@@ -33,6 +34,7 @@
 
 import type { LoadWarning } from './document.ts';
 import { CURRENT_SCHEMA_VERSION } from './types.ts';
+import { LEGACY_WORKSPACE_ID, workspaceName } from './workspaces.ts';
 
 /** A raw, unvalidated document at some schema version. */
 export type RawDocument = Record<string, unknown>;
@@ -173,6 +175,29 @@ const MIGRATIONS: Record<string, Migration> = {
     description: '`meta.updatedAt` is the time of the last edit, and saving no longer moves it.',
     migrate: (document) => document,
   },
+
+  /**
+   * The first major version. A board holds a list of workspaces, each one what
+   * a whole 1.x board's drawing was. So a 1.x board's `canvas`, `viewport` and
+   * `elements` become its one workspace, named "Workspace 1".
+   *
+   * The id is fixed (`ws_1`) rather than random, so that loading the same old
+   * file twice gives the same board, and the one workspace is the active one.
+   * Nothing inside the drawing changes, which is why the same element objects
+   * are carried across untouched.
+   */
+  '1.6.3': {
+    to: '2.0.0',
+    description: 'The drawing is now a list of workspaces; this board becomes one workspace.',
+    migrate: (document) => {
+      const { canvas, viewport, elements, ...rest } = document;
+      return {
+        ...rest,
+        activeWorkspaceId: LEGACY_WORKSPACE_ID,
+        workspaces: [{ id: LEGACY_WORKSPACE_ID, name: workspaceName(1), canvas, viewport, elements, meta: {} }],
+      };
+    },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -262,6 +287,18 @@ export function compareVersions(a: string, b: string): number {
 
 export function needsMigration(version: string): boolean {
   return compareVersions(version, CURRENT_SCHEMA_VERSION) !== 0;
+}
+
+/**
+ * True when `version` is a later MAJOR version than this build writes.
+ *
+ * Such a file opens (anything unknown is preserved), but this build cannot
+ * know what it fails to see: a newer major may have moved content somewhere
+ * this version never looks, as 2.0.0 did. Saving it back over its own file
+ * could therefore lose work, so the app opens it detached. See `applyLoad`.
+ */
+export function isNewerMajor(version: string): boolean {
+  return parseVersion(version)[0] > parseVersion(CURRENT_SCHEMA_VERSION)[0];
 }
 
 // ---------------------------------------------------------------------------

@@ -37,6 +37,12 @@ in-place text editing (a text box closed empty is deleted, as in other drawing
 tools), full undo/redo, clipboard with cross-tab support, and a style clipboard
 that copies appearance without content.
 
+**Workspaces** — one file holds several independent drawings. The switcher
+beside the board name (`Board › Workspace ▾`) lists them, adds a new empty one,
+and renames, duplicates, reorders or deletes them. Each workspace keeps its own
+background, camera and undo history; `Page Up` and `Page Down` step through
+them. Saving, autosave, recent boards and Drive carry them all.
+
 **Tables** — cell-by-cell editing with `Tab` to move on, draggable column and row
 dividers, and insert/delete for rows and columns from the right-click menu.
 
@@ -118,32 +124,39 @@ this cannot silently regress.
 
 ## The save format
 
-A board is a flat, ordered list of elements. Every element carries its complete
-resolved state — nothing is inherited from a parent, a theme or a document
-default — so any single element is interpretable in isolation.
+A board holds one or more workspaces, and each workspace is a flat, ordered
+list of elements. Every element carries its complete resolved state — nothing is
+inherited from a parent, a theme or a document default — so any single element
+is interpretable in isolation.
 
 ```json
 {
   "type": "mindflow.board",
-  "schemaVersion": "1.6.2",
-  "elements": [
+  "schemaVersion": "2.0.0",
+  "workspaces": [
     {
-      "id": "el_q2WikW58Aw",
-      "type": "rectangle",
-      "x": 60, "y": 90, "width": 140, "height": 70,
-      "angle": 0, "zIndex": 1000, "opacity": 1,
-      "locked": false, "visible": true, "groupId": null,
-      "style": {
-        "stroke": "#1e1e1e", "strokeWidth": 2, "strokeStyle": "solid",
-        "fill": "#a5d8ff", "fillStyle": "solid", "roughness": 0
-      },
-      "label": null, "meta": {}, "cornerRadius": 8
+      "id": "ws_1",
+      "name": "Workspace 1",
+      "elements": [
+        {
+          "id": "el_q2WikW58Aw",
+          "type": "rectangle",
+          "x": 60, "y": 90, "width": 140, "height": 70,
+          "angle": 0, "zIndex": 1000, "opacity": 1,
+          "locked": false, "visible": true, "groupId": null,
+          "style": {
+            "stroke": "#1e1e1e", "strokeWidth": 2, "strokeStyle": "solid",
+            "fill": "#a5d8ff", "fillStyle": "solid", "roughness": 0
+          },
+          "label": null, "meta": {}, "cornerRadius": 8
+        }
+      ]
     }
   ]
 }
 ```
 
-Reading one takes about six lines:
+Reading one takes about eight lines:
 
 ```python
 import json
@@ -151,9 +164,13 @@ import json
 board = json.load(open("board.mindflow.json"))
 assert board["type"] == "mindflow.board"
 
-for el in sorted(board["elements"], key=lambda e: e["zIndex"]):
-    print(el["type"], el["x"], el["y"], el["width"], el["height"])
+for workspace in board["workspaces"]:
+    for el in sorted(workspace["elements"], key=lambda e: e["zIndex"]):
+        print(workspace["name"], el["type"], el["x"], el["y"], el["width"], el["height"])
 ```
+
+Format 2.0.0 introduced workspaces. A 1.x file kept one `elements` array at the
+top level; MindFlow still opens those, as a board with one workspace.
 
 ### Why it is documented this thoroughly
 

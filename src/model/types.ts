@@ -8,7 +8,7 @@
  * The save format is specified in three places that must always agree:
  *
  *   1. `docs/02-document-format.md` + `docs/03-elements.md`  — prose, for humans
- *   2. `docs/schema/mindflow-1.0.0.schema.json`              — JSON Schema, for machines
+ *   2. `docs/schema/mindflow-<version>.schema.json`          — JSON Schema, for machines
  *   3. this file                                             — types, for the app
  *
  * `test/unit/contract.test.ts` fails the build if they drift apart. If you
@@ -100,6 +100,8 @@ export type ElementId = string;
 export type GroupId = string;
 export type FileId = string;
 export type BoardId = string;
+/** Unique among one board's workspaces (2.0.0). MindFlow writes `ws_` + 10 characters. */
+export type WorkspaceId = string;
 
 // ---------------------------------------------------------------------------
 // Style
@@ -678,12 +680,38 @@ export interface DocumentMeta {
 }
 
 /**
- * A complete MindFlow board — the exact shape of a `.mindflow.json` file.
+ * One independent drawing inside a board (2.0.0).
+ *
+ * A workspace is exactly what a whole board's drawing was in 1.x: a background,
+ * a camera and a flat list of elements. Everything inside it keeps its 1.x
+ * meaning, so every published algorithm (routing, wrapping, anchors, paint
+ * order) applies unchanged, one workspace at a time. References between
+ * elements (bindings, `frameId`, `groupId`) resolve inside their own workspace.
+ * Element ids are unique across the whole board.
  */
-export interface MindflowDocument {
+export interface Workspace {
+  id: WorkspaceId;
+  /** Display name. Names may repeat; the id is the identity. */
+  name: string;
+  canvas: CanvasSettings;
+  /** Where the camera was in this workspace when the board was saved. */
+  viewport: Viewport;
+  /** Sorted ascending by `zIndex`, which is the truth for paint order. */
+  elements: MindflowElement[];
+  /** Free-form namespace for tools other than MindFlow, preserved verbatim. */
+  meta: Record<string, unknown>;
+}
+
+/**
+ * A complete MindFlow board — the exact shape of a `.mindflow.json` file.
+ *
+ * Since 2.0.0 the drawing is a list of workspaces. Board identity, the name,
+ * the timestamps and the embedded images are shared by all of them.
+ */
+export interface MindflowBoard {
   /**
-   * URL of the JSON Schema this document conforms to. Present so that editors
-   * and validators can find the schema without configuration.
+   * URL of the JSON Schema this file conforms to. Present so that editors and
+   * validators can find the schema without configuration.
    */
   $schema?: string;
   /** Format discriminator. Always the literal `"mindflow.board"`. */
@@ -692,24 +720,53 @@ export interface MindflowDocument {
   schemaVersion: string;
   id: BoardId;
   meta: DocumentMeta;
+  /**
+   * The workspace that was on screen when the board was saved. A convenience,
+   * like a viewport: readers may ignore it, and a missing or dangling value
+   * means the first workspace.
+   */
+  activeWorkspaceId: WorkspaceId;
+  /** At least one. Array order is the order MindFlow lists them in. */
+  workspaces: Workspace[];
+  /** Embedded assets, keyed by SHA-256 content hash, shared by every workspace. */
+  files: Record<FileId, EmbeddedFile>;
+}
+
+/**
+ * A board seen through one of its workspaces: the board's identity, name,
+ * timestamps and images, with one workspace's background, camera and elements.
+ *
+ * This is the shape the whole app draws, hit-tests, edits and exports. It was
+ * the file shape in 1.x, and keeping it as the in-memory shape is what lets
+ * the renderer, the commands and the exporters stay unaware of workspaces. The
+ * store holds the board's other workspaces to one side (`model/workspaces.ts`).
+ * It is not a file shape since 2.0.0; {@link MindflowBoard} is.
+ */
+export interface MindflowDocument {
+  /** Always the literal `"mindflow.board"`. */
+  type: 'mindflow.board';
+  /** The format version this build writes. */
+  schemaVersion: string;
+  id: BoardId;
+  meta: DocumentMeta;
+  /** The workspace's background and grid. */
   canvas: CanvasSettings;
   /**
-   * Where the camera was when the board was saved. Purely a convenience so a
-   * board reopens where you left it; it carries no semantic weight and readers
-   * are free to ignore it entirely.
+   * Where the camera was when the workspace was last saved or staged. The live
+   * camera is session state in the store, folded in only when saving.
    */
   viewport: Viewport;
   /**
-   * All elements, conventionally sorted ascending by `zIndex`. Readers should
+   * The workspace's elements, kept sorted ascending by `zIndex`. Readers should
    * sort defensively rather than rely on array order — `zIndex` is the truth.
    */
   elements: MindflowElement[];
-  /** Embedded assets, keyed by SHA-256 content hash. */
+  /** The board's embedded assets, keyed by SHA-256 content hash. */
   files: Record<FileId, EmbeddedFile>;
 }
 
 /** The schema version this build reads and writes natively. */
-export const CURRENT_SCHEMA_VERSION = '1.6.3';
+export const CURRENT_SCHEMA_VERSION = '2.0.0';
 
 /** Canonical filename extension for a board. */
 export const FILE_EXTENSION = '.mindflow.json';

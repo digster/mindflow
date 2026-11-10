@@ -55,6 +55,8 @@ export interface KeyboardOptions {
    * decision of which one pastes — see `input/pasteGate.ts`.
    */
   onPasteShortcut: () => void;
+  /** Page Down (1) and Page Up (-1): the next and previous workspace. */
+  onStepWorkspace: (delta: 1 | -1) => void;
 }
 
 /**
@@ -254,6 +256,16 @@ export function installKeyboardShortcuts(options: KeyboardOptions): () => void {
       return;
     }
 
+    // Page Down and Page Up step through the board's workspaces, the way they
+    // step through pages or sheets elsewhere. The board does not scroll, so
+    // the keys did nothing here before. Only unmodified: Ctrl+Page Up and
+    // Ctrl+Page Down switch browser tabs, which is above an app's station.
+    if (key === 'pagedown' || key === 'pageup') {
+      event.preventDefault();
+      options.onStepWorkspace(key === 'pagedown' ? 1 : -1);
+      return;
+    }
+
     if (key === 'escape') {
       // Commit rather than merely clearing the flag: an editor that is open but
       // has lost focus (which happens on touch, where a tap elsewhere does not
@@ -372,6 +384,14 @@ export const SHORTCUT_REFERENCE: { group: string; items: [string, string][] }[] 
       ['Cmd/Ctrl + 0', 'Reset zoom'],
       ['Cmd/Ctrl + 1', 'Zoom to fit'],
       ['Cmd/Ctrl + \\', 'Show / hide the style panel'],
+    ],
+  },
+  {
+    group: 'Workspaces',
+    items: [
+      ['Page Down', 'Next workspace'],
+      ['Page Up', 'Previous workspace'],
+      ['F2', 'Rename the workspace focused in the list'],
     ],
   },
   {

@@ -682,6 +682,113 @@ the edit. The real edit time cannot be recovered, so the save time is kept.
 - To know when a file was last written, use the file system's or the storage
   service's own modification time. `updatedAt` no longer says.
 
+## 2.0.0 — 2026-11-10
+
+A board holds **workspaces**: several independent drawings in one file. The
+drawing moves from the top level of the file into a `workspaces` list. The
+first major version.
+
+### Changed
+
+**The top-level `canvas`, `viewport` and `elements` move into `workspaces`.**
+Each workspace has an `id`, a `name`, its own `canvas` (background and grid),
+`viewport` and `elements`, and a free-form `meta`. The board's `id`, `meta`
+(name and timestamps) and `files` stay at the top and are shared. A new
+top-level `activeWorkspaceId` names the workspace on screen when the board was
+saved. Specified in [02-document-format.md](02-document-format.md#workspaces).
+
+```jsonc
+// 1.6.3                                // 2.0.0
+"canvas":   { … },                      "activeWorkspaceId": "ws_1",
+"viewport": { … },                      "workspaces": [
+"elements": [ … ],                        { "id": "ws_1", "name": "Workspace 1",
+                                            "canvas": { … }, "viewport": { … },
+                                            "elements": [ … ], "meta": {} }
+                                        ],
+```
+
+**Inside a workspace nothing changes.** Every element type, field and published
+algorithm applies to each workspace on its own. References (bindings,
+`frameId`, `groupId`) resolve inside their own workspace. Element ids are
+unique across the whole board.
+
+### Added
+
+**Unknown fields are kept.** A top-level or workspace field a reader does not
+know MUST be preserved and written back; MindFlow writes such fields after the
+ones it knows. The 2.0.0 schema allows them, at those two levels only.
+
+### Fixed
+
+**`$schema` names the version the file is written in.** A board read in an
+older version used to keep its old `$schema` on save while declaring the
+current `schemaVersion`, so an editor validated it against the wrong schema.
+
+### Why
+
+People wanted to keep related drawings together, as one file, and switch
+between them: a user flow and the brainstorm it came from, or the same diagram
+at several stages. Separate files lose the grouping; frames on one huge board
+share a camera, a background and an undo history, and drown each other at the
+zoom level where one is readable.
+
+**Why a list of workspaces.** A workspace is exactly what a 1.x board's drawing
+was, so the change is a wrapper rather than a new concept, and every reader's
+code for a drawing carries over unchanged.
+
+Two alternatives were rejected:
+
+- **Keep the top level as the first workspace and list the rest beside it**
+  (a minor version). A one-workspace file would have stayed readable by 1.x
+  tools. But the shape would be lopsided forever, and a 1.x MindFlow would
+  show the first workspace as if it were the whole board and silently drop the
+  others on save. A loud failure is safer than that quiet one.
+- **One flat element list with a `workspaceId` on each element**, the way
+  `groupId` and `frameId` work. It matches the format's flat style, but a 1.x
+  reader would draw every workspace on top of the others, each workspace's
+  background and camera would still need a list of their own, and every rule
+  about bindings, frames and paint order would have to be restated as "within
+  the same workspace".
+
+**Why major.** The [versioning rules](#versioning-rules) above decide it:
+within a major version, a newer file never uses anything an older reader lacks
+a rule for. A 1.x reader has no rule for a second workspace, finds no
+top-level `elements` in a 2.0.0 file, and MindFlow 1.x drops unknown top-level
+fields on save.
+
+### Migration: 1.6.3 → 2.0.0
+
+The 1.x drawing becomes the board's only workspace:
+
+1. Remove `canvas`, `viewport` and `elements` from the top level.
+2. Add `"workspaces": [{"id": "ws_1", "name": "Workspace 1", "canvas": …,
+   "viewport": …, "elements": …, "meta": {}}]`, with the three removed values
+   as they were.
+3. Add `"activeWorkspaceId": "ws_1"`.
+
+The id is fixed, so two loads of the same 1.x file give the same board.
+Nothing inside the drawing changes. Every earlier version migrates through
+1.6.3 first, as before. A 2.x file written in the 1.x shape (top-level
+`elements`, no `workspaces`) is read the same way, with an information note;
+see [02-document-format.md](02-document-format.md#reading-the-1x-shape).
+
+### Notes for implementers
+
+- **A 1.x reader given a 2.0.0 file** finds no top-level `elements`. MindFlow
+  1.x warns that the file is newer, shows an empty board, and would save it
+  back without its workspaces. From 2.0.0 on, MindFlow opens a file from a
+  newer **major** version detached, so saving asks where to write
+  ([06-persistence.md](06-persistence.md#three-cases)). A reader should do the
+  same, or refuse to save.
+- **A reader that can show one drawing** should show the one `activeWorkspaceId`
+  names, or the first, and say that there are more.
+- **A writer that adds or reorders workspaces** must keep element ids unique
+  across the board. MindFlow repairs duplicates on load (a later workspace's
+  ids are reassigned, and its references follow), so a hand-copied workspace
+  still loads, but a writer should not rely on it.
+- **`files` is shared.** An image counts as used if any workspace uses it. A
+  tool that prunes unused files must look at every workspace.
+
 ## Unreleased
 
 Candidates under consideration, in rough priority order:

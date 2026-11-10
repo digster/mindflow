@@ -26,7 +26,7 @@ import { allDefinitions, registeredTypes, type ElementCapabilities } from '../..
 import { CURRENT_SCHEMA_VERSION, ELEMENT_TYPES } from '../../src/model/types.ts';
 import { SCHEMA_URL } from '../../src/model/defaults.ts';
 import { registeredMigrations } from '../../src/model/migrate.ts';
-import { loadDocument, serializeDocument } from '../../src/model/document.ts';
+import { loadDocument, serializeBoard, serializeDocument } from '../../src/model/document.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 const DOCS = join(ROOT, 'docs');
@@ -35,10 +35,17 @@ const EXAMPLES_DIR = join(DOCS, 'schema', 'examples');
 
 const schema = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) as Record<string, unknown>;
 
-function createValidator() {
+/** A validator for the current schema, or for the published schema of `version`. */
+function createValidator(version: string = CURRENT_SCHEMA_VERSION) {
+  const path = join(DOCS, 'schema', `mindflow-${version}.schema.json`);
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   addFormats(ajv);
-  return ajv.compile(schema);
+  return ajv.compile(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>);
+}
+
+/** Every element of a serialised board, whichever shape it is in. */
+function elementsOf(board: { elements?: unknown[]; workspaces?: { elements?: unknown[] }[] }): unknown[] {
+  return board.workspaces ? board.workspaces.flatMap((workspace) => workspace.elements ?? []) : (board.elements ?? []);
 }
 
 /** The element `type` values the schema's discriminator enumerates. */
@@ -308,7 +315,7 @@ describe('migrations', () => {
     const board = JSON.stringify({ type: 'mindflow.board', schemaVersion: '1.4.0', elements: retired });
 
     const output = JSON.parse(serializeDocument(loadDocument(board).document)) as {
-      elements: { type: string }[];
+      workspaces: { elements: { type: string }[] }[];
     };
     const validate = createValidator();
     const valid = validate(output);
@@ -318,7 +325,7 @@ describe('migrations', () => {
         .join('\n');
       throw new Error(`the migrated board does not validate:\n${details}`);
     }
-    expect(output.elements).toHaveLength(retired.length);
+    expect(elementsOf(output)).toHaveLength(retired.length);
   });
 });
 
@@ -332,9 +339,15 @@ describe('documented examples', () => {
   for (const file of files) {
     describe(file, () => {
       const raw = readFileSync(join(EXAMPLES_DIR, file), 'utf8');
+      const declared = (JSON.parse(raw) as { schemaVersion: string }).schemaVersion;
 
-      it('validates against the published JSON Schema', () => {
-        const validate = createValidator();
+      // Each example is written at the version that introduced what it shows,
+      // so it is checked against that version's schema. Published schemas
+      // never change, so it keeps passing; the current schema is checked on
+      // the re-serialised form below. Before 2.0.0 every schema accepted every
+      // older example, which is why one validator used to be enough.
+      it(`validates against the published JSON Schema of its version (${declared})`, () => {
+        const validate = createValidator(declared);
         const valid = validate(JSON.parse(raw));
         if (!valid) {
           const details = (validate.errors ?? [])
@@ -355,8 +368,10 @@ describe('documented examples', () => {
         // Normalising once may legitimately change the input (filling defaults,
         // rounding). Normalising a SECOND time must change nothing — that is what
         // makes save/load idempotent, and it is the property the format needs.
-        const first = serializeDocument(loadDocument(raw).document);
-        const second = serializeDocument(loadDocument(first).document);
+        // Every workspace is written, which is why it is the board that goes
+        // round, not one document.
+        const first = serializeBoard(loadDocument(raw));
+        const second = serializeBoard(loadDocument(first));
 
         // Byte for byte, timestamps included: a save writes `updatedAt` as the
         // board holds it (1.6.3), so nothing in the output depends on when it ran.
@@ -365,7 +380,7 @@ describe('documented examples', () => {
 
       it('the re-serialised form still validates', () => {
         const validate = createValidator();
-        const output = serializeDocument(loadDocument(raw).document);
+        const output = serializeBoard(loadDocument(raw));
         const valid = validate(JSON.parse(output));
         if (!valid) {
           const details = (validate.errors ?? [])
@@ -377,15 +392,16 @@ describe('documented examples', () => {
       });
 
       it('preserves third-party `meta` verbatim', () => {
-        const original = JSON.parse(raw) as { elements: { id: string; meta?: unknown }[] };
-        const withMeta = original.elements.filter(
-          (element) => element.meta && Object.keys(element.meta).length > 0,
-        );
+        const original = elementsOf(JSON.parse(raw) as Parameters<typeof elementsOf>[0]) as {
+          id: string;
+          meta?: Record<string, unknown>;
+        }[];
+        const withMeta = original.filter((element) => element.meta && Object.keys(element.meta).length > 0);
         if (withMeta.length === 0) return; // Not every example exercises this.
 
-        const { document } = loadDocument(raw);
+        const saved = elementsOf(JSON.parse(serializeBoard(loadDocument(raw)))) as { id: string; meta?: unknown }[];
         for (const source of withMeta) {
-          const loaded = document.elements.find((element) => element.id === source.id);
+          const loaded = saved.find((element) => element.id === source.id);
           expect(loaded?.meta, `meta was not preserved for ${source.id}`).toEqual(source.meta);
         }
       });

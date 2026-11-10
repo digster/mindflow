@@ -18,6 +18,25 @@
  * reopens where you left it) but it is not *document state* (panning is not an
  * edit). It therefore lives in the store and is copied into the document only at
  * save time.
+ *
+ * ---------------------------------------------------------------------------
+ * Workspaces
+ * ---------------------------------------------------------------------------
+ * A board holds several workspaces (format 2.0.0). The one on screen is *on
+ * stage*: it is `state.document`, the same flat document every module has
+ * always read, so none of them knows workspaces exist. The others are *parked*
+ * in their entries of `state.workspaces`. A workspace's content is in exactly
+ * one of those places; switching moves it, and nothing copies it. See
+ * `model/workspaces.ts`.
+ *
+ * Each workspace has its own undo history, so Undo only ever changes the
+ * workspace on screen. `history` always names the staged workspace's.
+ *
+ * Switching is like panning: it changes what is on screen, not the board, so
+ * it neither dirties the board nor moves its edit time. Adding, renaming,
+ * reordering, duplicating and deleting workspaces are edits, but none of them
+ * goes on an undo stack: an undo stack belongs to one workspace, and these
+ * change the list the stacks hang from. Deleting asks first in the app.
  */
 
 import type {
@@ -27,9 +46,18 @@ import type {
   MindflowDocument,
   MindflowElement,
   Viewport,
+  WorkspaceId,
 } from '../model/types.ts';
-import { DEFAULT_VIEWPORT, createDocument } from '../model/defaults.ts';
-import type { LoadResult } from '../model/document.ts';
+import { DEFAULT_VIEWPORT, createDocument, newWorkspaceId } from '../model/defaults.ts';
+import {
+  cloneElements,
+  clonePreserved,
+  nextWorkspaceName,
+  workspaceName,
+  type StagedBoard,
+  type WorkspaceContent,
+  type WorkspaceEntry,
+} from '../model/workspaces.ts';
 import type { Command } from './commands.ts';
 import { applyCommand, expandSelectionToGroups, needsReindex, reindexZ } from './commands.ts';
 import { History } from './history.ts';
@@ -93,9 +121,17 @@ export type BoardOrigin =
   | { kind: 'drive'; fileId: string; name: string };
 
 export interface AppState {
+  /** The board, seen through the workspace on stage. */
   document: MindflowDocument;
-  /** Unknown-type elements carried through from load; see `LoadResult.preserved`. */
-  preserved: unknown[];
+  /** The staged workspace's unknown-type elements; see `LoadResult.preserved`. */
+  preserved: readonly unknown[];
+  /**
+   * Every workspace of the board, in order. The staged one's entry has
+   * `parked: null`; its content is `document`. Replaced, never mutated.
+   */
+  workspaces: readonly WorkspaceEntry[];
+  /** The workspace on stage. */
+  activeWorkspaceId: WorkspaceId;
   selection: Set<ElementId>;
   activeTool: ToolId;
   /** Element currently open in the text editor overlay, if any. */
@@ -146,6 +182,16 @@ export interface DirtyCheckpoint {
  */
 export type SaveOutcome = 'clean' | 'edited' | 'left-as-saved' | 'left';
 
+/** One row of the workspace list, as the switcher shows it. */
+export interface WorkspaceSummary {
+  id: WorkspaceId;
+  name: string;
+  /** Elements in the workspace, unknown types included. */
+  elementCount: number;
+  /** True for the workspace on screen. */
+  active: boolean;
+}
+
 export type StoreListener = (state: AppState, reason: ChangeReason) => void;
 
 /**
@@ -164,12 +210,17 @@ export type ChangeReason =
   | 'editing'
   | 'load'
   | 'origin'
-  | 'saved';
+  | 'saved'
+  /** A different workspace is on stage: switched to, added, duplicated, or the staged one deleted. */
+  | 'workspace';
 
 export class Store {
   private state: AppState;
   private listeners = new Set<StoreListener>();
-  readonly history = new History();
+  /** One undo history per workspace. See {@link history}. */
+  private histories = new Map<WorkspaceId, History>();
+  /** Top-level fields this version does not know, held for the next save. */
+  private extra: Record<string, unknown> = {};
 
   // Save bookkeeping, for `completeSave`. Nothing renders these counters, so
   // they stay out of `AppState`. The generation never repeats, so a ticket can
@@ -186,9 +237,12 @@ export class Store {
   private settled = 0;
 
   constructor(document: MindflowDocument = createDocument()) {
+    const workspace = firstWorkspace();
     this.state = {
       document,
       preserved: [],
+      workspaces: [workspace],
+      activeWorkspaceId: workspace.id,
       selection: new Set(),
       activeTool: 'select',
       editingId: null,
@@ -200,6 +254,24 @@ export class Store {
 
   getState(): Readonly<AppState> {
     return this.state;
+  }
+
+  /**
+   * The undo history of the workspace on stage.
+   *
+   * A getter, so the toolbar, the command palette and the controller keep
+   * calling `store.history` as they always have and always reach the history
+   * of what is on screen. Created on first use, which is also how a workspace
+   * that was never staged costs nothing.
+   */
+  get history(): History {
+    const id = this.state.activeWorkspaceId;
+    let history = this.histories.get(id);
+    if (!history) {
+      history = new History();
+      this.histories.set(id, history);
+    }
+    return history;
   }
 
   get document(): MindflowDocument {
@@ -435,31 +507,38 @@ export class Store {
   // Document lifecycle
   // -------------------------------------------------------------------------
 
-  /** Replaces the whole document, e.g. after opening a file. */
-  load(result: LoadResult, origin: BoardOrigin): void {
+  /** Replaces the whole board, e.g. after opening a file. */
+  load(board: StagedBoard, origin: BoardOrigin): void {
     this.replaceBoard();
-    this.state.document = result.document;
-    this.state.preserved = result.preserved;
+    this.state.document = board.document;
+    this.state.preserved = board.preserved;
+    this.state.workspaces = board.workspaces;
+    this.state.activeWorkspaceId = board.activeWorkspaceId;
+    this.extra = board.extra;
     this.state.selection = new Set();
     this.state.editingId = null;
-    this.state.viewport = { ...result.document.viewport };
+    this.state.viewport = { ...board.document.viewport };
     this.state.dirty = false;
     this.state.origin = origin;
-    this.history.clear();
+    this.histories.clear();
     this.emit('load');
   }
 
   reset(name?: string): void {
     const document = createDocument(name);
+    const workspace = firstWorkspace();
     this.replaceBoard();
     this.state.document = document;
     this.state.preserved = [];
+    this.state.workspaces = [workspace];
+    this.state.activeWorkspaceId = workspace.id;
+    this.extra = {};
     this.state.selection = new Set();
     this.state.editingId = null;
     this.state.viewport = { ...DEFAULT_VIEWPORT };
     this.state.dirty = false;
     this.state.origin = { kind: 'new' };
-    this.history.clear();
+    this.histories.clear();
     this.emit('load');
   }
 
@@ -572,10 +651,252 @@ export class Store {
     return 'clean';
   }
 
-  /** The document as it should be written to disk, with the live viewport folded in. */
+  /**
+   * The staged workspace as it should be exported, with the live viewport
+   * folded in. One workspace only: saving goes through {@link boardForSave}.
+   */
   documentForSave(): MindflowDocument {
     return { ...this.state.document, viewport: { ...this.state.viewport } };
   }
+
+  /**
+   * The whole board as it should be written to disk, every workspace
+   * included, with the live viewport folded into the staged one.
+   *
+   * Anything that must see the whole board (saving, autosave, counting
+   * elements, deciding which images are used) goes through this, never through
+   * `state.document`, which only ever holds one workspace.
+   */
+  boardForSave(): StagedBoard {
+    return {
+      document: this.documentForSave(),
+      preserved: this.state.preserved,
+      workspaces: this.state.workspaces,
+      activeWorkspaceId: this.state.activeWorkspaceId,
+      extra: this.extra,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Workspaces
+  // -------------------------------------------------------------------------
+
+  /** The workspace list as the switcher shows it, in order. */
+  workspaceSummaries(): WorkspaceSummary[] {
+    const { document, preserved, workspaces } = this.state;
+    return workspaces.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      elementCount: entry.parked
+        ? entry.parked.elements.length + entry.parked.preserved.length
+        : document.elements.length + preserved.length,
+      active: entry.parked === null,
+    }));
+  }
+
+  /**
+   * Puts the workspace `id` on stage, parking the one there now.
+   *
+   * Not an edit. The caller must first end anything in flight that writes to
+   * the stage: an open text editor and a pointer gesture, whose transient
+   * edits would otherwise be parked half-done or replayed into the wrong
+   * workspace. Returns false when `id` is already on stage or unknown.
+   */
+  switchWorkspace(id: WorkspaceId): boolean {
+    if (id === this.state.activeWorkspaceId) return false;
+    const target = this.state.workspaces.find((entry) => entry.id === id);
+    if (!target?.parked) return false;
+
+    const parked = this.stagedContent();
+    this.state.workspaces = this.state.workspaces.map((entry) => {
+      if (entry.id === this.state.activeWorkspaceId) return { ...entry, parked };
+      if (entry.id === id) return { ...entry, parked: null };
+      return entry;
+    });
+    this.stage(id, target.parked);
+    this.emit('workspace');
+    return true;
+  }
+
+  /**
+   * Adds an empty workspace at the end of the list and puts it on stage. It
+   * takes the staged workspace's background and grid, the default camera, and
+   * the lowest free "Workspace N". Returns its id.
+   */
+  addWorkspace(): WorkspaceId {
+    const { document } = this.state;
+    const entry: WorkspaceEntry = {
+      id: newWorkspaceId(),
+      name: nextWorkspaceName(this.state.workspaces.map((workspace) => workspace.name)),
+      meta: {},
+      extra: {},
+      parked: {
+        canvas: structuredClone(document.canvas),
+        viewport: { ...DEFAULT_VIEWPORT },
+        elements: [],
+        preserved: [],
+      },
+    };
+    this.insertAndStage(entry, this.state.workspaces.length);
+    return entry.id;
+  }
+
+  /**
+   * Copies a workspace (its elements with fresh ids, its background, camera
+   * and `meta`) into a new one right after it, named "<name> copy", and puts
+   * the copy on stage. Returns its id, or null for an unknown id.
+   */
+  duplicateWorkspace(id: WorkspaceId): WorkspaceId | null {
+    const index = this.state.workspaces.findIndex((entry) => entry.id === id);
+    const source = this.state.workspaces[index];
+    if (!source) return null;
+
+    const content = source.parked ?? this.stagedContent();
+    const entry: WorkspaceEntry = {
+      id: newWorkspaceId(),
+      name: `${source.name} copy`,
+      meta: structuredClone(source.meta),
+      extra: structuredClone(source.extra),
+      parked: {
+        canvas: structuredClone(content.canvas),
+        viewport: { ...content.viewport },
+        elements: cloneElements(content.elements),
+        preserved: clonePreserved(content.preserved),
+      },
+    };
+    this.insertAndStage(entry, index + 1);
+    return entry.id;
+  }
+
+  /**
+   * Renames a workspace. Leading and trailing space is dropped, and a blank
+   * name becomes the workspace's default, "Workspace N" for its position.
+   * Returns false when nothing changed.
+   */
+  renameWorkspace(id: WorkspaceId, name: string): boolean {
+    const index = this.state.workspaces.findIndex((entry) => entry.id === id);
+    const entry = this.state.workspaces[index];
+    if (!entry) return false;
+    const trimmed = name.trim();
+    const next = trimmed === '' ? workspaceName(index + 1) : trimmed;
+    if (next === entry.name) return false;
+
+    this.state.workspaces = this.state.workspaces.map((candidate) =>
+      candidate.id === id ? { ...candidate, name: next } : candidate,
+    );
+    this.markStructuralEdit();
+    this.emit('document');
+    return true;
+  }
+
+  /** Moves a workspace to `index` in the list (clamped). Returns false when it did not move. */
+  moveWorkspace(id: WorkspaceId, index: number): boolean {
+    const from = this.state.workspaces.findIndex((entry) => entry.id === id);
+    if (from === -1) return false;
+    const to = Math.max(0, Math.min(this.state.workspaces.length - 1, Math.round(index)));
+    if (to === from) return false;
+
+    const workspaces = [...this.state.workspaces];
+    const [entry] = workspaces.splice(from, 1);
+    workspaces.splice(to, 0, entry as WorkspaceEntry);
+    this.state.workspaces = workspaces;
+    this.markStructuralEdit();
+    this.emit('document');
+    return true;
+  }
+
+  /**
+   * Deletes a workspace and its undo history. Refused, returning false, for
+   * the last one, since a board always has at least one. Deleting the
+   * workspace on stage puts the next one there, or the previous one when it
+   * was last. Not undoable; the app asks first when there is content.
+   */
+  deleteWorkspace(id: WorkspaceId): boolean {
+    const { workspaces } = this.state;
+    const index = workspaces.findIndex((entry) => entry.id === id);
+    if (index === -1 || workspaces.length < 2) return false;
+
+    const staged = id === this.state.activeWorkspaceId;
+    const neighbour = workspaces[index + 1] ?? workspaces[index - 1];
+    this.state.workspaces = workspaces
+      .filter((entry) => entry.id !== id)
+      .map((entry) => (staged && entry.id === neighbour?.id ? { ...entry, parked: null } : entry));
+    this.histories.delete(id);
+    if (staged && neighbour?.parked) this.stage(neighbour.id, neighbour.parked);
+    this.markStructuralEdit();
+    this.emit(staged ? 'workspace' : 'document');
+    return true;
+  }
+
+  /** The staged workspace's content, with the live camera, ready to park. */
+  private stagedContent(): WorkspaceContent {
+    const { document, preserved, viewport } = this.state;
+    return {
+      canvas: document.canvas,
+      viewport: { ...viewport },
+      elements: document.elements,
+      preserved: [...preserved],
+    };
+  }
+
+  /**
+   * Puts parked `content` on stage as workspace `id`. The entry list must
+   * already say so (`parked: null` on `id`).
+   *
+   * The document is replaced rather than mutated, like every document change,
+   * and keeps the board's own fields: id, name, timestamps and images. The
+   * selection and any editing id belonged to the workspace left behind.
+   */
+  private stage(id: WorkspaceId, content: WorkspaceContent): void {
+    this.state.document = {
+      ...this.state.document,
+      canvas: content.canvas,
+      viewport: { ...content.viewport },
+      elements: content.elements,
+    };
+    this.state.preserved = content.preserved;
+    this.state.viewport = { ...content.viewport };
+    this.state.activeWorkspaceId = id;
+    this.state.selection = new Set();
+    this.state.editingId = null;
+    // Counted like a save or an undo: a dirty checkpoint taken before the
+    // switch describes another workspace's transient edits, and must not be
+    // restored over this one.
+    this.settled++;
+  }
+
+  /** Inserts a parked workspace at `index` and puts it on stage. An edit. */
+  private insertAndStage(entry: WorkspaceEntry, index: number): void {
+    const content = entry.parked as WorkspaceContent;
+    const parked = this.stagedContent();
+    const workspaces = this.state.workspaces.map((candidate) =>
+      candidate.id === this.state.activeWorkspaceId ? { ...candidate, parked } : candidate,
+    );
+    workspaces.splice(index, 0, { ...entry, parked: null });
+    this.state.workspaces = workspaces;
+    this.stage(entry.id, content);
+    this.markStructuralEdit();
+    this.emit('workspace');
+  }
+
+  /**
+   * Records an edit to the workspace list. It dirties the board and moves
+   * its edit time like any command, so a save in flight lands as `edited`
+   * and the top bar's "Edited" label moves.
+   */
+  private markStructuralEdit(): void {
+    this.markEdited();
+    this.settled++;
+    this.state.document = {
+      ...this.state.document,
+      meta: { ...this.state.document.meta, updatedAt: new Date().toISOString() },
+    };
+  }
+}
+
+/** The one workspace of a new board. */
+function firstWorkspace(): WorkspaceEntry {
+  return { id: newWorkspaceId(), name: workspaceName(1), meta: {}, extra: {}, parked: null };
 }
 
 function sameSet<T>(a: Set<T>, b: Set<T>): boolean {

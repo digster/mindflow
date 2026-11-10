@@ -38,6 +38,12 @@ export interface PopoverOptions {
   label: string;
   /** Called after the popover has been removed, however it was dismissed. */
   onClose?: () => void;
+  /**
+   * Offered Escape before the popover closes on it. Returning true means a
+   * layer inside the popover took it (an inline rename, a row's own menu), so
+   * the popover stays open: Escape steps back one layer, not out of the list.
+   */
+  onEscape?: () => boolean;
 }
 
 /** Margin kept between the popover and the viewport edge when clamping. */
@@ -47,6 +53,7 @@ export class Popover {
   readonly element: HTMLElement;
 
   private readonly onClose: (() => void) | undefined;
+  private readonly onEscape: (() => boolean) | undefined;
   private readonly previouslyFocused: Element | null;
   private disposed = false;
 
@@ -57,6 +64,7 @@ export class Popover {
     current?.close();
 
     this.onClose = options.onClose;
+    this.onEscape = options.onEscape;
     this.previouslyFocused = document.activeElement;
 
     this.element = el('div', {
@@ -136,6 +144,7 @@ export class Popover {
     // dismissing the popover is the whole of what Escape means right now.
     event.preventDefault();
     event.stopPropagation();
+    if (this.onEscape?.()) return;
     this.close();
   };
 

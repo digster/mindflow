@@ -23,10 +23,10 @@
  * "MindFlow" folders across someone's Drive.
  */
 
-import type { MindflowDocument } from '../../model/types.ts';
 import { CURRENT_SCHEMA_VERSION, FILE_EXTENSION } from '../../model/types.ts';
 import type { LoadResult } from '../../model/document.ts';
-import { loadDocument, serializeDocument } from '../../model/document.ts';
+import { loadDocument, serializeBoard } from '../../model/document.ts';
+import type { StagedBoard } from '../../model/workspaces.ts';
 import { toFileName } from '../localFile.ts';
 import type { DriveFile } from './api.ts';
 import {
@@ -175,15 +175,14 @@ export interface SavedBoard {
  * to a vanished target.
  */
 export async function saveBoard(
-  document: MindflowDocument,
-  preserved: readonly unknown[],
+  board: StagedBoard,
   options: { folderId: string; fileId?: string; name?: string },
 ): Promise<SavedBoard> {
-  const contents = serializeDocument(document, preserved);
-  const name = options.name ?? toFileName(document.meta.name);
+  const contents = serializeBoard(board);
+  const name = options.name ?? toFileName(board.document.meta.name);
   const appProperties = {
     [APP_PROPERTY_KEYS.schemaVersion]: CURRENT_SCHEMA_VERSION,
-    [APP_PROPERTY_KEYS.boardId]: document.id,
+    [APP_PROPERTY_KEYS.boardId]: board.document.id,
   };
 
   if (options.fileId) {

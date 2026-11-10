@@ -231,6 +231,63 @@ The viewport is the interesting case: it is *stored* in the file (so a board
 reopens where you left it) but is not *document state*. It lives in the store and
 is folded into the document only at save time.
 
+### Workspaces
+
+A board holds several workspaces (format 2.0.0), each an independent drawing.
+About twenty modules read `document.elements`: the renderer, hit-testing,
+snapping, binding, frames, search, the commands and every exporter. None of
+them knows what a workspace is, and that is the design.
+
+**One workspace is on stage; the rest are parked.** The store's
+`state.document` is the board seen through the workspace on screen: the
+board's id, name, timestamps and images, with that workspace's `canvas`,
+`viewport` and `elements`. That is the same flat `MindflowDocument` the whole
+app has always read. Every other workspace's content is parked in its entry of
+`state.workspaces` (`WorkspaceEntry.parked`). The staged entry has
+`parked: null`. See [`src/model/workspaces.ts`](src/model/workspaces.ts).
+
+Two rules hold it together:
+
+- **A workspace's content is on stage or parked, never both.** Switching
+  (`Store.switchWorkspace`) parks the staged content, with the live camera,
+  and stages the target's. Nothing copies a workspace's elements, so nothing
+  can drift.
+- **Whatever needs the whole board goes through `Store.boardForSave()`**, a
+  `StagedBoard`, never `state.document`, which only ever holds one workspace:
+  saving, autosave, the JSON export, the "is anything left?" count before
+  leaving a board, and deciding which images are used. Missing this is the
+  failure mode: a check that reads `document.elements` silently sees one
+  workspace. Autosave's "delete an empty board's copy" did exactly that until
+  it counted every workspace (`boardElementCount`).
+
+The loader and the serialiser speak `StagedBoard` too. `loadDocument` returns
+the active workspace on stage and the others parked, which is what `Store.load`
+adopts as it is. `serializeBoard` writes every workspace back. `serializeDocument`
+remains, for a document with no store around it, and writes a board of one.
+
+**Undo is per workspace.** The store keeps one `History` per workspace id, and
+`store.history` is a getter for the staged one's, so the toolbar, the palette
+and the controller kept calling it unchanged. Editing the workspace list (add,
+rename, move, duplicate, delete) dirties the board and moves its edit time, but
+goes on no history: a history belongs to one workspace, and these change the
+list the histories hang from.
+
+**Switching is like panning.** It is not an edit: no dirty flag, no revision,
+so a save in flight lands clean. It does bump the store's `settled` counter, so
+a dirty checkpoint taken in one workspace cannot be restored over another.
+
+**The stage must be quiet before it changes.** `App.leaveStage` commits an open
+editor and calls `InteractionController.cancelGesture`, which rewinds a
+gesture's transient edits and ignores the pointer's release. Without the
+cancel, a drag interrupted by `Page Down` was parked half-done, and its release
+replayed the final positions with `replaceElements` into the incoming
+workspace, adding the dragged elements there.
+
+The switcher's list ([`src/ui/workspaceMenu.ts`](src/ui/workspaceMenu.ts)) puts
+each row's menu inside its own popover rather than in a second one, because
+`popover.ts` allows one popover at a time. `PopoverOptions.onEscape` lets the
+inner layers (a rename, a row menu) take Escape first.
+
 ### Autosave and recent boards
 
 [`src/io/autosave.ts`](src/io/autosave.ts) keeps a copy of **every** board in
@@ -262,7 +319,7 @@ keeps time. `applyCommand` moves it on every command, so the store's document
 always holds the last edit, transient commands included. Three things keep it
 honest:
 
-- **Nothing stamps it on the way out.** `serializeDocument` writes `updatedAt`
+- **Nothing stamps it on the way out.** `serializeBoard` writes `updatedAt`
   as the board holds it (format 1.6.3). It used to set it to now, and that went
   wrong twice. A reopened file read as edited when it was saved. Worse, autosave
   writes a copy when a board is merely opened, so a board reopened from the
@@ -305,7 +362,7 @@ the store.
   same board reopened, is on screen when it would run.
 - **A landed save checks what it wrote before recording anything.** A save
   takes a `SaveTicket` from the store in the same synchronous step as
-  `documentForSave` (`App.snapshotForSave`), and hands it back to
+  `boardForSave` (`App.snapshotForSave`), and hands it back to
   `Store.completeSave` when it lands. The ticket holds the board id, a
   *generation*, bumped by every `load` and `reset` (so a reopened board is a
   new instance), and a *revision*, bumped by every change that dirties the
@@ -593,7 +650,8 @@ keeps documentation honest. It fails the build when:
 - the element registry and the JSON Schema disagree about which types exist;
 - a registered type has no `## ` section or capability-matrix row in
   `docs/03-elements.md`, or the matrix still lists a type that was removed;
-- an example board stops validating against the schema;
+- an example board stops validating against the schema of the version it
+  declares, or, loaded and saved again, against the current one;
 - an example stops round-tripping (`load → save → load` must be stable);
 - a board holding a retired type stops migrating to one the current schema
   accepts;

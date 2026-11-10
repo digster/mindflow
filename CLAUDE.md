@@ -80,6 +80,17 @@ Break these and something subtle fails.
    with no stable layout fixed point. Enforced by the contract test.
 8. **Drive uses `drive.file` and nothing else.** Widening the scope moves it into
    Google's restricted category and requires verification. Do not.
+9. **A workspace's content is on stage or parked, never both.** The staged
+   workspace is `state.document`; the others live in `state.workspaces`, with
+   `parked: null` on the staged entry. Switching moves content; nothing copies it.
+   See `src/model/workspaces.ts`.
+10. **Whatever needs the whole board goes through `Store.boardForSave()`**, never
+    `state.document`, which holds one workspace: saving, autosave, the JSON
+    export, element counts, image use. A check on `document.elements` alone
+    silently sees one workspace.
+11. **Before the stage changes, end what writes to it**: `App.leaveStage`
+    commits the editors and cancels the gesture in flight. A gesture left
+    running replays into the next workspace.
 
 ---
 
@@ -169,6 +180,12 @@ npm run check       # typecheck + test + build
 | Anything visual in the chrome | `src/styles/app.css` |
 | An icon | `scripts/build-icons.mjs`, then `npm run icons` |
 | Which colours a type offers | `palette` on its registry definition |
+| Workspaces in the file: loading, the 1.x shape, id repairs, unknown fields | `loadDocument` / `serializeBoard` in `src/model/document.ts`, the `1.6.3` migration in `src/model/migrate.ts`, `docs/02-document-format.md#workspaces` |
+| Staging, parking and per-workspace undo | `switchWorkspace` and friends, `history`, `boardForSave` in `src/store/store.ts`; pure helpers in `src/model/workspaces.ts` |
+| The workspace switcher and its list | `buildWorkspaceButton` in `src/ui/toolbar.ts`, `src/ui/workspaceMenu.ts`, `.mf-workspace-*` in `src/styles/app.css` |
+| What happens before the workspace on screen changes | `leaveStage` in `src/app/app.ts`, `cancelGesture` in `src/input/controller.ts` |
+| Page Up / Page Down | `onStepWorkspace` in `src/input/keyboard.ts`, `stepWorkspace` in `src/app/app.ts` |
+| The top bar at phone width (it scrolls sideways below 760px) | the `width <= 760px` block in `src/styles/app.css`; the compact switcher is the `width <= 860px` block |
 
 ---
 

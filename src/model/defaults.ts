@@ -18,6 +18,7 @@ import type {
   GroupId,
   MindflowDocument,
   Viewport,
+  WorkspaceId,
 } from './types.ts';
 import { CURRENT_SCHEMA_VERSION } from './types.ts';
 
@@ -60,6 +61,7 @@ export function generateId(prefix: string): string {
 export const newElementId = (): ElementId => generateId('el_');
 export const newGroupId = (): GroupId => generateId('grp_');
 export const newBoardId = (): BoardId => generateId('brd_');
+export const newWorkspaceId = (): WorkspaceId => generateId('ws_');
 
 // ---------------------------------------------------------------------------
 // Z-index
@@ -176,11 +178,16 @@ declare const __APP_VERSION__: string;
 /** App version, substituted at build time; falls back for tests run under Node. */
 export const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0-dev';
 
-/** Creates an empty, valid document. */
+/**
+ * Creates an empty board, seen through its one workspace.
+ *
+ * Only the document: the store gives it its workspace entry (see `Store.reset`),
+ * and `singleWorkspaceBoard` in `workspaces.ts` does the same for code that has
+ * no store.
+ */
 export function createDocument(name = 'Untitled board'): MindflowDocument {
   const now = new Date().toISOString();
   return {
-    $schema: SCHEMA_URL,
     type: 'mindflow.board',
     schemaVersion: CURRENT_SCHEMA_VERSION,
     id: newBoardId(),

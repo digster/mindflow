@@ -96,7 +96,11 @@ left of the top bar, or run *Recent boards…* from the command palette. The sam
 menu also starts a new board.
 
 - Debounced 1200 ms after the last edit. A board is also written when it is
-  opened, so a board opened from a file or from Drive appears in the menu too.
+  opened, so a board opened from a file or from Drive appears in the menu too,
+  and when another workspace is put on screen, so a recovered board reopens on
+  the workspace it was left on.
+- **A copy is the whole board**, every workspace included, exactly as Save
+  writes it.
 - **One copy per board**, keyed by the board's `id`. Identical writes are
   skipped, so a board saved, or flagged and unflagged, after its last write
   does not rewrite megabytes. Undo and redo are edits and do move
@@ -113,7 +117,9 @@ menu also starts a new board.
 - **Leaving a board never deletes its copy.** New board, Open, opening another
   recent board and declining startup recovery all leave it in the menu.
 - A board with **no elements is not kept**, and a board emptied of every element
-  is dropped. A blank board is not worth a row.
+  is dropped. A blank board is not worth a row. Elements are counted across
+  **every workspace**: right after *New workspace* the workspace on screen is
+  empty while the board is not, and the board is kept.
 - The list is capped at **10 boards**. Past that, boards already saved elsewhere
   are evicted first, oldest first. The oldest board with unsaved work goes only
   once no saved board is left to drop. The board being written is never evicted.
@@ -147,8 +153,8 @@ The prompt depends on whether anything is actually lost:
 
 | Situation | Prompt |
 |---|---|
-| Storage works and the board has elements | *"Leave unsaved changes?"* — a copy stays in the menu. |
-| Storage refused, or the board is empty | *"Discard unsaved changes?"* — the changes really are lost. |
+| Storage works and the board has elements, in any workspace | *"Leave unsaved changes?"* — a copy stays in the menu. |
+| Storage refused, or every workspace is empty | *"Discard unsaved changes?"* — the changes really are lost. |
 
 ### Storage layout
 
@@ -157,7 +163,7 @@ Database `mindflow`, version 2:
 | Store | Key | Holds |
 |---|---|---|
 | `autosave` | board id | `{ key, contents }`: the serialised board, exactly as Save writes it. Read only when a board is opened. |
-| `recent` | `boardId` | `{ boardId, name, savedAt, elementCount, unsaved }`. The menu reads only this, so opening it never deserialises image data. |
+| `recent` | `boardId` | `{ boardId, name, savedAt, elementCount, unsaved }`, with `elementCount` across every workspace. The menu reads only this, so opening it never deserialises image data. |
 | `session` | `lastOpen` | `{ key, boardId }`: the board on screen, for startup recovery. |
 
 A version-1 database held a single record under the key `current`. The upgrade
@@ -197,12 +203,20 @@ because a mobile browser discarding a background tab never fires
 parse JSON
   → reject if not an object, or if `type` is not "mindflow.board"
   → migrate, if `schemaVersion` differs from the current version
-  → normalise every field, recording warnings
-  → de-duplicate element IDs
-  → sort by zIndex
-  → validate invariants
+  → hold aside top-level fields this version does not know
+  → find the workspaces: the `workspaces` list, or the 1.x top-level shape
+  → for each workspace, in order:
+      normalise every field, recording warnings
+      de-duplicate element IDs, within it and against earlier workspaces
+      sort by zIndex
+      drop frame references that name no frame in it
+  → pick the active workspace
+  → validate invariants, each workspace on its own, images board-wide
   → report warnings
 ```
+
+The result is the board with its active workspace on screen and the others
+held aside (see [ARCHITECTURE.md](../ARCHITECTURE.md#workspaces)).
 
 ### Reading is lenient; writing is strict
 
@@ -227,7 +241,7 @@ perfectly consistent.
 
 | Level | Meaning |
 |---|---|
-| `info` | Something notable; no data was harmed. Unreferenced files, unknown element types. |
+| `info` | Something notable; no data was harmed. Unreferenced files, unknown element types and fields, a board read from the 1.x shape. |
 | `warning` | Something was changed to make the document valid. Reassigned IDs, dropped malformed entries. |
 | `error` | Something is wrong and was **not** repaired. Dangling bindings, missing images. |
 
@@ -247,7 +261,9 @@ door with a warning.
 ### Unknown element types
 
 An element whose `type` this build does not recognise is **kept verbatim** — held
-aside during load and written back, in z-order, on the next save.
+aside during load and written back, in z-order, into its own workspace, on the
+next save. A top-level or workspace field this build does not know is kept the
+same way and written after the known fields (2.0.0).
 
 Forward compatibility matters for a format meant to outlive one app version.
 Opening a board that uses a newer element type and saving it must not silently
@@ -269,7 +285,7 @@ about.
 
 The same invariants are expressed three ways: prose in
 [02-document-format.md](02-document-format.md#invariants), constraints in the
-[JSON Schema](schema/mindflow-1.0.0.schema.json), and this runtime check.
+[JSON Schema](schema/mindflow-2.0.0.schema.json), and this runtime check.
 
 ## Schema migration
 
@@ -287,13 +303,18 @@ available" warning, which reads as data loss.
 shape of its outline — see [CHANGELOG.md](CHANGELOG.md#150--2026-09-22) for the
 exact rules.
 
+**2.0.0 is the first major step.** It moves a 1.x board's `canvas`, `viewport`
+and `elements` into a list of one workspace, `ws_1`, named *Workspace 1*.
+See [CHANGELOG.md](CHANGELOG.md#200--2026-11-10).
+
 ### Three cases
 
 | Case | Behaviour |
 |---|---|
 | **Older, chain complete** | Apply each step in turn. Silent success (an `info` warning records what ran). |
 | **Older, chain incomplete** | Warn loudly and load as-is. The normaliser's leniency usually still produces something usable. |
-| **Newer than this build** | Warn and attempt the load anyway. Unknown element types survive verbatim, so a save-after-open does not destroy data the reader did not understand. |
+| **Newer than this build** | Warn and attempt the load anyway. Unknown element types and fields survive verbatim, so a save-after-open does not destroy data the reader did not understand. |
+| **A newer major version** | As above, and the board also opens **detached**, like a new board, with a warning: Save asks where to write rather than overwriting the file. A newer major may keep content where this build never looks, as 2.0.0 did, so saving over the original could lose it. |
 
 Migrations receive and return **plain unvalidated objects**, never typed elements,
 and run **before** normalisation — so each one sees the document exactly as its own
@@ -318,9 +339,10 @@ interfaces describe a shape the old file does not have.
 | **PNG** | Raster, at 1×, 2× or 3×. Optionally transparent. |
 | **SVG** | Vector, self-contained (images and the fonts its text uses inlined as data URIs). |
 | **PDF** | One page per frame, in reading order, each frame scaled to fit its page. A4, A3, US Letter or US Legal, turned per frame or fixed; 150 or 300 dpi. Text is real, searchable text in the embedded bundled fonts. |
-| **`.mindflow.json`** | The board itself — identical to Save. |
+| **`.mindflow.json`** | The board itself, every workspace included — identical to Save. |
 
-Any export can be limited to the current selection. For a PDF that means the
+PNG, SVG and PDF show the workspace on screen. Any export can be limited to the
+current selection. For a PDF that means the
 selected frames. See [07-rendering.md](07-rendering.md#export) for how each is
 produced.
 
@@ -336,12 +358,17 @@ with open("board.mindflow.json") as f:
 
 assert board["type"] == "mindflow.board"
 
-# zIndex is the truth; array order is only a convention.
-for el in sorted(board["elements"], key=lambda e: e["zIndex"]):
-    print(f'{el["type"]:10} at ({el["x"]:>7.1f}, {el["y"]:>7.1f}) '
-          f'{el["width"]:>6.1f}x{el["height"]:<6.1f} '
-          f'angle={el["angle"]:>5.1f} '
-          f'{el.get("text") or (el.get("label") or {}).get("text") or ""}')
+# 2.x keeps its drawings in `workspaces`; a 1.x board is one drawing at the top.
+workspaces = board.get("workspaces") or [{"name": "Workspace 1", "elements": board["elements"]}]
+
+for workspace in workspaces:
+    print(f'== {workspace["name"]}')
+    # zIndex is the truth; array order is only a convention.
+    for el in sorted(workspace["elements"], key=lambda e: e["zIndex"]):
+        print(f'{el["type"]:10} at ({el["x"]:>7.1f}, {el["y"]:>7.1f}) '
+              f'{el["width"]:>6.1f}x{el["height"]:<6.1f} '
+              f'angle={el["angle"]:>5.1f} '
+              f'{el.get("text") or (el.get("label") or {}).get("text") or ""}')
 ```
 
 To *render* one, you additionally need

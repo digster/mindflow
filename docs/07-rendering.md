@@ -839,6 +839,9 @@ Measured on the reference implementation, a 2,000-element board pans and zooms a
 
 ## Export
 
+PNG, SVG and PDF draw **the workspace on screen**, with that workspace's
+background. The other workspaces of a board are not part of a picture export.
+
 ### PNG
 
 Reuses the shape modules against an offscreen canvas, so output is pixel-identical
@@ -875,8 +878,8 @@ document for a case the author can see and fix on the board.
 
 ### PDF
 
-**One page per frame.** Every visible frame on the board (or every visible frame
-in the selection, with *Selection only*) becomes one page. Elements outside every
+**One page per frame.** Every visible frame in the workspace on screen (or every
+visible frame in the selection, with *Selection only*) becomes one page. Elements outside every
 frame are not exported, and a board without frames cannot be exported as a PDF.
 Reference implementation: [`src/render/pdfLayout.ts`](../src/render/pdfLayout.ts)
 (the rules below) and [`src/render/exportPdf.ts`](../src/render/exportPdf.ts).
@@ -916,8 +919,8 @@ Each page's picture is the frame's box grown by **half the frame's stroke width*
 on every side, so the border prints at full width. It is painted like this:
 
 1. White, the paper.
-2. `canvas.background`, unless *Transparent background* is chosen. It shows
-   only where the frame is unfilled.
+2. The workspace's `canvas.background`, unless *Transparent background* is
+   chosen. It shows only where the frame is unfilled.
 3. The page contents, members clipped to their frame as on screen. The frame's
    `name` is not drawn, since it lies outside the box.
 

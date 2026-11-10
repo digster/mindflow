@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../src/render/shapes/index.ts';
 import { getDefinition } from '../../src/model/registry.ts';
 import { createDocument } from '../../src/model/defaults.ts';
+import { singleWorkspaceBoard } from '../../src/model/workspaces.ts';
 import type { MindflowElement } from '../../src/model/types.ts';
 import { addElements, deleteElements } from '../../src/store/commands.ts';
 import { Store, type ChangeReason } from '../../src/store/store.ts';
@@ -205,7 +206,7 @@ describe('Store.restoreDirty', () => {
       const store = new Store();
       store.execute(addElements([makeRect()]));
       const checkpoint = store.dirtyCheckpoint();
-      store.load({ document: createDocument('Other'), warnings: [], preserved: [] }, { kind: 'new' });
+      store.load(singleWorkspaceBoard(createDocument('Other')), { kind: 'new' });
       store.markDirty();
 
       // Its flag is its own, whatever the old board's was.
