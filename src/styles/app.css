@@ -349,6 +349,77 @@ textarea {
   flex: 0 0 auto;
 }
 
+/* The quick-switch numbers after the switcher: `Workspace ▾ [1] 2 3`. Small
+   keycap-like squares, so they read as buttons beside a ghost button, with
+   the workspace on screen in the accent, as the active tool is. Fixed-size
+   and never shrunk (a shrunk group of fixed-size buttons overlaps): when the
+   bar is short of room, `ui/workspaceNumbers.ts` drops them from the end. */
+.mf-workspace-numbers {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  align-items: center;
+  margin-left: 4px;
+}
+
+/* `display: flex` above would otherwise beat the user-agent rule for [hidden]. */
+.mf-workspace-numbers[hidden],
+.mf-workspace-number[hidden] {
+  display: none;
+}
+
+/* While any number shows, the switcher keeps its name: the numbers give way
+   before it does. With none left, it shrinks as it always has. */
+.mf-topbar-group:has(> .mf-workspace-numbers:not([hidden])) > .mf-workspace-button {
+  flex-shrink: 0;
+}
+
+.mf-workspace-number {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--mf-text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--mf-border-strong);
+  border-radius: var(--mf-radius-sm);
+  transition: background var(--mf-transition), border-color var(--mf-transition), color var(--mf-transition);
+}
+
+.mf-workspace-number:hover {
+  color: var(--mf-text);
+  background: var(--mf-surface-hover);
+}
+
+.mf-workspace-number:active {
+  background: var(--mf-surface-active);
+}
+
+.mf-workspace-number.is-current {
+  color: var(--mf-accent);
+  cursor: default;
+  background: var(--mf-accent-soft);
+  border-color: var(--mf-accent);
+}
+
+/* A finger needs a bigger target than a cursor: the size of the bar's other
+   buttons. */
+@media (pointer: coarse) {
+  .mf-workspace-number {
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+  }
+}
+
 /* "Edited 5 minutes ago". Metadata, not a control, so it is as quiet as the
    dirty dot. It gives way first when the bar is short of room: it shrinks
    (with an ellipsis) before the name does, and is dropped on narrow screens. */

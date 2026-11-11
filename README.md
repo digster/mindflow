@@ -39,9 +39,10 @@ that copies appearance without content.
 
 **Workspaces** — one file holds several independent drawings. The switcher
 beside the board name (`Board › Workspace ▾`) lists them, adds a new empty one,
-and renames, duplicates, reorders or deletes them. Each workspace keeps its own
-background, camera and undo history; `Page Up` and `Page Down` step through
-them. Saving, autosave, recent boards and Drive carry them all.
+and renames, duplicates, reorders or deletes them. With more than one, numbered
+buttons beside the switcher (`1 2 3`) go to any of the first nine in one press.
+Each workspace keeps its own background, camera and undo history; `Page Up` and
+`Page Down` step through them. Saving, autosave, recent boards and Drive carry them all.
 
 **Tables** — cell-by-cell editing with `Tab` to move on, draggable column and row
 dividers, and insert/delete for rows and columns from the right-click menu.

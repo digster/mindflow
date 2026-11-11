@@ -183,6 +183,7 @@ export class MindflowApp {
       onRename: (name) => this.store.execute(renameBoard(this.store.document, name)),
       onRecentBoards: () => void this.openRecentBoards(),
       onWorkspaces: () => this.openWorkspaces(),
+      onSwitchWorkspace: (id) => this.switchWorkspace(id),
     };
 
     this.workspaceCallbacks = {

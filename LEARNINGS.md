@@ -1690,3 +1690,22 @@ To compare against HEAD, I stashed my changes and rebuilt. The rebuild rewrote
 Nothing was lost (the stash is kept, and `git checkout -- index.html` then pop
 restores it), but the safer way to look at HEAD's build is
 `git show HEAD:index.html > somewhere-else.html`, which touches nothing.
+
+## Watch the bar, not the group, to fit something that can come back
+
+The quick-switch numbers drop when the top bar's left group overflows. The
+obvious thing to observe is that group, and it half works: narrowing the window
+squeezes the group, which fires the observer, and numbers drop. Widening does
+not bring them back. Once they are gone the group fits its content at its
+natural width, so a wider window leaves the group's size unchanged and the
+observer silent. `WorkspaceNumbers.watch` observes the whole bar, whose width
+always follows the window. The e2e test that widens back to 1280px fails with
+the observer removed.
+
+Two related details. A fit measured from overflow must start from everything
+shown each time; starting from the last result gives an answer that depends on
+history. And `blockedControls` in `workspaces.spec.ts` now skips controls with
+no client rects: a number dropped for want of room is absent, not covered, and
+`elementFromPoint` at the centre of an empty rect hits the top-left corner of
+the page.
+

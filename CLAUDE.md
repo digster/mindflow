@@ -183,6 +183,7 @@ npm run check       # typecheck + test + build
 | Workspaces in the file: loading, the 1.x shape, id repairs, unknown fields | `loadDocument` / `serializeBoard` in `src/model/document.ts`, the `1.6.3` migration in `src/model/migrate.ts`, `docs/02-document-format.md#workspaces` |
 | Staging, parking and per-workspace undo | `switchWorkspace` and friends, `history`, `boardForSave` in `src/store/store.ts`; pure helpers in `src/model/workspaces.ts` |
 | The workspace switcher and its list | `buildWorkspaceButton` in `src/ui/toolbar.ts`, `src/ui/workspaceMenu.ts`, `.mf-workspace-*` in `src/styles/app.css` |
+| The quick-switch numbers beside the switcher (how many, and how many fit) | `src/ui/workspaceNumbers.ts`, `.mf-workspace-number*` in `src/styles/app.css` |
 | What happens before the workspace on screen changes | `leaveStage` in `src/app/app.ts`, `cancelGesture` in `src/input/controller.ts` |
 | Page Up / Page Down | `onStepWorkspace` in `src/input/keyboard.ts`, `stepWorkspace` in `src/app/app.ts` |
 | The top bar at phone width (it scrolls sideways below 760px) | the `width <= 760px` block in `src/styles/app.css`; the compact switcher is the `width <= 860px` block |
