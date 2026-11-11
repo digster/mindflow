@@ -1,8 +1,8 @@
 /**
  * Workspaces, end to end, against the built `index.html` over `file://`.
  *
- * The switcher beside the board name, its list, the keyboard, the command
- * palette, and what saving and autosave carry. The store-level rules are
+ * The switcher beside the board name, its list, the quick-switch numbers, the
+ * keyboard, the command palette, and what saving and autosave carry. The store-level rules are
  * unit-tested in `test/unit/workspaceStore.test.ts`; these check that the UI
  * reaches them, and the paths that need a real browser: an editor or a
  * gesture in flight when the workspace changes, and the layout at phone width.
@@ -29,6 +29,7 @@ type Hooks = {
       getState(): { dirty: boolean; activeWorkspaceId: string; origin: { kind: string } };
       boardForSave(): unknown;
       markSaved(): void;
+      addWorkspace(): void;
     };
   };
 };
@@ -41,6 +42,10 @@ const isDirty = (page: Page) => page.evaluate(() => (window as unknown as Hooks)
 const markClean = (page: Page) => page.evaluate(() => (window as unknown as Hooks).mindflow.store.markSaved());
 
 const switcher = (page: Page) => page.locator('[data-action="workspaces"]');
+const strip = (page: Page) => page.locator('.mf-workspace-numbers');
+/** The numbers on screen, in order. Those dropped for want of room are hidden. */
+const numbers = (page: Page) => strip(page).locator('.mf-workspace-number:visible');
+const numberButton = (page: Page, n: number) => strip(page).getByRole('button', { name: new RegExp(`^${n}: `) });
 const list = (page: Page) => page.locator('.mf-workspaces');
 const row = (page: Page, name: string) =>
   list(page)
@@ -75,6 +80,17 @@ async function addWorkspace(page: Page) {
 async function goTo(page: Page, name: string) {
   await switcher(page).click();
   await row(page, name).locator('.mf-workspace-open').click();
+}
+
+/**
+ * Adds `count` workspaces through the store, the last one ending on screen.
+ * Quicker than the list when a test needs many; the list's own path is
+ * covered above.
+ */
+async function addWorkspaces(page: Page, count: number) {
+  await page.evaluate((count) => {
+    for (let i = 0; i < count; i++) (window as unknown as Hooks).mindflow.store.addWorkspace();
+  }, count);
 }
 
 /** Opens a row's own menu and picks `item` in it. */
@@ -144,6 +160,101 @@ test.describe('the switcher', () => {
     await page.keyboard.press('ControlOrMeta+z');
     await goTo(page, 'Workspace 2');
     expect(await elements(page)).toEqual([]);
+  });
+});
+
+test.describe('the quick-switch numbers', () => {
+  test('appear with a second workspace, the one on screen marked', async ({ page }) => {
+    await expect(strip(page)).toBeHidden();
+    await addWorkspace(page);
+
+    await expect(numbers(page)).toHaveText(['1', '2']);
+    await expect(numberButton(page, 2)).toHaveAttribute('aria-current', 'true');
+    await expect(numberButton(page, 2)).toHaveAttribute('title', 'Workspace 2 (current)');
+    await expect(numberButton(page, 1)).not.toHaveAttribute('aria-current');
+    await expect(numberButton(page, 1)).toHaveAccessibleName('1: Workspace 1');
+    await expect(numberButton(page, 1)).toHaveAttribute('title', 'Workspace 1');
+  });
+
+  test('a press switches, keeps focus on the number, and is not an edit', async ({ page }) => {
+    await drawRectangle(page);
+    await addWorkspace(page);
+    await markClean(page);
+
+    await numberButton(page, 1).click();
+    await expect(switcher(page)).toHaveAccessibleName('Workspace: Workspace 1');
+    expect(await elements(page)).toHaveLength(1);
+    await expect(numberButton(page, 1)).toHaveAttribute('aria-current', 'true');
+    await expect(numberButton(page, 2)).not.toHaveAttribute('aria-current');
+    await expect(numberButton(page, 1)).toBeFocused();
+    expect(await isDirty(page)).toBe(false);
+
+    // Pressing the one on screen changes nothing.
+    await numberButton(page, 1).click();
+    await expect(switcher(page)).toHaveAccessibleName('Workspace: Workspace 1');
+  });
+
+  test('a text box being typed in keeps its text in its own workspace', async ({ page }) => {
+    await addWorkspace(page);
+    await page.locator('[data-tool="text"]').click();
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + 200, box.y + 200);
+    await page.keyboard.type('Kept');
+
+    await numberButton(page, 1).click();
+    await expect(switcher(page)).toHaveAccessibleName('Workspace: Workspace 1');
+    await expect(page.locator('.mf-text-editor')).toBeHidden();
+    expect(await elements(page)).toEqual([]);
+    await numberButton(page, 2).click();
+    expect((await elements(page)).map((element: { text?: string }) => element.text)).toEqual(['Kept']);
+  });
+
+  test('follow the list as it is reordered, renamed and shortened', async ({ page }) => {
+    await addWorkspace(page);
+    await rowAction(page, 'Workspace 1', 'Move down');
+    await page.keyboard.press('Escape');
+    // Numbers are positions: 1 is now the workspace on screen.
+    await expect(numberButton(page, 1)).toHaveAccessibleName('1: Workspace 2');
+    await expect(numberButton(page, 1)).toHaveAttribute('aria-current', 'true');
+
+    await rowAction(page, 'Workspace 2', 'Rename');
+    const input = list(page).locator('.mf-workspace-rename');
+    await input.fill('Sketches');
+    await input.press('Enter');
+    await page.keyboard.press('Escape');
+    await expect(numberButton(page, 1)).toHaveAccessibleName('1: Sketches');
+    await expect(numberButton(page, 1)).toHaveAttribute('title', 'Sketches (current)');
+
+    // Back to one workspace: nowhere to switch to.
+    await rowAction(page, 'Workspace 1', 'Delete');
+    await expect(strip(page)).toBeHidden();
+  });
+
+  test('stop at nine', async ({ page }) => {
+    await addWorkspaces(page, 11);
+    await expect(numbers(page)).toHaveText(['1', '2', '3', '4', '5', '6', '7', '8', '9']);
+    // Workspace 12 is on screen, past the strip, so no number is marked.
+    await expect(strip(page).locator('[aria-current]')).toHaveCount(0);
+  });
+
+  test('drop from the end when the bar is short of room, before the switcher loses its name', async ({ page }) => {
+    await addWorkspaces(page, 8);
+    await expect(numbers(page)).toHaveCount(9);
+
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await expect.poll(() => numbers(page).count()).toBeLessThan(9);
+    const shown = await numbers(page).allTextContents();
+    expect(shown.length).toBeGreaterThanOrEqual(2);
+    expect(shown).toEqual(shown.map((_, index) => String(index + 1)));
+    // The switcher's name is whole, not cut short.
+    expect(
+      await page.locator('.mf-workspace-name').evaluate((name) => name.scrollWidth <= name.clientWidth),
+    ).toBe(true);
+    expect(await blockedControls(page)).toEqual([]);
+
+    // Every fit starts afresh, so room given back brings them all back.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(numbers(page)).toHaveCount(9);
   });
 });
 
@@ -414,11 +525,14 @@ test.describe('one file', () => {
 
 /**
  * Top-bar controls a click at their centre does not land on, once each is
- * scrolled into the bar's view: the ones something else overlaps.
+ * scrolled into the bar's view: the ones something else overlaps. Controls
+ * that are not drawn at all (a quick-switch number dropped for want of room)
+ * are not blocked, only absent, and are skipped.
  */
 const blockedControls = (page: Page) =>
   page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>('.mf-topbar button, .mf-topbar input')]
+      .filter((control) => control.getClientRects().length > 0)
       .filter((control) => {
         control.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         const box = control.getBoundingClientRect();
@@ -449,6 +563,28 @@ test.describe('at phone width', () => {
     await page.setViewportSize({ width: 780, height: 768 });
     await expect(page.locator('.mf-workspace-glyph')).toBeVisible();
     expect(await blockedControls(page)).toEqual([]);
+  });
+
+  test('with several workspaces, every number is in the bar and can be tapped', async ({ page }) => {
+    await addWorkspaces(page, 4);
+    // The bar scrolls here, so nothing is short of room and none is dropped.
+    await expect(numbers(page)).toHaveText(['1', '2', '3', '4', '5']);
+    expect(await blockedControls(page)).toEqual([]);
+    await page.locator('.mf-topbar').evaluate((bar) => bar.scrollTo({ left: 0 }));
+    await numberButton(page, 1).click();
+    await expect(switcher(page)).toHaveAccessibleName('Workspace: Workspace 1');
+  });
+
+  test('between the layouts, the numbers never cover anything', async ({ page }) => {
+    await addWorkspaces(page, 8);
+    for (const width of [770, 800, 840, 860, 880, 920, 960, 1000]) {
+      await page.setViewportSize({ width, height: 768 });
+      // Let the resize observer refit the strip before measuring.
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      expect({ width, blocked: await blockedControls(page) }).toEqual({ width, blocked: [] });
+      const shown = await numbers(page).count();
+      expect(shown === 0 || shown >= 2).toBe(true);
+    }
   });
 
   test('a named switcher returns where there is room for it', async ({ page }) => {

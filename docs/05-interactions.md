@@ -932,13 +932,26 @@ The top bar reads `Board name › Workspace ▾`, a breadcrumb, then *Edited …
 The workspace button opens the **workspace list**. It is always there, even on
 a board with one workspace, because it is also how a second one is added.
 
-- **Narrow windows.** The *Edited* label gives way first, then the board name,
-  then the workspace name, each with an ellipsis. Below 860px the switcher is
-  its layers glyph alone, a square button like the others, with the workspace's
-  name in its label and tooltip. The board name keeps its place.
+- **Quick-switch numbers.** With two or more workspaces, numbered buttons
+  follow the switcher, `Workspace ▾ 1 2 3`, one per workspace in list order,
+  for the first nine. A press puts that workspace on screen, like choosing its
+  row in the list. The one on screen is drawn in the accent and marked current;
+  pressing it does nothing. The numbers are positions, so they follow a move.
+  Each button's tooltip is the workspace's name, and its accessible name starts
+  with its digit (*2: Sketches*). A board with more than nine reaches the rest
+  through the list.
+- **Narrow windows.** When the bar is short of room, things give way in this
+  order: the *Edited* label, then the board name (each with an ellipsis), then
+  the numbers, from the end, then the workspace name. A single number left
+  would be no quick switch, so then none show. How many numbers fit is
+  measured on every resize, not set by a breakpoint. Below 860px the switcher
+  is its layers glyph alone, a square button like the others, with the
+  workspace's name in its label and tooltip. The board name keeps its place.
 - **Phones.** Below 760px the top bar has more buttons than width, so it
   scrolls sideways, as the tool palette below does. The board name and the
-  switcher come first, so they are on screen when the bar is at rest.
+  switcher come first, so they are on screen when the bar is at rest. Nothing
+  is short of room in a scrolling bar, so every number stays. On a touchscreen
+  the numbers are the size of the bar's other buttons.
 
 ### The workspace list
 

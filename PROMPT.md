@@ -743,3 +743,14 @@ fields are kept, Page Up / Page Down switch. Phase 4 (PDF of every workspace,
 find across workspaces) is not started. Below 760px the top bar now scrolls
 sideways, because the switcher, like seven buttons before it, could not be
 tapped there. Details in `memory/2026-11-10.md`.
+
+---
+
+## 2026-11-11 — Quick-switch numbers beside the workspace switcher
+
+> when there is more than one workspace present, add numeric icons beside the workspace dropdown for quick switching.
+
+Numbered buttons (`1 2 3`, up to nine) now follow the switcher whenever a board
+has two or more workspaces; a press switches. When the top bar is short of
+room they drop from the end, measured rather than set by breakpoints. No format
+change. Details in `memory/2026-11-11.md`.

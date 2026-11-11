@@ -8,11 +8,13 @@
 import type { ShapeToolId, Store, ToolId } from '../store/store.ts';
 import { FLAT_SHAPE_COUNT, SHAPE_TOOLS, isShapeTool } from '../store/store.ts';
 import type { Actions } from '../app/actions.ts';
+import type { WorkspaceId } from '../model/types.ts';
 import { getDefinition } from '../model/registry.ts';
 import { el, icon, MOD_KEY } from './dom.ts';
 import { ICONS, type IconName } from './icons.ts';
 import { Popover, closePopover } from './popover.ts';
 import { describeLastEdit, relativeTimeChangesIn } from './time.ts';
+import { WorkspaceNumbers } from './workspaceNumbers.ts';
 
 interface ToolSpec {
   id: ToolId;
@@ -84,6 +86,8 @@ export interface ToolbarCallbacks {
   onRecentBoards: () => void;
   /** Opens the workspace list, anchored to the switcher. */
   onWorkspaces: () => void;
+  /** Puts a workspace on screen, from the quick-switch numbers beside the switcher. */
+  onSwitchWorkspace: (id: WorkspaceId) => void;
 }
 
 export class Toolbar {
@@ -104,6 +108,8 @@ export class Toolbar {
   private dirtyDot!: HTMLElement;
   /** The switcher's label: the name of the workspace on screen. */
   private workspaceName!: HTMLElement;
+  /** `1 2 3` after the switcher, for one-press switching. */
+  private readonly workspaceNumbers: WorkspaceNumbers;
   /** "Edited 5 minutes ago", beside the name. See {@link refreshEdited}. */
   private editedLabel!: HTMLTimeElement;
   /** The board stamps the label was last written for, so `sync` skips it otherwise. */
@@ -138,7 +144,9 @@ export class Toolbar {
       icon(ICONS.sticky, 20),
     ) as HTMLButtonElement;
     this.workspaceButton = this.buildWorkspaceButton();
+    this.workspaceNumbers = new WorkspaceNumbers((id) => this.callbacks.onSwitchWorkspace(id));
     this.topBarElement = this.buildTopBar();
+    this.workspaceNumbers.watch(this.topBarElement);
     this.sync();
   }
 
@@ -398,6 +406,7 @@ export class Toolbar {
           return separator;
         })(),
         this.workspaceButton,
+        this.workspaceNumbers.element,
         this.editedLabel,
       ),
       el(
@@ -566,6 +575,7 @@ export class Toolbar {
       this.workspaceButton.title = `${label}. Show all workspaces`;
       this.workspaceButton.setAttribute('aria-label', label);
     }
+    this.workspaceNumbers.sync(state.workspaces, state.activeWorkspaceId);
     this.undoButton.disabled = !this.store.history.canUndo();
     this.redoButton.disabled = !this.store.history.canRedo();
     this.zoomLabel.textContent = `${Math.round(state.viewport.zoom * 100)}%`;
@@ -611,10 +621,11 @@ export class Toolbar {
     this.editedTimer = setTimeout(() => this.refreshEdited(), Math.min(due, EDITED_RECHECK_MS));
   }
 
-  /** Stops the label's timer. The elements go with the app's root. */
+  /** Stops the label's timer and the numbers' resize watch. The elements go with the app's root. */
   destroy(): void {
     if (this.editedTimer !== null) clearTimeout(this.editedTimer);
     this.editedTimer = null;
+    this.workspaceNumbers.destroy();
   }
 }
 

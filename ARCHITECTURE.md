@@ -288,6 +288,20 @@ each row's menu inside its own popover rather than in a second one, because
 `popover.ts` allows one popover at a time. `PopoverOptions.onEscape` lets the
 inner layers (a rename, a row menu) take Escape first.
 
+The quick-switch numbers after the switcher
+([`src/ui/workspaceNumbers.ts`](src/ui/workspaceNumbers.ts)) are the one part of
+the top bar whose layout is decided in script. They are fixed-size buttons, and
+a shrinking group of those overlaps, so they never shrink: they drop from the
+end. How many fit depends on the workspace's name and the board's as much as on
+the window, which no breakpoint can know, so it is measured. Each fit starts
+from every number shown, reads how far the left group overflows, and takes away
+just enough (`numbersThatFit`, pure). Starting afresh each time means there is
+no state to drift and nothing to flicker between. A `ResizeObserver` on the
+whole bar refits on resize, and `sync` refits when the list changes, compared
+by reference so a pan costs nothing. While any number shows, a `:has()` rule
+keeps the switcher rigid, which is what puts the numbers before the
+workspace's name in the order of things that give way.
+
 ### Autosave and recent boards
 
 [`src/io/autosave.ts`](src/io/autosave.ts) keeps a copy of **every** board in
