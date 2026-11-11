@@ -17,6 +17,7 @@ import { SHAPE_TOOLS } from '../store/store.ts';
 import { getDefinition } from '../model/registry.ts';
 import type { Actions } from './actions.ts';
 import type { ToolbarCallbacks } from '../ui/toolbar.ts';
+import type { WorkspaceCallbacks } from '../ui/workspaceMenu.ts';
 import { MOD_KEY } from '../ui/dom.ts';
 import { STYLE_PANEL_SHORTCUT } from '../ui/stylePanel.ts';
 
@@ -78,15 +79,35 @@ const TOOL_COMMANDS: { tool: ToolId; title: string; shortcut: string }[] = TOOL_
   ({ tool, title }) => ({ tool, title, shortcut: TOOL_SHORTCUTS[tool] ?? '' }),
 );
 
+/** The workspace actions the palette offers, beyond what the workspace list does. */
+export interface WorkspaceCommandCallbacks extends WorkspaceCallbacks {
+  /** The next (1) or previous (-1) workspace, stopping at the ends. */
+  onStep: (delta: 1 | -1) => void;
+  /** Opens the workspace list with the current workspace's name ready to edit. */
+  onRenameCurrent: () => void;
+}
+
 export function buildCommands(
   store: Store,
   actions: Actions,
   callbacks: ToolbarCallbacks,
-  extras: { onFind: () => void; onToggleStylePanel: () => void; onExportPdf: () => void },
+  extras: {
+    onFind: () => void;
+    onToggleStylePanel: () => void;
+    onExportPdf: () => void;
+    workspaces: WorkspaceCommandCallbacks;
+  },
 ): Command[] {
   const hasSelection = () => store.selectedIds().length > 0;
   const unitCount = () =>
     new Set(store.selectedElements().filter((el) => !el.locked).map((el) => el.groupId ?? el.id)).size;
+
+  // Read when the palette opens, which is when commands are built (see
+  // `openCommandPalette`), so the "Go to" entries list the board as it is.
+  const workspaceList = store.workspaceSummaries();
+  const activeIndex = workspaceList.findIndex((summary) => summary.active);
+  const active = () => store.getState().activeWorkspaceId;
+  const { workspaces } = extras;
 
   return [
     // ---- File ------------------------------------------------------------
@@ -127,6 +148,51 @@ export function buildCommands(
       enabled: () => true,
     },
     { id: 'file.drive', title: 'Google Drive…', group: 'File', keywords: 'cloud sync', run: callbacks.onDrive, enabled: () => true },
+
+    // ---- Workspaces ------------------------------------------------------
+    { id: 'workspace.new', title: 'New workspace', group: 'Workspaces', keywords: 'add page tab sheet', run: workspaces.onAdd, enabled: () => true },
+    {
+      id: 'workspace.next',
+      title: 'Next workspace',
+      group: 'Workspaces',
+      shortcut: 'Page Down',
+      run: () => workspaces.onStep(1),
+      enabled: () => activeIndex < workspaceList.length - 1,
+    },
+    {
+      id: 'workspace.previous',
+      title: 'Previous workspace',
+      group: 'Workspaces',
+      shortcut: 'Page Up',
+      run: () => workspaces.onStep(-1),
+      enabled: () => activeIndex > 0,
+    },
+    { id: 'workspace.rename', title: 'Rename workspace…', group: 'Workspaces', run: workspaces.onRenameCurrent, enabled: () => true },
+    {
+      id: 'workspace.duplicate',
+      title: 'Duplicate workspace',
+      group: 'Workspaces',
+      keywords: 'copy',
+      run: () => workspaces.onDuplicate(active()),
+      enabled: () => true,
+    },
+    {
+      id: 'workspace.delete',
+      title: 'Delete workspace…',
+      group: 'Workspaces',
+      keywords: 'remove',
+      run: () => workspaces.onDelete(active()),
+      // A board always keeps one workspace.
+      enabled: () => workspaceList.length > 1,
+    },
+    ...workspaceList.map((summary) => ({
+      id: `workspace.goto.${summary.id}`,
+      title: `Go to workspace: ${summary.name}`,
+      group: 'Workspaces',
+      keywords: 'switch open',
+      run: () => workspaces.onSwitch(summary.id),
+      enabled: () => !summary.active,
+    })),
 
     // ---- Edit ------------------------------------------------------------
     { id: 'edit.undo', title: 'Undo', group: 'Edit', shortcut: `${MOD_KEY}Z`, run: () => store.undo(), enabled: () => store.history.canUndo() },

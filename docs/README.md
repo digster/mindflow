@@ -27,37 +27,47 @@ a format.
 Plus:
 
 - [CHANGELOG.md](CHANGELOG.md) — schema version history and migration notes.
-- [schema/mindflow-1.6.3.schema.json](schema/mindflow-1.6.3.schema.json) — machine-readable JSON Schema (draft 2020-12), current version. Earlier versions stay published and unchanged; see the changelog.
-- [schema/examples/](schema/examples/) — valid boards covering minimal, complete, connector-heavy, frame, table, polygon and solid cases. Each is written at the schema version that introduced what it demonstrates, so the set doubles as a migration fixture. A type later retired is taken out of its example — it would no longer validate — and its migration is proven by a unit test instead.
+- [schema/mindflow-2.0.0.schema.json](schema/mindflow-2.0.0.schema.json) — machine-readable JSON Schema (draft 2020-12), current version. Earlier versions stay published and unchanged; see the changelog.
+- [schema/examples/](schema/examples/) — valid boards covering minimal, complete, connector-heavy, frame, table, polygon, solid and multi-workspace cases. Each is written at the schema version that introduced what it demonstrates, and validates against that version's schema, so the set doubles as a migration fixture: the contract test checks each one, once loaded and saved again, against the current schema. A type later retired is taken out of its example — it would no longer validate — and its migration is proven by a unit test instead.
 
 ## If you only read one thing
 
-A MindFlow board is a JSON object with a **flat array of elements**. Every element
-carries its complete, resolved state — nothing is inherited from a parent, a theme
-or a document default. Coordinates are in scene units, angles are in **degrees**
+A MindFlow board is a JSON object holding one or more **workspaces**, each an
+independent drawing with a **flat array of elements**. Every element carries its
+complete, resolved state — nothing is inherited from a parent, a theme or a
+document default. Coordinates are in scene units, angles are in **degrees**
 (clockwise, about the element's centre), and paint order is set by a fractional
 `zIndex`.
 
 ```json
 {
   "type": "mindflow.board",
-  "schemaVersion": "1.0.0",
-  "elements": [
+  "schemaVersion": "2.0.0",
+  "workspaces": [
     {
-      "id": "el_q2WikW58Aw",
-      "type": "rectangle",
-      "x": 60, "y": 90, "width": 140, "height": 70,
-      "angle": 0, "zIndex": 1000, "opacity": 1,
-      "locked": false, "visible": true, "groupId": null,
-      "style": {
-        "stroke": "#1e1e1e", "strokeWidth": 2, "strokeStyle": "solid",
-        "fill": "#a5d8ff", "fillStyle": "solid", "roughness": 0
-      },
-      "label": null, "meta": {}, "cornerRadius": 8
+      "id": "ws_1",
+      "name": "Workspace 1",
+      "elements": [
+        {
+          "id": "el_q2WikW58Aw",
+          "type": "rectangle",
+          "x": 60, "y": 90, "width": 140, "height": 70,
+          "angle": 0, "zIndex": 1000, "opacity": 1,
+          "locked": false, "visible": true, "groupId": null,
+          "style": {
+            "stroke": "#1e1e1e", "strokeWidth": 2, "strokeStyle": "solid",
+            "fill": "#a5d8ff", "fillStyle": "solid", "roughness": 0
+          },
+          "label": null, "meta": {}, "cornerRadius": 8
+        }
+      ]
     }
   ]
 }
 ```
+
+A 1.x board kept that `elements` array at the top level, with no workspaces.
+Readers still accept that shape as a board with one workspace.
 
 ## Rules for changing this documentation
 

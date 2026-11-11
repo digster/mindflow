@@ -510,7 +510,7 @@ An embedded bitmap or SVG.
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| `fileId` | string | — | Key into the document's `files` map. MUST resolve. |
+| `fileId` | string | — | Key into the board's `files` map, which every workspace shares. MUST resolve. |
 | `naturalWidth` | number > 0 | — | Intrinsic pixel width of the source. |
 | `naturalHeight` | number > 0 | — | Intrinsic pixel height. |
 | `objectFit` | `fill` \| `contain` \| `cover` | `"fill"` | As per CSS `object-fit`. |

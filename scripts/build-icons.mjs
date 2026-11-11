@@ -114,6 +114,15 @@ export const MANIFEST = {
   alignBottom: 'align-end-horizontal',
   distributeH: 'align-horizontal-distribute-center',
   distributeV: 'align-vertical-distribute-center',
+
+  // Workspaces. `workspaces` is the switcher's glyph where its name does not
+  // fit (below 760px). The chevrons are the breadcrumb between the board and
+  // its workspace, and the button's "opens a list" mark.
+  workspaces: 'layers',
+  chevronRight: 'chevron-right',
+  chevronDown: 'chevron-down',
+  more: 'ellipsis',
+  plus: 'plus',
 };
 
 /**

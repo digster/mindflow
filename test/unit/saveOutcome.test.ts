@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import '../../src/render/shapes/index.ts';
 import { getDefinition } from '../../src/model/registry.ts';
 import { createDocument } from '../../src/model/defaults.ts';
+import { singleWorkspaceBoard } from '../../src/model/workspaces.ts';
 import type { MindflowElement } from '../../src/model/types.ts';
 import { addElements } from '../../src/store/commands.ts';
 import { Store, type BoardOrigin, type ChangeReason } from '../../src/store/store.ts';
@@ -33,7 +34,7 @@ function unsavedBoard() {
 }
 
 function openOther(store: Store, id = 'other-board'): void {
-  store.load({ document: { ...createDocument('Other'), id }, warnings: [], preserved: [] }, { kind: 'new' });
+  store.load(singleWorkspaceBoard({ ...createDocument('Other'), id }), { kind: 'new' });
 }
 
 describe('Store.completeSave', () => {

@@ -241,6 +241,12 @@ export class InteractionController {
    * load look like an echo of a tap that never happened.
    */
   private handledDoubleTapAt = Number.NEGATIVE_INFINITY;
+  /**
+   * Pointers whose press was abandoned by {@link cancelGesture} while still
+   * down. Their remaining moves and their release are ignored, so a release
+   * cannot finish, or count as a tap for, a gesture that no longer exists.
+   */
+  private abandoned = new Set<number>();
 
   /** Live overlay state, read by the renderer each frame. */
   marquee: ReturnType<typeof boxFromPoints> | null = null;
@@ -277,6 +283,37 @@ export class InteractionController {
     this.updateCursor();
   }
 
+  /**
+   * Abandons the gesture in flight, if any, and rewinds what it had applied,
+   * as `pointercancel` does.
+   *
+   * For whatever is about to replace what the gesture is editing, such as
+   * switching workspaces. Left running, the gesture's transient edits would
+   * be parked half-done, and its release would replay the final state with
+   * `replaceElements` into the workspace now on stage, adding the dragged
+   * elements there. Every pointer still down is abandoned, so its release is
+   * ignored rather than read as a click or a tap.
+   */
+  cancelGesture(): void {
+    for (const id of this.touches.keys()) this.abandoned.add(id);
+    if (this.capturedPointerId !== null) this.abandoned.add(this.capturedPointerId);
+    for (const id of this.abandoned) this.releaseCapture(id);
+
+    // The abandoned transient edits must not coalesce into whatever comes next.
+    this.options.store.history.breakCoalescing();
+    this.rewindGesture();
+    this.gesture = { kind: 'none' };
+    this.touches.clear();
+    this.pointerDownScreen = null;
+    this.movedPastThreshold = false;
+    this.lastTap = null;
+    this.marquee = null;
+    this.hovered = null;
+    this.guides = [];
+    this.bindingCandidates = [];
+    this.options.onOverlayChange();
+  }
+
   // -------------------------------------------------------------------------
   // Coordinates
   // -------------------------------------------------------------------------
@@ -311,6 +348,8 @@ export class InteractionController {
 
   private onPointerDown = (event: PointerEvent): void => {
     const { store } = this.options;
+    // A new press with the same id is a new press: its release was never seen.
+    this.abandoned.delete(event.pointerId);
 
     if (event.pointerType === 'touch') {
       this.touches.set(event.pointerId, this.screenPoint(event));
@@ -717,6 +756,7 @@ export class InteractionController {
   // -------------------------------------------------------------------------
 
   private onPointerMove = (event: PointerEvent): void => {
+    if (this.abandoned.has(event.pointerId)) return;
     if (event.pointerType === 'touch' && this.touches.has(event.pointerId)) {
       this.touches.set(event.pointerId, this.screenPoint(event));
       if (this.gesture.kind === 'pinch') {
@@ -967,6 +1007,7 @@ export class InteractionController {
   // -------------------------------------------------------------------------
 
   private onPointerUp = (event: PointerEvent): void => {
+    if (this.abandoned.delete(event.pointerId)) return;
     this.touches.delete(event.pointerId);
 
     if (this.gesture.kind === 'pinch' || this.gesture.kind === 'pagePinch') {
@@ -1178,6 +1219,7 @@ export class InteractionController {
   }
 
   private onPointerCancel = (event: PointerEvent): void => {
+    if (this.abandoned.delete(event.pointerId)) return;
     // The OS took the pointer away mid-gesture. Abandon it, and rewind whatever
     // it had applied.
     //

@@ -2,18 +2,30 @@
 
 ## What a board is
 
-A **board** is an infinite two-dimensional plane containing a flat, ordered list
-of **elements**. There are no pages, no layers-as-objects, and no scene graph. A
-board is a list.
+A **board** is one file holding one or more **workspaces** (2.0.0). A workspace
+is an infinite two-dimensional plane containing a flat, ordered list of
+**elements**. Within a workspace there are no pages, no layers-as-objects, and
+no scene graph: a workspace is a list.
+
+Workspaces are independent drawings. Each has its own background, camera and
+elements, and nothing in one refers to another. What they share is the board's
+identity, its name and timestamps, and its embedded images.
 
 ```
 board
-├── meta          name, timestamps, which app wrote it
-├── canvas        background colour, grid
-├── viewport      where the camera was when it was saved
-├── elements[]    the flat list — this is the board
-└── files{}       embedded binary assets, keyed by content hash
+├── meta              name, timestamps, which app wrote it
+├── activeWorkspaceId the workspace on screen when it was saved
+├── workspaces[]      one or more independent drawings
+│   ├── id, name
+│   ├── canvas        background colour, grid
+│   ├── viewport      where the camera was in this workspace
+│   ├── elements[]    the flat list — this is the drawing
+│   └── meta          free-form, for other tools
+└── files{}           embedded binary assets, keyed by content hash, shared
 ```
+
+A 1.x board had exactly one drawing, at the top level. It reads today as a
+board with one workspace ([02-document-format.md](02-document-format.md#reading-the-1x-shape)).
 
 ## What an element is
 

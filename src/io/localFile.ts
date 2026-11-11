@@ -19,10 +19,10 @@
  * rather than pretending the fallback is a real save.
  */
 
-import type { MindflowDocument } from '../model/types.ts';
 import { FILE_EXTENSION, FILE_MIME_TYPE } from '../model/types.ts';
 import type { LoadResult } from '../model/document.ts';
-import { loadDocument, serializeDocument } from '../model/document.ts';
+import { loadDocument, serializeBoard } from '../model/document.ts';
+import type { StagedBoard } from '../model/workspaces.ts';
 
 /**
  * Minimal shape of the File System Access handle we use.
@@ -75,19 +75,18 @@ export interface SaveResult {
 }
 
 /**
- * Writes the document to disk.
+ * Writes the board to disk, every workspace included.
  *
  * Reuses `existingHandle` when one is supplied and still writable, which is what
  * makes repeated Cmd+S silent. A revoked permission falls through to the picker
  * rather than failing.
  */
 export async function saveToFile(
-  document: MindflowDocument,
-  preserved: readonly unknown[],
+  board: StagedBoard,
   options: { existingHandle?: unknown; saveAs?: boolean } = {},
 ): Promise<SaveResult> {
-  const contents = serializeDocument(document, preserved);
-  const suggestedName = toFileName(document.meta.name);
+  const contents = serializeBoard(board);
+  const suggestedName = toFileName(board.document.meta.name);
 
   if (supportsFileSystemAccess()) {
     const w = window as unknown as FilePickerWindow;

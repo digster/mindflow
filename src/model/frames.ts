@@ -170,7 +170,7 @@ export function reassignFrames(
  * already consistent. A dangling reference would otherwise clip an element to
  * nothing, making it invisible with no way to find out why.
  */
-export function danglingFrameRefs(document: MindflowDocument): MindflowElement[] {
+export function danglingFrameRefs(document: Pick<MindflowDocument, 'elements'>): MindflowElement[] {
   const frameIds = new Set(
     document.elements.filter(isFrame).map((element) => element.id),
   );

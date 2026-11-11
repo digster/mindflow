@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { MAX_RECENT_BOARDS, pickEvictions, sortRecentBoards, type RecentBoard } from '../../src/io/autosave.ts';
+import { MAX_RECENT_BOARDS, countElements, pickEvictions, sortRecentBoards, type RecentBoard } from '../../src/io/autosave.ts';
 import { describeRecentBoard } from '../../src/ui/recentBoards.ts';
 
 function board(boardId: string, savedAt: string, unsaved = false): RecentBoard {
@@ -93,5 +93,23 @@ describe('describeRecentBoard', () => {
     expect(describeRecentBoard({ elementCount: 12, savedAt: '2026-09-23T11:55:00.000Z' }, now, 'en')).toBe(
       '12 elements · 5 minutes ago',
     );
+  });
+});
+
+describe('countElements', () => {
+  // A summary is built from a stored board without loading it, for the one
+  // record a version-1 database is carried forward with.
+  it('counts a 1.x board’s top-level elements', () => {
+    expect(countElements(JSON.stringify({ elements: [{}, {}, {}] }))).toBe(3);
+  });
+
+  it('counts every workspace of a 2.x board', () => {
+    const board = { workspaces: [{ elements: [{}, {}] }, { elements: [] }, { elements: [{}] }] };
+    expect(countElements(JSON.stringify(board))).toBe(3);
+  });
+
+  it('reads anything malformed as no elements rather than failing', () => {
+    expect(countElements('not json')).toBe(0);
+    expect(countElements(JSON.stringify({ workspaces: [null, { elements: 'x' }] }))).toBe(0);
   });
 });

@@ -143,6 +143,16 @@ export const ICONS = {
   distributeH: '<rect width="6" height="14" x="4" y="5" rx="2"/><rect width="6" height="10" x="14" y="7" rx="2"/><path d="M17 22v-5"/><path d="M17 7V2"/><path d="M7 22v-3"/><path d="M7 5V2"/>',
   /** Lucide `align-vertical-distribute-center` */
   distributeV: '<path d="M22 17h-3"/><path d="M22 7h-5"/><path d="M5 17H2"/><path d="M7 7H2"/><rect x="5" y="14" width="14" height="6" rx="2"/><rect x="7" y="4" width="10" height="6" rx="2"/>',
+  /** Lucide `layers` */
+  workspaces: '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
+  /** Lucide `chevron-right` */
+  chevronRight: '<path d="m9 18 6-6-6-6"/>',
+  /** Lucide `chevron-down` */
+  chevronDown: '<path d="m6 9 6 6 6-6"/>',
+  /** Lucide `ellipsis` */
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  /** Lucide `plus` */
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
 } as const;
 
 export type IconName = keyof typeof ICONS;

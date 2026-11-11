@@ -3,37 +3,51 @@
 The on-disk representation of a board. File extension `.mindflow.json`, MIME type
 `application/json`, UTF-8, no BOM.
 
-Machine-readable schema: [schema/mindflow-1.0.0.schema.json](schema/mindflow-1.0.0.schema.json).
+Machine-readable schema: [schema/mindflow-2.0.0.schema.json](schema/mindflow-2.0.0.schema.json).
 Reference implementation: [`src/model/document.ts`](../src/model/document.ts).
 
 ## Top-level structure
 
+A board holds one or more **workspaces**, each an independent drawing (2.0.0).
+The board's identity, name, timestamps and embedded files are shared by all of
+them.
+
 ```jsonc
 {
-  "$schema": "https://digster.github.io/mindflow/docs/schema/mindflow-1.0.0.schema.json",
+  "$schema": "https://digster.github.io/mindflow/docs/schema/mindflow-2.0.0.schema.json",
   "type": "mindflow.board",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "2.0.0",
   "id": "brd_7Kq2mXp4Zt",
 
   "meta": {
-    "name": "Untitled board",
+    "name": "Checkout redesign",
     "createdAt": "2026-08-14T10:00:00.000Z",
     "updatedAt": "2026-08-14T10:42:11.000Z",
     "app": { "name": "mindflow", "version": "0.1.0" }
   },
 
-  "canvas": {
-    "background": "#ffffff",
-    "grid": { "visible": false, "size": 20, "snap": false }
-  },
-
-  "viewport": { "x": 0, "y": 0, "zoom": 1 },
-
-  "elements": [ /* … */ ],
+  "activeWorkspaceId": "ws_Q7hT2mXp4Z",
+  "workspaces": [
+    {
+      "id": "ws_Q7hT2mXp4Z",
+      "name": "User flow",
+      "canvas": {
+        "background": "#ffffff",
+        "grid": { "visible": false, "size": 20, "snap": false }
+      },
+      "viewport": { "x": 0, "y": 0, "zoom": 1 },
+      "elements": [ /* … */ ],
+      "meta": {}
+    },
+    { "id": "ws_b82KdWn3Ya", "name": "Brainstorm", /* … */ }
+  ],
 
   "files": { /* … */ }
 }
 ```
+
+[schema/examples/workspaces.mindflow.json](schema/examples/workspaces.mindflow.json)
+is a complete two-workspace board.
 
 ### Field reference
 
@@ -43,11 +57,13 @@ Reference implementation: [`src/model/document.ts`](../src/model/document.ts).
 | `type` | `"mindflow.board"` | **yes** | Format discriminator. A reader MUST reject any other value. |
 | `schemaVersion` | string (semver) | **yes** | Version of the *format*, not the app. See [CHANGELOG.md](CHANGELOG.md). |
 | `id` | string | **yes** | Board identity. Stable across saves; survives renames. |
-| `meta` | object | **yes** | See below. |
-| `canvas` | object | **yes** | Background and grid. |
-| `viewport` | object | **yes** | Saved camera position. Readers MAY ignore it entirely. |
-| `elements` | array | **yes** | The board. May be empty. |
-| `files` | object | **yes** | Embedded assets. May be empty. |
+| `meta` | object | **yes** | See below. Board-wide: one name and one edit time for every workspace. |
+| `activeWorkspaceId` | string | no | The workspace on screen when the board was saved. Readers MAY ignore it. See [Workspaces](#workspaces). |
+| `workspaces` | array | **yes** | The drawings. At least one. See [Workspaces](#workspaces). |
+| `files` | object | **yes** | Embedded assets, shared by every workspace. May be empty. |
+
+Any other top-level field is not part of this version. A reader that writes
+the board back MUST keep it (see [Forward compatibility](#forward-compatibility)).
 
 ### `meta`
 
@@ -78,28 +94,11 @@ camera, selecting and saving are not edits. A board never edited has
 - To know when a file was **written**, use the file system's or the storage
   service's modification time.
 
-### `canvas`
-
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `background` | CSS colour | `"#ffffff"` | Painted beneath every element. |
-| `grid.visible` | boolean | `false` | Whether the grid is drawn. |
-| `grid.size` | number > 0 | `20` | Spacing in scene units. |
-| `grid.snap` | boolean | `false` | Whether new and moved elements snap to it. |
-
-### `viewport`
-
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `x`, `y` | number | `0` | Scene coordinates shown at the canvas's top-left corner. |
-| `zoom` | number | `1` | Scale factor. Clamped to `[0.1, 30]` on load. |
-
-The viewport is a convenience so a board reopens where you left it. It carries no
-semantic weight: two boards differing only in `viewport` are the same drawing.
-
 ### `files`
 
-An object keyed by the **SHA-256 hex digest of the asset's decoded bytes**.
+An object keyed by the **SHA-256 hex digest of the asset's decoded bytes**,
+shared by every workspace: an image pasted into two workspaces is stored once.
+A file is in use when an element in *any* workspace references it.
 
 ```jsonc
 "files": {
@@ -131,6 +130,79 @@ MUST treat every key as opaque and MUST NOT assume it is a SHA-256 digest.
 **Why not inline on the element?** A multi-megabyte base64 string in the middle of
 the element array destroys its readability, and the same image referenced twice
 would be stored twice.
+
+## Workspaces
+
+A workspace is exactly what a whole board's drawing was in 1.x: a background,
+a camera and a flat list of elements. Everything inside one keeps its 1.x
+meaning, so every algorithm in [07-rendering.md](07-rendering.md) (routing,
+wrapping, anchors, paint order) applies to each workspace on its own.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string | **yes** | Unique among the board's workspaces. Opaque, like an element id. MindFlow writes `ws_` + 10 characters, and the workspace upgraded from a 1.x board is `ws_1`. |
+| `name` | string | **yes** | Display name. Names may repeat; the id is the identity. MindFlow names a new one `Workspace N` with the lowest free N. |
+| `canvas` | object | **yes** | Background and grid of this workspace. See [`canvas`](#canvas). |
+| `viewport` | object | **yes** | Camera of this workspace. See [`viewport`](#viewport). |
+| `elements` | array | **yes** | The workspace's elements. May be empty. |
+| `meta` | object | **yes** | Free-form, for tools other than MindFlow, exactly like an element's [`meta`](#meta-1). |
+
+`workspaces` is in the order MindFlow lists them, which the user can change.
+
+**References stay inside a workspace.** A connector binding, a `frameId` and a
+`groupId` resolve among the elements of the workspace that holds them. A
+binding that names an element in another workspace is dangling, like one that
+names nothing.
+
+**Element ids are unique across the whole board**, not only within a
+workspace, so an id names one element of the board wherever it is.
+
+**`activeWorkspaceId`** is a convenience, like `viewport`: it reopens the board
+where it was left and carries no meaning. When it is missing, or names no
+workspace, the first workspace is the one to show.
+
+**Which drawing is "the board"?** All of them. A reader that can show only one
+SHOULD show the active one and say that there are more.
+
+### `canvas`
+
+One per workspace.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `background` | CSS colour | `"#ffffff"` | Painted beneath every element. |
+| `grid.visible` | boolean | `false` | Whether the grid is drawn. |
+| `grid.size` | number > 0 | `20` | Spacing in scene units. |
+| `grid.snap` | boolean | `false` | Whether new and moved elements snap to it. |
+
+### `viewport`
+
+One per workspace, so each workspace reopens where it was left.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `x`, `y` | number | `0` | Scene coordinates shown at the canvas's top-left corner. |
+| `zoom` | number | `1` | Scale factor. Clamped to `[0.1, 30]` on load. |
+
+The viewport is a convenience so a board reopens where you left it. It carries no
+semantic weight: two workspaces differing only in `viewport` are the same drawing.
+
+### Reading the 1.x shape
+
+A board in the 1.x shape (top-level `canvas`, `viewport` and `elements`, no
+`workspaces`) is read as a board with one workspace:
+
+- **A 1.x file** is upgraded: its drawing becomes the workspace
+  `{"id": "ws_1", "name": "Workspace 1", …}`, which is active. See the
+  [CHANGELOG](CHANGELOG.md#200--2026-11-10).
+- **A 2.x file in that shape**, as a script that knows the old format might
+  write, is read the same way, with an information note. Generating a simple
+  board stays as easy as it was.
+- **A file with both** a `workspaces` list and non-empty top-level
+  `elements` is read without loss: the top-level drawing becomes a last
+  workspace, with a warning.
+
+MindFlow always writes the 2.0.0 shape.
 
 ## Elements
 
@@ -261,23 +333,28 @@ Line breaking is a computed property — the wrapping algorithm is specified in
 ## Invariants
 
 These MUST hold in a valid document. MindFlow checks all of them on load
-(`validateDocument` in [`src/model/document.ts`](../src/model/document.ts)); several
-are also expressible in the JSON Schema.
+(`loadDocument` and `validateDocument` in
+[`src/model/document.ts`](../src/model/document.ts)); several are also expressible
+in the JSON Schema. Invariants 3 to 12 apply to each workspace on its own.
 
 | # | Invariant | Repaired on load? |
 |---|---|---|
 | 1 | `type` is exactly `"mindflow.board"` | No — the load is rejected |
-| 2 | Element `id`s are unique within the document | Yes — duplicates are reassigned |
+| 2 | Element `id`s are unique within the board, across every workspace | Yes — duplicates are reassigned. Within one workspace, references are left alone, since it cannot be told which element they meant. A later workspace reusing an earlier one's ids gets new ids, and the bindings and frame references inside it follow them, so a workspace copied in a text editor loads as an independent drawing. |
 | 3 | `width > 0` and `height > 0` | Yes — clamped to ≥ 1 |
 | 4 | `angle` is in `[0, 360)` | Yes — normalised |
 | 5 | `opacity` is in `[0, 1]` | Yes — clamped |
 | 6 | `zIndex` is finite | Yes — assigned from array position |
 | 7 | Connector `points` has ≥ 2 entries | Yes — a degenerate pair is synthesised |
-| 8 | Every binding's `elementId` exists in the document | No — reported |
+| 8 | Every binding's `elementId` exists in the same workspace | No — reported |
 | 9 | No connector binds to itself | No — reported |
 | 10 | Every `image.fileId` resolves in `files` | No — reported, renders as a placeholder |
 | 11 | Every `groupId` is shared by ≥ 2 elements | No — reported |
 | 12 | Elements are sorted ascending by `zIndex` | Yes — sorted |
+| 13 | A board has at least one workspace | Yes — an empty one is created |
+| 14 | Workspace `id`s are unique | Yes — duplicates are reassigned |
+| 15 | `activeWorkspaceId`, when present, names a workspace | Yes — the first workspace is shown, with a warning |
+| 16 | Every `frameId` names a frame in the same workspace | Yes — the containment is dropped, with a warning |
 
 **Reading is lenient; writing is strict.** The loader coerces what it can, fills
 defaults for what is missing, records a warning for anything it changed, and
@@ -299,7 +376,12 @@ When MindFlow writes a file:
 - JSON is pretty-printed with **two-space indentation** and a trailing newline.
 - Coordinates are rounded to **2 decimal places**; angles and opacity to 3; zoom
   to 4.
-- `elements` is sorted ascending by `zIndex`.
+- Workspaces are written in list order, and each workspace's `elements`
+  ascending by `zIndex`.
+- `$schema` and `schemaVersion` name the current version, whatever version the
+  board was read in: the file is written in this version's shape.
+- Fields this version does not know, on the board or on a workspace, are
+  written back verbatim after the known ones.
 - `meta.createdAt` and `meta.updatedAt` are written as the board holds them.
   Saving is not an edit, so it moves neither ([`meta`](#meta)). Before 1.6.3,
   a save set `updatedAt` to now, which also made every save differ from the
@@ -319,7 +401,14 @@ byte-stable — which the round-trip test relies on.
 
 A reader that encounters an element whose `type` it does not recognise MUST NOT
 delete it. MindFlow holds such elements aside verbatim and writes them back, in
-z-order, on the next save.
+z-order, into the same workspace, on the next save.
+
+The same goes for **fields** (2.0.0): a top-level or workspace field a reader
+does not know MUST be kept and written back. MindFlow holds them aside and
+writes them after the fields it knows. This is what lets a later minor version
+add a board or workspace field: an older reader keeps it instead of dropping
+it. (1.x readers dropped unknown top-level fields, which is one reason 2.0.0
+had to be a major version.)
 
 This matters: opening a board that uses a newer element type in an older build,
 then saving, must not silently destroy that element. See

@@ -159,13 +159,11 @@ async function markClean(page: Page) {
   await page.evaluate(() => {
     const mf = (
       window as unknown as {
-        mindflow: { store: { document: unknown; load(result: unknown, origin: unknown): void } };
+        mindflow: { store: { boardForSave(): unknown; load(result: unknown, origin: unknown): void } };
       }
     ).mindflow;
-    mf.store.load(
-      { document: mf.store.document, warnings: [], preserved: [] },
-      { kind: 'local', name: 'board.mindflow.json' },
-    );
+    // The whole board, every workspace included, as a real load would see it.
+    mf.store.load(mf.store.boardForSave(), { kind: 'local', name: 'board.mindflow.json' });
   });
 }
 
@@ -943,14 +941,14 @@ test.describe('text editing', () => {
               mindflow: {
                 store: {
                   document: { elements: Record<string, unknown>[] };
-                  load(result: unknown, origin: unknown): void;
+                  boardForSave(): object; load(result: unknown, origin: unknown): void;
                 };
               };
             }
           ).mindflow;
           const document = structuredClone(mf.store.document);
           document.elements[0]!.text = '';
-          mf.store.load({ document, warnings: [], preserved: [] }, { kind: 'local', name: 'board.mindflow.json' });
+          mf.store.load({ ...mf.store.boardForSave(), document }, { kind: 'local', name: 'board.mindflow.json' });
         });
       }
 
@@ -1021,14 +1019,14 @@ test.describe('text editing', () => {
           mindflow: {
             store: {
               document: { elements: Record<string, unknown>[] };
-              load(result: unknown, origin: unknown): void;
+              boardForSave(): object; load(result: unknown, origin: unknown): void;
             };
           };
         }
       ).mindflow;
       const document = structuredClone(mf.store.document);
       document.elements[0]!.text = text;
-      mf.store.load({ document, warnings: [], preserved: [] }, { kind: 'local', name: 'board.mindflow.json' });
+      mf.store.load({ ...mf.store.boardForSave(), document }, { kind: 'local', name: 'board.mindflow.json' });
     }, text);
   }
 
@@ -1130,7 +1128,7 @@ test.describe('text editing', () => {
       const mf = (
         window as unknown as {
           mindflow: {
-            store: { document: { elements: Sticky[] }; load(result: unknown, origin: unknown): void };
+            store: { document: { elements: Sticky[] }; boardForSave(): object; load(result: unknown, origin: unknown): void };
             layoutText(text: string, options: Record<string, unknown>): { width: number };
           };
         }
@@ -1149,7 +1147,7 @@ test.describe('text editing', () => {
       const inner = Math.max(measure('aaaa well-'), measure('known xx')) + 2;
       sticky.text = text;
       sticky.width = inner + sticky.padding * 2;
-      mf.store.load({ document, warnings: [], preserved: [] }, { kind: 'local', name: 'board.mindflow.json' });
+      mf.store.load({ ...mf.store.boardForSave(), document }, { kind: 'local', name: 'board.mindflow.json' });
       return inner < Math.min(measure('aaaa well-known'), measure('well-known xx'));
     }, text);
     expect(fits, 'no width separates the cases with the fonts on this machine').toBe(true);
@@ -1846,13 +1844,17 @@ test.describe('when the board was last edited', () => {
     await expect(label(page)).toHaveText('Edited 3 minutes ago');
   });
 
-  test('sits beside the board name, and is left out on a phone-sized screen', async ({ page }) => {
+  test('sits after the board name and its workspace, and is left out on a phone-sized screen', async ({ page }) => {
     const name = (await page.locator('.mf-board-name').boundingBox())!;
+    const workspace = (await page.locator('[data-action="workspaces"]').boundingBox())!;
     const edited = (await label(page).boundingBox())!;
-    expect(edited.x).toBeGreaterThan(name.x + name.width);
-    // Beside the name itself: the field fits "Untitled board", so only the
-    // dirty dot's slot and a margin lie between, not a fixed-width box.
-    expect(edited.x - (name.x + name.width)).toBeLessThan(24);
+    // The breadcrumb, then the label: `Board › Workspace ▾  Edited …`. The
+    // field fits "Untitled board", so only the dirty dot's slot and the
+    // separator lie between the name and the switcher, not a fixed-width box,
+    // and only a margin between the switcher and the label.
+    expect(workspace.x - (name.x + name.width)).toBeLessThan(40);
+    expect(edited.x).toBeGreaterThan(workspace.x + workspace.width);
+    expect(edited.x - (workspace.x + workspace.width)).toBeLessThan(24);
     // On the name's line: centred on it, give or take a pixel.
     expect(Math.abs(edited.y + edited.height / 2 - (name.y + name.height / 2))).toBeLessThan(2);
     // In full at desktop width, not cut to an ellipsis.
@@ -1874,8 +1876,11 @@ test.describe('when the board was last edited', () => {
 
     await input.press('Enter');
     await expect.poll(async () => (await getDocument(page)).meta.name).toBe('Q4 product roadmap and launch planning');
+    // The switcher moved along with the end of the name, and the label with it.
+    const workspace = (await page.locator('[data-action="workspaces"]').boundingBox())!;
+    expect(workspace.x - (typed.x + typed.width)).toBeLessThan(40);
     const edited = (await label(page).boundingBox())!;
-    expect(edited.x - (typed.x + typed.width)).toBeLessThan(24);
+    expect(edited.x - (workspace.x + workspace.width)).toBeLessThan(24);
   });
 
   test('on a narrow window, the label and then the name give way, never the buttons', async ({ page }) => {
@@ -1893,7 +1898,10 @@ test.describe('when the board was last edited', () => {
     expect(await label(page).evaluate((node) => node.clientWidth)).toBe(0);
     expect(await input.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
 
-    // A short name has room for the label in full at the same width.
+    // A short name has room for the label in full on a slightly wider window.
+    // At 900px the workspace switcher, which follows the name, takes that room
+    // (since format 2.0.0), and the label is still the first to give way.
+    await page.setViewportSize({ width: 1000, height: 700 });
     await input.fill('Retro');
     await input.press('Enter');
     expect(await label(page).evaluate((node) => node.clientWidth > 0 && node.scrollWidth <= node.clientWidth)).toBe(true);
@@ -2199,7 +2207,8 @@ test.describe('command palette', () => {
     await page.keyboard.press('ControlOrMeta+k');
     await page.keyboard.type('duplicate');
 
-    await expect(page.locator('.mf-palette').getByRole('option', { name: /Duplicate/ })).toBeDisabled();
+    // Not "Duplicate workspace", which always applies.
+    await expect(page.locator('.mf-palette').getByRole('option', { name: /^Duplicate(?! workspace)/ })).toBeDisabled();
   });
 
   test('closes on Escape', async ({ page }) => {

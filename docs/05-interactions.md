@@ -678,8 +678,19 @@ squeezing the existing rows.
 |---|---|
 | `Cmd` + `+` / `-` | Zoom in / out |
 | `Cmd` + `0` | Reset zoom to 100% |
-| `Cmd` + `1` | Zoom to fit (selection, or the whole board) |
+| `Cmd` + `1` | Zoom to fit (selection, or the whole workspace on screen) |
 | `Cmd` + `\` | Show / hide the style panel |
+
+### Workspaces
+
+| Shortcut | Action |
+|---|---|
+| `Page Down` | Next workspace |
+| `Page Up` | Previous workspace |
+| `F2` | Rename the workspace focused in the workspace list |
+
+`Page Up` and `Page Down` stop at the ends of the list rather than wrapping.
+With `Cmd`/`Ctrl` they are left to the browser, which uses them to switch tabs.
 
 ### File
 
@@ -705,7 +716,7 @@ Two rules govern shortcut handling:
    `Cmd+W`, `Cmd+L` all fall through untouched.
 
 While a floating menu has keyboard focus (the context menu, the shape flyout,
-recent boards, the command palette or the find bar), **its unmodified keys
+recent boards, the workspace list, the command palette or the find bar), **its unmodified keys
 belong to it**. They never reach the shortcuts above, so arrow keys, `Delete`,
 tool letters and `Space` act on the menu and not on the board behind it.
 `Cmd`/`Ctrl` chords still go through, and `Escape` closes the menu without also
@@ -909,6 +920,82 @@ in [06-persistence.md](06-persistence.md#autosave-and-recent-boards).
   the menu: an arrow key does not also nudge the selection behind it. Chords
   such as `Cmd+S` still work.
 
+## Workspaces
+
+A board holds one or more workspaces, each an independent drawing with its own
+background, camera, elements and undo history. They are all in the one file.
+The format is specified in [02-document-format.md](02-document-format.md#workspaces).
+
+### The switcher
+
+The top bar reads `Board name › Workspace ▾`, a breadcrumb, then *Edited …*.
+The workspace button opens the **workspace list**. It is always there, even on
+a board with one workspace, because it is also how a second one is added.
+
+- **Narrow windows.** The *Edited* label gives way first, then the board name,
+  then the workspace name, each with an ellipsis. Below 860px the switcher is
+  its layers glyph alone, a square button like the others, with the workspace's
+  name in its label and tooltip. The board name keeps its place.
+- **Phones.** Below 760px the top bar has more buttons than width, so it
+  scrolls sideways, as the tool palette below does. The board name and the
+  switcher come first, so they are on screen when the bar is at rest.
+
+### The workspace list
+
+Built like [Recent boards](#recent-boards): *New workspace* at the top, then
+every workspace in order, with its element count (*12 elements*, *Empty*). The
+one on screen is tagged **Current**.
+
+- Choosing a row switches to that workspace. Choosing the current one only
+  closes the list.
+- The arrow keys move between *New workspace* and the rows, and focus starts on
+  the current workspace. `F2` renames the focused row.
+- Each row has a **⋯** button (on hover or focus with a mouse, always on touch)
+  for its own menu: **Rename**, **Duplicate**, **Move up**, **Move down** and
+  **Delete**. The menu opens beside the button, or below it where there is no
+  room. Items that cannot apply (Move up on the first row, Delete on the only
+  workspace) are shown disabled.
+- **Rename** turns the name into a text field, with the name selected. `Enter`
+  or a press elsewhere keeps the new name; `Escape` cancels. A blank name
+  becomes `Workspace N` for its position. Names may repeat.
+- `Escape` steps back one layer at a time: out of a rename, then out of a
+  row's menu, then out of the list.
+
+### What each action does
+
+| Action | Result | Unsaved? | Undoable? |
+|---|---|---|---|
+| Switch | The workspace comes back as it was left: elements, camera, undo history. The selection is cleared. | No | No |
+| New workspace | An empty workspace at the end of the list, on screen, with the background and grid of the one left and the default camera. Named `Workspace N`, the lowest N not taken. | Yes | No |
+| Rename | | Yes | No |
+| Move up / down | Reorders the list. What is on screen does not change. | Yes | No |
+| Duplicate | A copy right after the original, named `<name> copy`, and on screen. Its elements get new ids; groups, connector bindings and frame membership follow them. | Yes | No |
+| Delete | An empty workspace goes at once. One with content asks first: *"Brainstorm" and its 17 elements will be deleted. This cannot be undone.* When the workspace on screen goes, the next one takes its place, or the previous one if it was last. The last workspace cannot be deleted. | Yes | No |
+
+**Switching is not an edit**, like panning: a saved board stays saved, and its
+*Edited* time does not move. The other actions edit the list, so they mark the
+board unsaved and move its edit time, but none goes on an undo stack: an undo
+history belongs to one workspace, and these change the list the histories hang
+from. That is why Delete asks first.
+
+**Whatever was in progress ends first.** Before the workspace on screen
+changes (a switch, a new or duplicated workspace, deleting the current one), an
+open text or frame-name editor keeps what was typed, exactly as a click
+elsewhere would. A new text box closed blank leaves nothing behind. A drag or
+any other gesture still in progress is abandoned and rewound, as if the pointer
+had been cancelled, and its release is ignored. An open menu or the find bar
+closes.
+
+**Everything else acts on the workspace on screen.** Select all, Find, Zoom to
+fit, align, and PNG, SVG and PDF export see only it. Exporting a board as JSON
+writes the whole board, like a save. Copy and paste work across workspaces with
+the ordinary clipboard. A pasted image is not stored twice, since every
+workspace shares the board's images.
+
+The command palette has a **Workspaces** group: *New workspace*, *Next
+workspace*, *Previous workspace*, *Rename workspace…*, *Duplicate workspace*,
+*Delete workspace…*, and *Go to workspace: name* for each one.
+
 ## Undo
 
 Undo is command-based rather than snapshot-based. Each command records `before`
@@ -916,7 +1003,10 @@ and `after` for **only the elements it touched**, so inverting is a matter of
 swapping those two fields — correct by construction for create, delete, update,
 restyle and reorder alike.
 
-- Depth: **200 steps**.
+- **One history per workspace.** Undo and redo only ever change the workspace
+  on screen, and a workspace's history comes back with it when you return. A
+  new workspace starts with none.
+- Depth: **200 steps**, per workspace.
 - Any new edit **clears the redo stack**. Linear history; branching confuses far
   more than it helps.
 - **Coalescing:** consecutive commands with the same label arriving within 600 ms

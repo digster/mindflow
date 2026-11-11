@@ -34,8 +34,8 @@
  * data, the user can clear it, and it never leaves this machine. The UI says so.
  */
 
-import type { MindflowDocument } from '../model/types.ts';
-import { serializeDocument } from '../model/document.ts';
+import { serializeBoard } from '../model/document.ts';
+import { boardElementCount, type StagedBoard } from '../model/workspaces.ts';
 
 const DB_NAME = 'mindflow';
 /** 1: a single record under {@link LEGACY_KEY}. 2: one record per board. */
@@ -64,16 +64,16 @@ export interface RecentBoard {
   name: string;
   /** ISO time of the last write. Orders the menu, newest first. */
   savedAt: string;
+  /** Across every workspace. */
   elementCount: number;
   /** True when the copy holds changes that were never saved to a file or to Drive. */
   unsaved: boolean;
 }
 
-/** What gets written: the board, plus whether it has changes not saved elsewhere. */
+/** What gets written: the whole board, plus whether it has changes not saved elsewhere. */
 export interface BoardSnapshot {
-  document: MindflowDocument;
-  /** Unknown-type elements carried through from load; see `LoadResult.preserved`. */
-  preserved: readonly unknown[];
+  /** Every workspace, as `Store.boardForSave` gives it. */
+  board: StagedBoard;
   unsaved: boolean;
 }
 
@@ -216,11 +216,20 @@ function upgrade(db: IDBDatabase, transaction: IDBTransaction, oldVersion: numbe
   };
 }
 
-/** Element count of a serialised board, for a summary built without loading it. */
-function countElements(contents: string): number {
+/**
+ * Element count of a serialised board, for a summary built without loading it.
+ * Exported for the unit tests.
+ *
+ * Reads both shapes: a version-1 database can only hold a 1.x board, with its
+ * elements at the top level, but a 2.x board keeps them in its workspaces.
+ */
+export function countElements(contents: string): number {
   try {
-    const parsed = JSON.parse(contents) as { elements?: unknown };
-    return Array.isArray(parsed.elements) ? parsed.elements.length : 0;
+    const parsed = JSON.parse(contents) as { elements?: unknown; workspaces?: unknown };
+    const lists = Array.isArray(parsed.workspaces)
+      ? parsed.workspaces.map((workspace) => (workspace as { elements?: unknown } | null)?.elements)
+      : [parsed.elements];
+    return lists.reduce<number>((total, list) => total + (Array.isArray(list) ? list.length : 0), 0);
   } catch {
     return 0;
   }
@@ -318,7 +327,7 @@ export class Autosave {
     // A snapshot of a DIFFERENT board means the user is switching boards. The
     // one being left gets written now; letting the new snapshot replace it
     // would silently drop the last second of edits to the old board.
-    if (this.pending && this.pending.document.id !== snapshot.document.id) void this.flush();
+    if (this.pending && this.pending.board.document.id !== snapshot.board.document.id) void this.flush();
     this.pending = snapshot;
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.flush(), AUTOSAVE_DELAY_MS);
@@ -351,13 +360,14 @@ export class Autosave {
 
   private async write(snapshot: BoardSnapshot): Promise<void> {
     if (this.disabled) return;
-    const { document, preserved, unsaved } = snapshot;
+    const { board, unsaved } = snapshot;
+    const { document } = board;
 
     try {
       // Holds the board's own `updatedAt`, the time of its last edit, not of
       // this write (which may only be the board being opened). That is also
       // what lets the identical-write check below ever match.
-      const contents = serializeDocument(document, preserved);
+      const contents = serializeBoard(board);
       const last = this.last;
       const sameContents = last?.boardId === document.id && last.contents === contents;
       // Skip identical writes: undo/redo round trips and no-op edits otherwise
@@ -365,8 +375,10 @@ export class Autosave {
       if (sameContents && last.unsaved === unsaved) return;
 
       // Preserved elements count: a board of types this build cannot draw is
-      // still a board worth keeping.
-      const elementCount = document.elements.length + preserved.length;
+      // still a board worth keeping. So does every workspace, not only the one
+      // on screen: straight after "New workspace" the stage is empty while
+      // the board is not, and an empty count would delete its copy.
+      const elementCount = boardElementCount(board);
       if (elementCount === 0) {
         // A blank board is not worth listing, and a board emptied by deleting
         // everything should not linger as an empty row.

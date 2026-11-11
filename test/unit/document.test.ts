@@ -187,10 +187,13 @@ describe('unknown element types', () => {
     // Opening a board that uses a newer element type and saving must not
     // silently destroy that element.
     const { document, preserved } = loadDocument(withUnknown);
-    const output = JSON.parse(serializeDocument(document, preserved)) as { elements: { id: string; sides?: number }[] };
+    const output = JSON.parse(serializeDocument(document, preserved)) as {
+      workspaces: { elements: { id: string; sides?: number }[] }[];
+    };
+    const elements = output.workspaces[0]?.elements ?? [];
 
-    expect(output.elements.map((element) => element.id)).toEqual(['known', 'future']);
-    expect(output.elements[1]?.sides).toBe(6); // Unknown fields survive too.
+    expect(elements.map((element) => element.id)).toEqual(['known', 'future']);
+    expect(elements[1]?.sides).toBe(6); // Unknown fields survive too.
   });
 });
 
@@ -307,14 +310,24 @@ describe('serialisation', () => {
     doc.elements.push(
       getDefinition('rectangle').create({ x: 100.00000000000001, y: 1 / 3, zIndex: 1000 }),
     );
-    const output = JSON.parse(serializeDocument(doc)) as { elements: { x: number; y: number }[] };
-    expect(output.elements[0]?.x).toBe(100);
-    expect(output.elements[0]?.y).toBe(0.33);
+    const output = JSON.parse(serializeDocument(doc)) as { workspaces: { elements: { x: number; y: number }[] }[] };
+    expect(output.workspaces[0]?.elements[0]?.x).toBe(100);
+    expect(output.workspaces[0]?.elements[0]?.y).toBe(0.33);
   });
 
   it('emits keys in a fixed order', () => {
-    const keys = Object.keys(JSON.parse(serializeDocument(createDocument())));
-    expect(keys).toEqual(['$schema', 'type', 'schemaVersion', 'id', 'meta', 'canvas', 'viewport', 'elements', 'files']);
+    const output = JSON.parse(serializeDocument(createDocument())) as { workspaces: Record<string, unknown>[] };
+    expect(Object.keys(output)).toEqual([
+      '$schema',
+      'type',
+      'schemaVersion',
+      'id',
+      'meta',
+      'activeWorkspaceId',
+      'workspaces',
+      'files',
+    ]);
+    expect(Object.keys(output.workspaces[0] ?? {})).toEqual(['id', 'name', 'canvas', 'viewport', 'elements', 'meta']);
   });
 
   it('is pretty-printed with a trailing newline', () => {

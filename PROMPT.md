@@ -703,3 +703,43 @@ board holds it, so a save no longer moves it, and two saves of an unchanged
 board are byte-identical. A missing `updatedAt` now loads as `createdAt`. New
 schema file, identity migration, CHANGELOG entry. Details in
 `memory/2026-11-07.md`.
+
+---
+
+## 2026-11-10 — Workspaces within a file (plan only)
+
+> * I want to come up with the concept of workspaces within a file.
+> * A file will start with the default workspace and clicking on a new workspace would show a new empty environment for that file. Clicking on the old workspace should take back to that workspace's work.
+> * All these workspaces are still part of the same file.
+> * Create a plan artifact for this.
+> * Before you create the plan artifact, show me visually some ideas for how the workspace ui could look.
+
+Nothing built. Four switcher ideas were mocked up over the real chrome, and the
+user chose the top-bar switcher (B) and undo per workspace. The plan proposes
+format 2.0.0 (a `workspaces` list replaces the top-level `canvas`, `viewport`
+and `elements`) and a store that keeps one workspace on stage and parks the
+rest. Links and the open questions are in `memory/2026-11-10.md`.
+
+---
+
+## 2026-11-10 — The phone switcher (a comment on the plan)
+
+> I will go with your recommendation.
+
+(On the plan's question 1: an icon-only switcher below 760px, or a text button
+in place of the board name.) Icon-only. The plan was updated to say so.
+
+---
+
+## 2026-11-10 — Building workspaces (format 2.0.0)
+
+> Ok, work on the plan.
+
+Phases 1–3 of the plan are built: format 2.0.0 with a `workspaces` list, the
+store's stage-and-park model with undo per workspace, and the top-bar switcher
+with its list, row menu, Page Up / Page Down and palette commands. The other
+open questions went with the plan's recommendations: Duplicate is in, unknown
+fields are kept, Page Up / Page Down switch. Phase 4 (PDF of every workspace,
+find across workspaces) is not started. Below 760px the top bar now scrolls
+sideways, because the switcher, like seven buttons before it, could not be
+tapped there. Details in `memory/2026-11-10.md`.
