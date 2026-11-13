@@ -754,3 +754,15 @@ Numbered buttons (`1 2 3`, up to nine) now follow the switcher whenever a board
 has two or more workspaces; a press switches. When the top bar is short of
 room they drop from the end, measured rather than set by breakpoints. No format
 change. Details in `memory/2026-11-11.md`.
+
+---
+
+## 2026-11-13 — Why are the workspace numbers missing?
+
+> Why am I not seeing the workspace switching icons? *(screenshot: board "Coffee
+> World", two workspaces, switcher menu open, no numbers beside it)*
+
+Investigation only, no code change. The current build shows the numbers in
+every Chromium case tried, and cannot produce the screenshot's state (numbers
+hidden with "Edited just now" whole). Most likely a copy from before the
+feature. Details in `memory/2026-11-13.md`.
